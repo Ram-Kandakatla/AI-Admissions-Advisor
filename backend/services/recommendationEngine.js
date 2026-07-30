@@ -1,0 +1,135 @@
+// Rule-based university recommendation engine.
+// Given a student profile, returns schools grouped into reach / target / safety,
+// each annotated with a match score and human-readable reasons.
+//
+// The rules are intentionally simple and transparent so they can be validated
+// with real students before any move to a learned model.
+
+const { loadUniversities } = require("../store/dataStore");
+
+// Tuition thresholds used to judge financial fit by need level (USD/year sticker).
+const AFFORDABLE_CEILING = { high: 35000, medium: 55000, low: Infinity };
+
+function recommendUniversities(student, allUniversities = loadUniversities()) {
+  const scored = allUniversities
+    .map((uni) => evaluate(uni, student))
+    .filter((r) => r !== null)
+    .sort((a, b) => b.matchScore - a.matchScore);
+
+  const tiers = { reach: [], target: [], safety: [] };
+  for (const rec of scored) {
+    tiers[rec.tier].push(rec);
+  }
+  return tiers;
+}
+
+/**
+ * Score a single university against the student.
+ * Returns null when the school has no overlap with the student's intended majors
+ * (a hard requirement), otherwise a recommendation object.
+ */
+function evaluate(uni, student) {
+  const majors = student.interestedMajors || [];
+  const matchedMajors = majors.filter((m) => uni.majors.includes(m));
+  if (matchedMajors.length === 0) return null; // Rule 1: must offer an intended major
+
+  const reasons = [];
+  let score = 50;
+
+  // --- Academic proximity ---
+  const gpaGap = round(uni.avgGPA - student.gpa, 2); // positive => school is a stretch
+  if (gpaGap <= -0.1) {
+    score += 18;
+    reasons.push("Your GPA is above their typical admit.");
+  } else if (gpaGap <= 0.1) {
+    score += 12;
+    reasons.push("Your GPA lines up with their typical admit.");
+  } else if (gpaGap <= 0.25) {
+    score += 4;
+    reasons.push("A reach on GPA, but within striking distance.");
+  } else {
+    score -= 6;
+    reasons.push("A significant reach on GPA.");
+  }
+
+  // --- Test scores (only if provided) ---
+  if (student.satScore) {
+    const satGap = uni.avgSAT - student.satScore;
+    if (satGap <= -30) {
+      score += 8;
+      reasons.push("Your SAT is comfortably above their average.");
+    } else if (satGap <= 40) {
+      score += 5;
+      reasons.push("Your SAT is in range.");
+    } else {
+      score -= 4;
+    }
+  }
+
+  // --- Major fit ---
+  score += Math.min(matchedMajors.length, 3) * 4;
+  reasons.push(
+    matchedMajors.length > 1
+      ? `Offers ${matchedMajors.length} of your intended majors.`
+      : `Offers your intended major (${matchedMajors[0]}).`
+  );
+
+  // --- Region preference ---
+  let regionFit = true;
+  if (student.preferredRegions && student.preferredRegions.length > 0) {
+    if (student.preferredRegions.includes(uni.region)) {
+      score += 8;
+      reasons.push(`In a region you prefer (${uni.region}).`);
+    } else {
+      regionFit = false;
+      score -= 6;
+    }
+  }
+
+  // --- Financial fit ---
+  const ceiling = AFFORDABLE_CEILING[student.financialNeed] ?? Infinity;
+  const affordable = uni.tuition <= ceiling;
+  if (student.financialNeed === "high") {
+    if (affordable) {
+      score += 10;
+      reasons.push("Sticker tuition fits a high-need budget.");
+    } else {
+      score -= 12;
+      reasons.push("Higher sticker price — look closely at aid and net price.");
+    }
+  } else if (student.financialNeed === "medium" && !affordable) {
+    score -= 4;
+    reasons.push("On the pricier side — worth checking aid packages.");
+  }
+
+  const tier = classifyTier(uni, gpaGap);
+
+  return {
+    ...uni,
+    tier,
+    matchScore: clamp(Math.round(score), 0, 100),
+    matchedMajors,
+    gpaGap,
+    affordable,
+    regionFit,
+    reasons,
+  };
+}
+
+// Reach / target / safety based on selectivity and GPA distance.
+function classifyTier(uni, gpaGap) {
+  if (uni.acceptanceRate < 12 || gpaGap >= 0.15) return "reach";
+  if (uni.acceptanceRate > 40 && gpaGap <= -0.1) return "safety";
+  return "target";
+}
+
+function round(n, places) {
+  const f = 10 ** places;
+  return Math.round(n * f) / f;
+}
+
+function clamp(n, lo, hi) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+module.exports = { recommendUniversities, evaluate, classifyTier };
