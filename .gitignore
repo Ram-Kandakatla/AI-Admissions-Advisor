@@ -1,13 +1,20 @@
 # Dependencies
 node_modules/
 
-# Env / secrets
+# Env / secrets — these hold the real ANTHROPIC_API_KEY / OPENAI_API_KEY and
+# must only ever live on this machine, never in the repo.
 .env
+.env.*
+!.env.example
 *.local
 
 # Build output
 dist/
 build/
+
+# TypeScript incremental build cache — regenerated on every `tsc` run,
+# machine-specific, and just noise in diffs if committed.
+*.tsbuildinfo
 
 # Logs
 *.log
@@ -17,3 +24,9 @@ npm-debug.log*
 .DS_Store
 .vscode/
 .idea/
+
+# Claude Code — project-local session state and permission overrides.
+# This is how Claude reads/remembers this project on this machine, not part
+# of the app; launch.json (dev-server config) is deliberately NOT ignored
+# here since it's meant to be shared with anyone who clones the repo.
+.claude/settings.local.json

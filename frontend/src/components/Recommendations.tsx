@@ -115,9 +115,9 @@ export default function Recommendations({
 
 function tierVar(t: Tier): React.CSSProperties {
   const map: Record<Tier, string> = {
-    reach: "var(--clay)",
-    target: "var(--forest)",
-    safety: "var(--ochre)",
+    reach: "var(--orange)",
+    target: "var(--green)",
+    safety: "var(--blue)",
   };
   return { ["--tier" as string]: map[t] } as React.CSSProperties;
 }
