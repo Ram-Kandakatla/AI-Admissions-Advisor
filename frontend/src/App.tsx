@@ -6,9 +6,10 @@ import ProfileForm from "./components/ProfileForm";
 import Recommendations from "./components/Recommendations";
 import UniversityExplorer from "./components/UniversityExplorer";
 import ChatBot from "./components/ChatBot";
+import ApplicationTracker from "./components/ApplicationTracker";
 import BrandMark from "./components/BrandMark";
 
-type View = "home" | "profile" | "matches" | "explore" | "chat";
+type View = "home" | "profile" | "matches" | "tracker" | "explore" | "chat";
 type Theme = "light" | "dark";
 
 // The pre-paint script in index.html has already put the right theme on
@@ -51,6 +52,7 @@ export default function App() {
     { key: "home", label: "Home" },
     { key: "profile", label: "Your Profile" },
     { key: "matches", label: "Matches", needsProfile: true },
+    { key: "tracker", label: "Tracker", needsProfile: true },
     { key: "explore", label: "Explore" },
     { key: "chat", label: "Ask Compass" },
   ];
@@ -130,6 +132,10 @@ export default function App() {
           {view === "matches" && !student && (
             <NeedsProfile onGo={() => go("profile")} />
           )}
+          {view === "tracker" && student && (
+            <ApplicationTracker student={student} onGoMatches={() => go("matches")} />
+          )}
+          {view === "tracker" && !student && <NeedsProfile onGo={() => go("profile")} />}
           {view === "explore" && <UniversityExplorer meta={meta} />}
           {view === "chat" && <ChatBot student={student} onBuildProfile={() => go("profile")} />}
         </div>

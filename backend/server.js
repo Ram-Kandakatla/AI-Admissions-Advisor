@@ -10,6 +10,11 @@
 //   GET  /api/students/:id/recommendations   Tiered university matches
 //   POST /api/chat                           Ask the admissions chatbot
 //   GET  /api/students/:id/chat              Fetch conversation history
+//   GET  /api/application-meta               Decision plans, statuses, checklist
+//   GET  /api/students/:id/applications      Tracked applications + timeline
+//   POST /api/students/:id/applications      Track a university
+//   PATCH  /api/students/:id/applications/:appId  Update one application
+//   DELETE /api/students/:id/applications/:appId  Stop tracking
 
 require("dotenv").config();
 
@@ -18,6 +23,15 @@ const cors = require("cors");
 const rateLimit = require("express-rate-limit");
 
 const { validateProfile } = require("./models/studentProfile");
+const {
+  DECISION_PLANS,
+  STATUSES,
+  CHECKLIST,
+  currentCycleYear,
+  validateApplication,
+  normalizeChecklist,
+  isDateString,
+} = require("./models/application");
 const store = require("./store/dataStore");
 const { recommendUniversities } = require("./services/recommendationEngine");
 const { answerAdmissionsQuestion, provider } = require("./services/llmService");
@@ -108,6 +122,151 @@ app.get("/api/students/:id/recommendations", (req, res) => {
     safety: recommendations.safety.length,
   };
   res.json({ studentId: student.id, counts, recommendations });
+});
+
+// ---- Applications ----
+
+app.get("/api/application-meta", (req, res) => {
+  res.json({
+    plans: Object.entries(DECISION_PLANS).map(([key, spec]) => ({
+      key,
+      label: spec.label,
+      binding: spec.binding,
+      note: spec.note,
+    })),
+    statuses: STATUSES,
+    checklist: CHECKLIST,
+    cycleYear: currentCycleYear(),
+  });
+});
+
+// Join an application to its university so the client doesn't have to.
+// Deliberately no days-until/urgency here: those depend on the *student's*
+// local date, and a server in another timezone would mislabel what's due
+// today. The client computes that from its own clock.
+function decorate(application, universitiesById) {
+  const uni = universitiesById.get(application.universityId) || null;
+  return {
+    ...application,
+    university: uni
+      ? {
+          id: uni.id,
+          name: uni.name,
+          shortName: uni.shortName,
+          city: uni.city,
+          state: uni.state,
+          acceptanceRate: uni.acceptanceRate,
+        }
+      : null,
+  };
+}
+
+function universityIndex() {
+  return new Map(store.loadUniversities().map((u) => [u.id, u]));
+}
+
+// Undated (rolling) applications sort last — they have no fixed date to
+// place on a timeline, not an infinitely distant one.
+function byDeadline(a, b) {
+  if (!a.deadline && !b.deadline) return 0;
+  if (!a.deadline) return 1;
+  if (!b.deadline) return -1;
+  return a.deadline.localeCompare(b.deadline);
+}
+
+function requireStudent(req, res) {
+  const student = store.getStudent(req.params.id);
+  if (!student) {
+    res.status(404).json({ error: "Student not found" });
+    return null;
+  }
+  return student;
+}
+
+app.get("/api/students/:id/applications", (req, res) => {
+  if (!requireStudent(req, res)) return;
+  const index = universityIndex();
+  const applications = [...store.getApplications(req.params.id)]
+    .sort(byDeadline)
+    .map((a) => decorate(a, index));
+  res.json({ studentId: req.params.id, cycleYear: currentCycleYear(), applications });
+});
+
+app.post("/api/students/:id/applications", (req, res) => {
+  if (!requireStudent(req, res)) return;
+
+  const index = universityIndex();
+  const { valid, errors, application } = validateApplication(req.body, new Set(index.keys()));
+  if (!valid) return res.status(400).json({ errors });
+
+  if (store.hasApplicationFor(req.params.id, application.universityId)) {
+    return res.status(409).json({ error: "That university is already on your list." });
+  }
+
+  const record = store.createApplication(req.params.id, application);
+  res.status(201).json(decorate(record, index));
+});
+
+app.patch("/api/students/:id/applications/:appId", (req, res) => {
+  if (!requireStudent(req, res)) return;
+
+  const existing = store.findApplication(req.params.id, req.params.appId);
+  if (!existing) return res.status(404).json({ error: "Application not found" });
+
+  // Partial update: only the fields actually present in the body change.
+  const patch = {};
+  const errors = [];
+  const body = req.body || {};
+
+  if (body.plan !== undefined) {
+    const plan = String(body.plan).toUpperCase();
+    if (!DECISION_PLANS[plan]) {
+      errors.push(`plan must be one of: ${Object.keys(DECISION_PLANS).join(", ")}`);
+    } else {
+      patch.plan = plan;
+    }
+  }
+
+  if (body.status !== undefined) {
+    if (!STATUSES.includes(body.status)) {
+      errors.push(`status must be one of: ${STATUSES.join(", ")}`);
+    } else {
+      patch.status = body.status;
+    }
+  }
+
+  if (body.deadline !== undefined) {
+    if (body.deadline === null || body.deadline === "") {
+      patch.deadline = null;
+      patch.deadlineIsTypical = false;
+    } else if (!isDateString(body.deadline)) {
+      errors.push("deadline must be a YYYY-MM-DD date");
+    } else {
+      patch.deadline = body.deadline;
+      // A date the student typed is confirmed by definition.
+      patch.deadlineIsTypical = false;
+    }
+  }
+
+  if (body.checklist !== undefined) {
+    patch.checklist = normalizeChecklist({ ...existing.checklist, ...body.checklist });
+  }
+
+  if (body.notes !== undefined) {
+    patch.notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 1000) : "";
+  }
+
+  if (errors.length) return res.status(400).json({ errors });
+
+  const record = store.updateApplication(req.params.id, req.params.appId, patch);
+  res.json(decorate(record, universityIndex()));
+});
+
+app.delete("/api/students/:id/applications/:appId", (req, res) => {
+  if (!requireStudent(req, res)) return;
+  const removed = store.deleteApplication(req.params.id, req.params.appId);
+  if (!removed) return res.status(404).json({ error: "Application not found" });
+  res.status(204).end();
 });
 
 // ---- Chat ----

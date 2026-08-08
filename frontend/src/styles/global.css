@@ -1190,6 +1190,383 @@ table.uni-table {
 }
 
 /* =========================================================================
+   Application tracker & timeline
+
+   Deadline pressure is the whole point of this page, so urgency is the one
+   thing allowed to carry color: every card and timeline row sets --u from
+   its data-urgency, and the date, dot and rail all read from it. Everything
+   else on the page stays neutral so the red genuinely means something.
+   ========================================================================= */
+
+.sec-hd {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--txm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.7rem;
+}
+
+.btn-sm {
+  height: 30px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
+/* ---- Add a school ---- */
+
+.track-add {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 26px;
+}
+.track-add .field select {
+  width: 100%;
+}
+.track-plan-note {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--txm);
+  margin: 0;
+}
+
+.track-summary {
+  margin-bottom: 32px;
+}
+/* Own tier colors rather than borrowing .reach/.target/.safety — the tiles
+   mean something different here and the class names should say so. */
+.track-stat-open {
+  --tier: var(--green);
+}
+.track-stat-done {
+  --tier: var(--blue);
+}
+.track-stat-next {
+  --tier: var(--orange);
+}
+/* The next-deadline tile holds a date like "Nov 1", not a count, so it needs
+   to shed the 40px tabular sizing the numeric tiles use. */
+.track-stat-next .num {
+  font-size: 30px;
+  letter-spacing: -1px;
+}
+
+/* ---- Timeline ---- */
+
+.timeline {
+  margin-bottom: 34px;
+}
+.tl-month + .tl-month {
+  margin-top: 18px;
+}
+.tl-month-label {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--txm);
+  margin-bottom: 6px;
+}
+.tl-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+/* The rail runs behind the dots and ties the month's rows into one thread. */
+.tl-items::before {
+  content: "";
+  position: absolute;
+  left: 57px;
+  top: 14px;
+  bottom: 14px;
+  width: 1px;
+  background: var(--bmed);
+}
+.tl-item {
+  --u: var(--txm);
+  display: grid;
+  grid-template-columns: 48px 18px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px 5px 0;
+  font-size: 13px;
+}
+.tl-item[data-urgency="past"],
+.tl-item[data-urgency="urgent"] {
+  --u: var(--red);
+}
+.tl-item[data-urgency="soon"] {
+  --u: var(--orange);
+}
+.tl-item[data-urgency="later"] {
+  --u: var(--blue);
+}
+.tl-item[data-urgency="done"] {
+  --u: var(--green);
+}
+.tl-date {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--u);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tl-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--u);
+  margin-inline: auto;
+  /* Punch the rail out behind the dot so the thread reads as passing through. */
+  box-shadow: 0 0 0 3px var(--bg);
+}
+.tl-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tl-plan {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--txm);
+  background: var(--s2);
+  border-radius: 20px;
+  padding: 1px 8px;
+}
+.tl-count {
+  font-size: 11.5px;
+  color: var(--u);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---- Application cards ---- */
+
+.track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.track-card {
+  --u: var(--txm);
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-left: 3px solid var(--u);
+  border-radius: var(--rl);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.track-card[data-urgency="past"],
+.track-card[data-urgency="urgent"] {
+  --u: var(--red);
+}
+.track-card[data-urgency="soon"] {
+  --u: var(--orange);
+}
+.track-card[data-urgency="later"] {
+  --u: var(--blue);
+}
+.track-card[data-urgency="done"] {
+  --u: var(--green);
+}
+
+.track-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+.track-head h4 {
+  font-size: 16px;
+  line-height: 1.2;
+}
+.track-head .loc {
+  font-size: 12px;
+  color: var(--txm);
+  margin-top: 3px;
+}
+.track-when {
+  text-align: right;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.track-countdown {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--u);
+  white-space: nowrap;
+}
+/* An unconfirmed date is a liability, so it says so on the card rather than
+   hiding the caveat in a tooltip. */
+.track-typical {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--orange);
+  background: var(--obg);
+  border-radius: 20px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+.track-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.track-controls .field select,
+.track-controls .field input[type="date"] {
+  font-family: inherit;
+  font-size: 13px;
+  height: 34px;
+  color: var(--tx);
+  background: var(--s2);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+  padding: 0 10px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.track-controls .field select:focus,
+.track-controls .field input[type="date"]:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+.status-pill {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 20px;
+  padding: 3px 10px;
+  background: var(--s2);
+  color: var(--txm);
+  white-space: nowrap;
+}
+.status-in-progress {
+  background: var(--bbg);
+  color: var(--blue);
+}
+.status-submitted,
+.status-accepted {
+  background: var(--gbg);
+  color: var(--green);
+}
+.status-waitlisted {
+  background: var(--obg);
+  color: var(--orange);
+}
+.status-denied {
+  background: var(--rbg);
+  color: var(--red);
+}
+
+/* ---- Progress + checklist ---- */
+
+.track-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.track-progress-bar {
+  flex: 1;
+  height: 5px;
+  background: var(--s2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.track-progress-fill {
+  height: 100%;
+  background: var(--u);
+  border-radius: 3px;
+  transition: width 0.25s ease;
+}
+.track-progress-lbl {
+  font-size: 11.5px;
+  color: var(--txm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.track-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+  gap: 6px 14px;
+}
+.track-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--txm);
+  cursor: pointer;
+  padding: 3px 0;
+}
+.track-checklist input {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+.track-checklist input:checked + span {
+  color: var(--tx);
+  text-decoration: line-through;
+  text-decoration-color: var(--bmed);
+}
+
+.track-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-top: 0.5px solid var(--border);
+  padding-top: 12px;
+}
+.track-remove {
+  margin-left: auto;
+}
+.track-remove:hover {
+  color: var(--red);
+  background: var(--rbg);
+}
+.track-notes {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  width: 100%;
+  min-height: 70px;
+  resize: vertical;
+  color: var(--tx);
+  background: var(--s2);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+  padding: 9px 11px;
+  outline: none;
+}
+.track-notes:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+/* =========================================================================
    Empty states, banners, footer
    ========================================================================= */
 
@@ -1225,6 +1602,16 @@ table.uni-table {
 }
 .banner code {
   background: color-mix(in srgb, var(--orange) 14%, transparent);
+}
+
+/* The ED warning is a rule you can break by accident, so it reads red rather
+   than the informational orange above. Must stay *after* .banner — same
+   specificity, so source order is what decides it. */
+.banner-warn {
+  background: var(--rbg);
+  border-color: var(--red);
+  color: var(--red);
+  align-items: flex-start;
 }
 
 .footer {
@@ -1360,6 +1747,40 @@ table.uni-table {
   .msg {
     max-width: 90%;
   }
+  .track-add {
+    grid-template-columns: 1fr;
+  }
+  /* The countdown moves under the school name rather than being squeezed
+     into a column beside it. */
+  .track-card-top {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .track-when {
+    text-align: left;
+    align-items: flex-start;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .track-controls .field {
+    flex: 1;
+    min-width: 140px;
+  }
+  .status-pill {
+    margin-left: 0;
+  }
+  /* Drop the plan pill first — the card below repeats it in a real control. */
+  .tl-plan {
+    display: none;
+  }
+  .tl-item {
+    grid-template-columns: 44px 18px minmax(0, 1fr) auto;
+    column-gap: 8px;
+  }
+  .tl-items::before {
+    left: 53px;
+  }
 }
 
 /* =========================================================================
@@ -1429,6 +1850,25 @@ table.uni-table {
   }
   .chat-compose textarea {
     min-height: 44px;
+  }
+  .track-controls .field select,
+  .track-controls .field input[type="date"] {
+    height: 44px;
+  }
+  .btn-sm {
+    height: 44px;
+  }
+  /* Same trick as .tag button: the box stays visually small, an invisible
+     pseudo-element gives the finger something to hit. The <label> wrapper
+     already extends the target across the row's full text. */
+  .track-checklist input {
+    width: 20px;
+    height: 20px;
+    position: relative;
+  }
+  .track-checklist label {
+    min-height: 44px;
+    padding-block: 6px;
   }
 }
 

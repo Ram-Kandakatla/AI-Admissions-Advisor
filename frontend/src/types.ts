@@ -60,6 +60,67 @@ export interface Meta {
   financialNeed: FinancialNeed[];
 }
 
+// ---- Application tracker ----
+
+export type DecisionPlan = "ED" | "ED2" | "EA" | "REA" | "RD" | "PRIORITY" | "ROLLING";
+
+export type ApplicationStatus =
+  | "planning"
+  | "in-progress"
+  | "submitted"
+  | "accepted"
+  | "waitlisted"
+  | "denied"
+  | "withdrawn";
+
+export type ChecklistKey =
+  | "essay"
+  | "supplements"
+  | "recommendations"
+  | "transcript"
+  | "testScores"
+  | "fee"
+  | "aid";
+
+export type Checklist = Record<ChecklistKey, boolean>;
+
+export interface Application {
+  id: string;
+  studentId: string;
+  universityId: number;
+  plan: DecisionPlan;
+  status: ApplicationStatus;
+  /** YYYY-MM-DD, or null for rolling admission. */
+  deadline: string | null;
+  /** True while the date is only the convention for the plan, not the school's own. */
+  deadlineIsTypical: boolean;
+  checklist: Checklist;
+  notes: string;
+  createdAt: string;
+  updatedAt?: string;
+  university: {
+    id: number;
+    name: string;
+    shortName: string;
+    city: string;
+    state: string;
+    acceptanceRate: number;
+  } | null;
+}
+
+export interface ApplicationsResponse {
+  studentId: string;
+  cycleYear: number;
+  applications: Application[];
+}
+
+export interface ApplicationMeta {
+  plans: { key: DecisionPlan; label: string; binding: boolean; note: string }[];
+  statuses: ApplicationStatus[];
+  checklist: { key: ChecklistKey; label: string }[];
+  cycleYear: number;
+}
+
 export type LlmProvider = "claude" | "openai" | "fallback";
 
 export interface ChatMessage {
