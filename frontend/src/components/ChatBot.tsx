@@ -20,9 +20,14 @@ const SUGGESTIONS = [
 export default function ChatBot({
   student,
   onBuildProfile,
+  initialQuestion = null,
+  onQuestionSent,
 }: {
   student: StudentRecord | null;
   onBuildProfile: () => void;
+  /** A question handed over from another page, sent once on arrival. */
+  initialQuestion?: string | null;
+  onQuestionSent?: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -56,6 +61,18 @@ export default function ChatBot({
       setBusy(false);
     }
   };
+
+  // Send a question handed over from another page exactly once. The ref guard
+  // matters because StrictMode re-runs effects on mount in development, and a
+  // duplicate here would be a duplicate API call and a duplicate bubble.
+  const handedOff = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialQuestion || handedOff.current === initialQuestion) return;
+    handedOff.current = initialQuestion;
+    send(initialQuestion);
+    onQuestionSent?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuestion]);
 
   return (
     <div>

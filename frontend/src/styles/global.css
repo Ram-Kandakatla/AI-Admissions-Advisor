@@ -1190,6 +1190,321 @@ table.uni-table {
 }
 
 /* =========================================================================
+   Major deep dive
+
+   This page is entirely derived numbers, so it leans on the same restraint as
+   the rest: figures in the display face, one accent per meaning, and bars
+   rather than any chart furniture. Nothing here is decorative — if a bar is
+   on screen it is showing a real count from the dataset.
+   ========================================================================= */
+
+.major-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 30px;
+}
+/* The count rides inside the chip so the picker doubles as a map of how
+   widely each field is taught. */
+.chip-count {
+  margin-left: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.62;
+  font-variant-numeric: tabular-nums;
+}
+.chip-star {
+  color: var(--orange);
+  font-size: 10px;
+}
+.chip[aria-pressed="true"] .chip-star {
+  color: var(--on-accent);
+}
+
+.md-section {
+  margin-bottom: 34px;
+}
+.md-lede {
+  font-size: 13px;
+  color: var(--txm);
+  max-width: 68ch;
+  margin-bottom: 14px;
+}
+.md-note {
+  font-size: 12px;
+  color: var(--txm);
+  margin-top: 12px;
+}
+
+/* ---- Landscape ---- */
+
+.md-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.md-stat {
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--rl);
+  padding: 14px 16px;
+}
+.md-stat-val {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.md-stat-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--txm);
+  margin-top: 6px;
+}
+.md-stat-sub {
+  font-size: 11.5px;
+  color: var(--txm);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.md-bars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+}
+.md-bargroup {
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--rl);
+  padding: 14px 16px;
+}
+.md-bargroup h4 {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--txm);
+  margin-bottom: 10px;
+}
+.md-bar {
+  display: grid;
+  grid-template-columns: 78px 1fr 26px;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.md-bar-lbl {
+  color: var(--txm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.md-bar-track {
+  height: 6px;
+  background: var(--s2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.md-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+  border-radius: 3px;
+}
+.md-bar-num {
+  text-align: right;
+  color: var(--txm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Position ---- */
+
+.md-position p {
+  font-size: 13.5px;
+  color: var(--txm);
+}
+.md-position strong {
+  color: var(--tx);
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+.md-ahead {
+  color: var(--green) !important;
+}
+.md-behind {
+  color: var(--orange) !important;
+}
+
+/* ---- Combinations ---- */
+
+.md-combos {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.md-combo {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  row-gap: 5px;
+}
+.md-combo-num {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.md-combo-lbl {
+  font-size: 13px;
+  color: var(--txm);
+}
+.md-combo-bar {
+  grid-column: 2;
+  height: 5px;
+  background: var(--s2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.md-combo-fill {
+  display: block;
+  height: 100%;
+  background: var(--green);
+  border-radius: 3px;
+}
+
+/* ---- Adjacent majors ---- */
+
+.md-adjacent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.md-adj {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+  padding: 8px 13px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.12s, background 0.12s;
+}
+.md-adj:hover:not(:disabled) {
+  border-color: var(--blue);
+  background: var(--bbg);
+}
+.md-adj:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.md-adj-share {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--blue);
+  font-variant-numeric: tabular-nums;
+}
+.md-adj-name {
+  font-size: 12.5px;
+  color: var(--tx);
+}
+
+/* ---- School table extras ---- */
+
+.tier-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 20px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.tier-reach {
+  background: var(--obg);
+  color: var(--orange);
+}
+.tier-target {
+  background: var(--gbg);
+  color: var(--green);
+}
+.tier-safety {
+  background: var(--bbg);
+  color: var(--blue);
+}
+.md-also {
+  color: var(--green);
+  font-weight: 600;
+}
+.md-none {
+  color: var(--txm);
+}
+
+/* ---- Research ---- */
+
+.md-questions {
+  margin: 0 0 18px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.md-questions li {
+  font-size: 13px;
+  color: var(--txm);
+  padding-left: 4px;
+}
+.md-questions li::marker {
+  color: var(--blue);
+  font-weight: 700;
+  font-family: var(--font-display);
+}
+
+.md-ask {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+  border-top: 0.5px solid var(--border);
+  padding-top: 16px;
+}
+.md-ask .field {
+  flex: 1;
+  min-width: 220px;
+}
+.md-ask .field select {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  height: 34px;
+  color: var(--tx);
+  background: var(--s2);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+  padding: 0 10px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.md-ask .field select:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+/* =========================================================================
    Application tracker & timeline
 
    Deadline pressure is the whole point of this page, so urgency is the one
@@ -1688,13 +2003,13 @@ table.uni-table {
   }
 }
 
-@media (max-width: 720px) {
-  .features {
-    grid-template-columns: 1fr;
-  }
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
+/* The collapse point is set by the nav's own width, not by a device size.
+   Seven links plus the theme toggle need roughly 700px, and the brand takes
+   another 225 — so below ~980px the row would wrap to two lines inside a
+   60px header. The hamburger has to take over before that happens, which is
+   well before the 720px the page's content layout switches at. Adding a nav
+   item means re-measuring this number. */
+@media (max-width: 980px) {
   .nav {
     position: fixed;
     inset: 60px 0 auto 0;
@@ -1743,6 +2058,15 @@ table.uni-table {
     background: var(--tx);
     margin-inline: auto;
     width: 16px;
+  }
+}
+
+@media (max-width: 720px) {
+  .features {
+    grid-template-columns: 1fr;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
   }
   .msg {
     max-width: 90%;
@@ -1852,8 +2176,13 @@ table.uni-table {
     min-height: 44px;
   }
   .track-controls .field select,
-  .track-controls .field input[type="date"] {
+  .track-controls .field input[type="date"],
+  .md-ask .field select {
     height: 44px;
+  }
+  .md-adj {
+    min-height: 44px;
+    align-items: center;
   }
   .btn-sm {
     height: 44px;

@@ -3,6 +3,7 @@ import type {
   ApplicationMeta,
   ApplicationsResponse,
   LlmProvider,
+  MajorInsights,
   Meta,
   ProfileInput,
   RecommendationResponse,
@@ -57,6 +58,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ question, studentId }),
     }),
+
+  majors: () => request<{ majors: { major: string; schoolCount: number }[] }>("/majors"),
+
+  majorInsights: (major: string, studentId?: string) =>
+    request<MajorInsights>(
+      `/majors/${encodeURIComponent(major)}${studentId ? `?studentId=${studentId}` : ""}`
+    ),
 
   applicationMeta: () => request<ApplicationMeta>("/application-meta"),
 

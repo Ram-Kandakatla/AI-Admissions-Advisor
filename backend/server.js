@@ -10,6 +10,8 @@
 //   GET  /api/students/:id/recommendations   Tiered university matches
 //   POST /api/chat                           Ask the admissions chatbot
 //   GET  /api/students/:id/chat              Fetch conversation history
+//   GET  /api/majors                         Every major with a school count
+//   GET  /api/majors/:major                  Deep dive on one major (?studentId= to personalize)
 //   GET  /api/application-meta               Decision plans, statuses, checklist
 //   GET  /api/students/:id/applications      Tracked applications + timeline
 //   POST /api/students/:id/applications      Track a university
@@ -34,6 +36,7 @@ const {
 } = require("./models/application");
 const store = require("./store/dataStore");
 const { recommendUniversities } = require("./services/recommendationEngine");
+const { majorInsights, majorCatalog } = require("./services/majorInsights");
 const { answerAdmissionsQuestion, provider } = require("./services/llmService");
 
 const app = express();
@@ -87,6 +90,26 @@ app.get("/api/universities", (req, res) => {
     );
   }
   res.json(unis);
+});
+
+// ---- Majors ----
+
+app.get("/api/majors", (req, res) => {
+  res.json({ majors: majorCatalog() });
+});
+
+app.get("/api/majors/:major", (req, res) => {
+  const { studentId } = req.query;
+  const student = studentId ? store.getStudent(String(studentId)) : null;
+  if (studentId && !student) {
+    return res.status(404).json({ error: "Student not found" });
+  }
+
+  const insights = majorInsights(req.params.major, student);
+  if (insights.schoolCount === 0) {
+    return res.status(404).json({ error: `No universities in this set offer ${req.params.major}.` });
+  }
+  res.json(insights);
 });
 
 // ---- Students ----

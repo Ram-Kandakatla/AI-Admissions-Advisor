@@ -7,9 +7,10 @@ import Recommendations from "./components/Recommendations";
 import UniversityExplorer from "./components/UniversityExplorer";
 import ChatBot from "./components/ChatBot";
 import ApplicationTracker from "./components/ApplicationTracker";
+import MajorDeepDive from "./components/MajorDeepDive";
 import BrandMark from "./components/BrandMark";
 
-type View = "home" | "profile" | "matches" | "tracker" | "explore" | "chat";
+type View = "home" | "profile" | "matches" | "tracker" | "majors" | "explore" | "chat";
 type Theme = "light" | "dark";
 
 // The pre-paint script in index.html has already put the right theme on
@@ -23,6 +24,9 @@ export default function App() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
+  // A question handed to the chatbot from another page (the major deep dive
+  // sends "tell me about X at Y"). Cleared once the chatbot has sent it.
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
 
   useEffect(() => {
     api.meta().then(setMeta).catch(() => setMeta(null));
@@ -53,6 +57,7 @@ export default function App() {
     { key: "profile", label: "Your Profile" },
     { key: "matches", label: "Matches", needsProfile: true },
     { key: "tracker", label: "Tracker", needsProfile: true },
+    { key: "majors", label: "Majors" },
     { key: "explore", label: "Explore" },
     { key: "chat", label: "Ask Compass" },
   ];
@@ -136,8 +141,24 @@ export default function App() {
             <ApplicationTracker student={student} onGoMatches={() => go("matches")} />
           )}
           {view === "tracker" && !student && <NeedsProfile onGo={() => go("profile")} />}
+          {view === "majors" && (
+            <MajorDeepDive
+              student={student}
+              onAsk={(question) => {
+                setPendingQuestion(question);
+                go("chat");
+              }}
+            />
+          )}
           {view === "explore" && <UniversityExplorer meta={meta} />}
-          {view === "chat" && <ChatBot student={student} onBuildProfile={() => go("profile")} />}
+          {view === "chat" && (
+            <ChatBot
+              student={student}
+              onBuildProfile={() => go("profile")}
+              initialQuestion={pendingQuestion}
+              onQuestionSent={() => setPendingQuestion(null)}
+            />
+          )}
         </div>
       </main>
 

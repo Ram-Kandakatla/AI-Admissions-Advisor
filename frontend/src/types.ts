@@ -60,6 +60,59 @@ export interface Meta {
   financialNeed: FinancialNeed[];
 }
 
+// ---- Major deep dive ----
+
+export interface Spread {
+  min: number;
+  median: number;
+  max: number;
+}
+
+export interface MajorSchool {
+  id: number;
+  name: string;
+  shortName: string;
+  city: string;
+  state: string;
+  region: string;
+  setting: string;
+  type: string;
+  avgGPA: number;
+  avgSAT: number;
+  acceptanceRate: number;
+  tuition: number;
+  /** Which of the student's other intended majors this school also offers. */
+  alsoCovers: string[];
+  tier: Tier | null;
+}
+
+export interface MajorInsights {
+  major: string;
+  schoolCount: number;
+  shareOfDataset: number;
+  selectivity: Spread;
+  tuition: Spread;
+  avgGPA: Spread;
+  avgSAT: Spread;
+  regions: { key: string; count: number }[];
+  settings: { key: string; count: number }[];
+  types: { key: string; count: number }[];
+  /** Majors commonly offered alongside this one, with the share of schools. */
+  adjacent: { key: string; count: number; share: number }[];
+  position: {
+    tiers: Record<Tier, number>;
+    gpa: number;
+    medianGPA: number;
+    gpaGapToMedian: number;
+    satScore: number | null;
+    medianSAT: number | null;
+    affordable: number;
+  } | null;
+  combinations: { major: string; count: number; schools: number[] }[] | null;
+  researchQuestions: string[];
+  schools: MajorSchool[];
+}
+
 // ---- Application tracker ----
 
 export type DecisionPlan = "ED" | "ED2" | "EA" | "REA" | "RD" | "PRIORITY" | "ROLLING";
