@@ -1,9 +1,17 @@
 /* =========================================================================
    Compass — College Admissions Advisor
-   Design system ported from the GPA Visualizer: warm neutral paper, a
-   blue/green/orange/red semantic accent set, and a compact, data-legible
-   surface treatment. Display: Space Grotesk · Body: IBM Plex Sans.
-   Layout (sticky top header + centered views) is unchanged.
+
+   The page is a sky. Content sits on white "cloud decks" — the header and
+   footer end in a scalloped cloud fringe rather than a hairline, and the
+   cards that carry a college list are propped up on cloud tufts. Dark mode
+   is the same sky after dusk: deeper teal, slate-blue clouds, a scatter of
+   translucent yellow stars and one crescent moon.
+
+   The accent set is unchanged in meaning (blue / green / orange / red carry
+   safety / target / reach / urgent), only darkened enough to clear WCAG AA
+   against the new cooler ground.
+
+   Display: Bricolage Grotesque · Body: IBM Plex Sans.
    ========================================================================= */
 
 /* ── Reset ── */
@@ -13,49 +21,71 @@
   box-sizing: border-box;
 }
 
+/* =========================================================================
+   Cloud shape
+
+   Clouds live in the sky and nowhere else — they are never attached to the
+   chrome or to a card. This is the one shape, used only by the fixed
+   background layer. It is a mask rather than an image so a single --cloud
+   token recolors it when the theme flips: white by day, slate teal at night.
+   ========================================================================= */
+:root {
+  --cl-soft: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='110' viewBox='0 0 300 110'><g fill='%23000'><circle cx='78' cy='62' r='40'/><circle cx='150' cy='50' r='48'/><circle cx='218' cy='66' r='36'/><rect x='38' y='66' width='224' height='36' rx='18'/></g></svg>");
+}
+
 /* ── Design tokens ── */
 :root {
-  --bg: #f7f4ef;
-  --surface: #fffdfa;
-  --s2: #ece7df;
-  --s3: #e2ddd3;
-  --border: rgba(60, 40, 20, 0.08);
-  --bmed: rgba(60, 40, 20, 0.14);
-  --tx: #1c1c1a;
-  /* Darkened from #6a6a66 so secondary text clears 4.5:1 on the *control*
-     fills (--s2/--s3), not just on paper — chips and segmented buttons sit
-     on --s2 and were landing at 4.41. */
-  --txm: #5f5f5b;
-  --txf: #aaa9a4;
-  --green: #2a7a3b;
-  --gbg: #e6f5e9;
-  --blue: #1a60b0;
-  --bbg: #ddeaf9;
-  /* Darkened from the GPA Visualizer's #c05c00, which measured 3.9–4.3:1 as
-     small text on these surfaces. #a85200 clears 4.5:1 on paper, panel and
-     its own tint, and reads as the same terracotta. */
-  --orange: #a85200;
-  --obg: #fdefd8;
+  /* Overcast cyan, not poster cyan — the reference's #33cbe8 desaturated and
+     lightened until 12px secondary text still clears 4.5:1 on top of it. */
+  --bg: #c3dce2;
+  --surface: #fbfdfd;
+  --s2: #e9f1f3;
+  --s3: #dbe8eb;
+  --border: rgba(16, 52, 64, 0.1);
+  --bmed: rgba(16, 52, 64, 0.17);
+  --tx: #14262d;
+  /* Secondary text sits on four grounds — sky, paper, --s2 and --s3. This is
+     the darkest of those four constraints (sky, at 5.1:1). */
+  --txm: #47595f;
+  --txf: #9ab0b7;
+  /* Each accent is the original hue held, then darkened until it clears
+     4.5:1 as *small* text on the sky — the tightest surface on the page.
+     Timeline counts and deadline dates sit there directly. */
+  --green: #1f6b32;
+  --gbg: #ddf0e2;
+  --blue: #175795;
+  --bbg: #dcebf7;
+  --orange: #94470a;
+  --obg: #fbedd6;
   --red: #b52020;
-  --rbg: #fde8e8;
-  --gline: #374151;
-  --glow: rgba(255, 158, 68, 0.22);
+  --rbg: #fbe4e4;
+  --gline: #2c4048;
+  --glow: rgba(14, 58, 74, 0.26);
   /* Text laid on top of a solid --blue / --red fill. The accents lighten in
      dark mode, so this flips to ink to keep the fills readable. */
   --on-accent: #fff;
+  /* Label on a solid --tx fill. Separate from --bg now that --bg is a
+     saturated sky and would tint the primary button's label. */
+  --on-ink: #f6fbfc;
   /* --glow is an accent, not a texture: it belongs on the hero's floating
      card stack and on the uni-card hover lift, and nowhere else. Every other
-     surface is separated by its .5px border alone. A warm shadow under every
+     surface is separated by its .5px border alone. A shadow under every
      panel is what makes a page read as generated. */
   --r: 8px;
   --rl: 14px;
 
+  /* Cloud fill + how strongly the drifting sky layer reads. */
+  --cloud: #ffffff;
+  --cloud-haze: 0.5;
+  --sky-stars: none;
+
   /* ── Type system ──
      Body: IBM Plex Sans — a humanist, data-legible workhorse.
-     Display: Space Grotesk — tighter and slightly technical, used for
-     headings and every figure (match scores, GPAs, tuition). */
+     Display: Bricolage Grotesque — a warm, slightly wonky grotesque. It does
+     the softening the sky asks for without costing any legibility on the
+     figures (match scores, GPAs, tuition) it also sets. */
   --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-display: "Space Grotesk", var(--font-body);
+  --font-display: "Bricolage Grotesque", var(--font-body);
   --display: var(--font-display);
   --body: var(--font-body);
 
@@ -64,26 +94,41 @@
 }
 
 [data-theme="dark"] {
-  --bg: #1b1714;
-  --surface: #242019;
-  --s2: #2d2822;
-  --s3: #37312a;
-  --border: rgba(255, 235, 215, 0.08);
-  --bmed: rgba(255, 235, 215, 0.14);
-  --tx: #f0efe9;
-  --txm: #9e9e98;
-  --txf: #55554f;
-  --green: #4ec668;
-  --gbg: #0e2e16;
-  --blue: #5fa8f5;
-  --bbg: #0d2238;
-  --orange: #f5a742;
-  --obg: #2a1a06;
-  --red: #f06060;
-  --rbg: #2a0d0d;
-  --gline: #c8c8c0;
-  --glow: rgba(255, 140, 60, 0.22);
-  --on-accent: #0e1e2f;
+  --bg: #0b2733;
+  --surface: #123642;
+  --s2: #1a4453;
+  --s3: #235062;
+  --border: rgba(190, 232, 244, 0.1);
+  --bmed: rgba(190, 232, 244, 0.18);
+  --tx: #e6f3f7;
+  --txm: #a6c2cb;
+  --txf: #4e6f7c;
+  --green: #57c986;
+  --gbg: #0f3327;
+  --blue: #66b8f0;
+  --bbg: #10344c;
+  --orange: #f0a94a;
+  --obg: #33240c;
+  --red: #f4706e;
+  --rbg: #38181a;
+  --gline: #b9d2db;
+  --glow: rgba(0, 0, 0, 0.5);
+  --on-accent: #08222c;
+  --on-ink: #0b2733;
+
+  /* Night clouds are lit from below by the city, not by the sun — they go
+     slate teal rather than grey, and the haze drops so the stars read. */
+  --cloud: #17414f;
+  --cloud-haze: 0.62;
+  --sky-stars: var(--stars), var(--stars-far), var(--moon);
+
+  /* Two star layers on deliberately mismatched tiles (520 and 730). A single
+     tile reads as wallpaper — the eye finds the grid within a screen or two.
+     Sizes that don't share a factor push the visible repeat far past any
+     realistic viewport, so the scatter stays a scatter. */
+  --stars: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='520' height='520' viewBox='0 0 520 520'><g fill='%23ffe6a3'><path opacity='.5' d='M60 35Q60 48 73 48Q60 48 60 61Q60 48 47 48Q60 48 60 35Z'/><path opacity='.4' d='M300 111Q300 120 309 120Q300 120 300 129Q300 120 291 120Q300 120 300 111Z'/><path opacity='.45' d='M180 285Q180 300 195 300Q180 300 180 315Q180 300 165 300Q180 300 180 285Z'/><path opacity='.35' d='M430 242Q430 250 438 250Q430 250 430 258Q430 250 422 250Q430 250 430 242Z'/><path opacity='.38' d='M95 420Q95 430 105 430Q95 430 95 440Q95 430 85 430Q95 430 95 420Z'/><path opacity='.3' d='M390 448Q390 455 397 455Q390 455 390 462Q390 455 383 455Q390 455 390 448Z'/></g></svg>");
+  --stars-far: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='730' height='730' viewBox='0 0 730 730'><g fill='%23ffe6a3'><path opacity='.32' d='M150 84Q150 90 156 90Q150 90 150 96Q150 90 144 90Q150 90 150 84Z'/><path opacity='.34' d='M560 373Q560 380 567 380Q560 380 560 387Q560 380 553 380Q560 380 560 373Z'/><path opacity='.28' d='M330 595Q330 600 335 600Q330 600 330 605Q330 600 325 600Q330 600 330 595Z'/><circle opacity='.3' cx='420' cy='60' r='2'/><circle opacity='.24' cx='90' cy='280' r='1.6'/><circle opacity='.28' cx='640' cy='180' r='1.8'/><circle opacity='.22' cx='250' cy='420' r='1.5'/><circle opacity='.3' cx='700' cy='520' r='2'/><circle opacity='.25' cx='60' cy='640' r='1.7'/><circle opacity='.23' cx='480' cy='700' r='1.6'/><circle opacity='.2' cx='200' cy='150' r='1.4'/><circle opacity='.22' cx='600' cy='650' r='1.5'/></g></svg>");
+  --moon: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='170' height='170' viewBox='0 0 170 170'><path fill='%23ffe6a3' opacity='.22' d='M112 16a70 70 0 1 0 45 111A61 61 0 0 1 112 16Z'/></svg>");
 }
 
 /* ── Base ── */
@@ -93,6 +138,10 @@ html {
 
 body {
   margin: 0;
+  /* Flat, deliberately. A vertical sky gradient would look richer for one
+     screenshot, but the timeline's dots punch the rail out with var(--bg) and
+     a gradient makes that ring wrong at every scroll position but one. The
+     depth comes from the cloud layers below instead. */
   background: var(--bg);
   color: var(--tx);
   font-family: var(--font-body);
@@ -103,6 +152,53 @@ body {
   text-rendering: optimizeLegibility;
   transition: background 0.2s, color 0.2s;
 }
+
+/* ── The sky ──
+   Two fixed layers behind everything. ::before is three slow clouds drawn as
+   mask layers so one --cloud token colors all of them; ::after is the night
+   sky's stars and moon, which carry their own yellow and so are switched off
+   entirely in light mode. Both are inert to the pointer. */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+body::before {
+  background: var(--cloud);
+  opacity: var(--cloud-haze);
+  -webkit-mask-image: var(--cl-soft), var(--cl-soft), var(--cl-soft);
+  mask-image: var(--cl-soft), var(--cl-soft), var(--cl-soft);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: -8vw 14vh, 72vw 40vh, 26vw 84vh;
+  mask-position: -8vw 14vh, 72vw 40vh, 26vw 84vh;
+  -webkit-mask-size: 44vw auto, 38vw auto, 52vw auto;
+  mask-size: 44vw auto, 38vw auto, 52vw auto;
+  animation: drift 120s ease-in-out infinite alternate;
+}
+
+body::after {
+  background-image: var(--sky-stars);
+  background-repeat: repeat, repeat, no-repeat;
+  background-position: 0 0, 0 0, right 5vw top 80px;
+  background-size: 520px 520px, 730px 730px, 170px 170px;
+}
+
+/* Transform on a fixed compositor layer — cheap, and the only page-level
+   motion on the site. */
+@keyframes drift {
+  from {
+    transform: translate3d(-1.5%, 0, 0);
+  }
+  to {
+    transform: translate3d(1.5%, 0, 0);
+  }
+}
+
 
 h1,
 h2,
@@ -156,10 +252,13 @@ img {
   padding-inline: clamp(18px, 5vw, 44px);
 }
 
+/* Everything real rides above the sky. */
 .app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 1;
 }
 
 .view {
@@ -374,7 +473,7 @@ img {
 }
 .btn-primary {
   background: var(--tx);
-  color: var(--bg);
+  color: var(--on-ink);
   border-color: var(--tx);
 }
 .btn-primary:hover {
@@ -403,11 +502,14 @@ img {
    Hero
    ========================================================================= */
 
+/* No overflow clip: the middle tier card is nudged 12px right, which puts it
+   just past the hero's content edge. Clipping there sheared its rounded
+   right corner flat. The 12px lands inside the container's own inline
+   padding (>=18px at every width), so nothing reaches the page edge. */
 .hero {
   padding-block: clamp(36px, 6vw, 68px);
   border-bottom: 0.5px solid var(--border);
   position: relative;
-  overflow: hidden;
 }
 
 .hero-grid {
@@ -446,15 +548,18 @@ img {
   color: var(--txm);
 }
 
-/* Hero visual — a stylized "college list" of stacked tier cards */
+/* Hero visual — a stylized "college list" of stacked tier cards. The outer
+   two are rotated a degree and the middle one nudged right, so the stack
+   reads as a pile of real cards rather than a table. */
 .list-preview {
   display: grid;
   gap: 10px;
 }
 .list-card {
+  position: relative;
+  overflow: hidden;
   background: var(--surface);
   border: 0.5px solid var(--bmed);
-  border-left: 3px solid var(--tier);
   border-radius: var(--rl);
   padding: 13px 16px;
   box-shadow: 0 14px 22px -14px var(--glow);
@@ -463,6 +568,18 @@ img {
   justify-content: space-between;
   gap: 14px;
 }
+
+/* A 3px border-left tapers to a point where it meets the 14px corner radius,
+   which is what made these rails look pinched. An absolutely positioned bar
+   clipped by the card's own overflow holds one width the whole way down. */
+.list-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--tier);
+}
+
 .list-card:nth-child(1) {
   --tier: var(--orange);
   transform: rotate(-1deg);
@@ -2013,13 +2130,14 @@ table.uni-table {
   .nav {
     position: fixed;
     inset: 60px 0 auto 0;
+    z-index: 2;
     flex-direction: column;
     align-items: stretch;
     gap: 2px;
     background: var(--surface);
     border-bottom: 0.5px solid var(--bmed);
     padding: 12px clamp(18px, 5vw, 44px) 18px;
-    box-shadow: 0 14px 24px -14px rgba(60, 35, 10, 0.35);
+    box-shadow: 0 16px 26px -16px var(--glow);
     transform: translateY(-160%);
     transition: transform 0.25s ease;
   }
@@ -2212,5 +2330,11 @@ table.uni-table {
   }
   .list-card {
     transform: none !important;
+  }
+  /* The sky holds still, but the clouds and stars stay — they are structure
+     here, not decoration. */
+  body::before {
+    animation: none;
+    transform: none;
   }
 }
