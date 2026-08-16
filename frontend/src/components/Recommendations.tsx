@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { MAX_COMPARE } from "../compare";
+import { csvFilename, downloadCsv, recommendationsToCsv } from "../exportList";
 import type { Recommendation, RecommendationResponse, StudentRecord, Tier } from "../types";
 
 const TIER_META: Record<Tier, { title: string; blurb: string }> = {
@@ -8,14 +10,24 @@ const TIER_META: Record<Tier, { title: string; blurb: string }> = {
   safety: { title: "Safety", blurb: "Very likely admits you'd be happy to attend." },
 };
 
+const printedOn = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "long",
+});
+
 export default function Recommendations({
   student,
   onEdit,
   onAsk,
+  compareIds,
+  onToggleCompare,
+  onGoCompare,
 }: {
   student: StudentRecord;
   onEdit: () => void;
   onAsk: () => void;
+  compareIds: number[];
+  onToggleCompare: (id: number) => void;
+  onGoCompare: () => void;
 }) {
   const [data, setData] = useState<RecommendationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +59,18 @@ export default function Recommendations({
 
   return (
     <div>
+      {/* Print-only masthead. The app's chrome is hidden on paper, so without
+          this a saved PDF would arrive with no name and no date on it. */}
+      <div className="print-only print-head">
+        <div className="print-brand">Compass — college list</div>
+        <div className="print-meta">
+          {student.name} · GPA {student.gpa}
+          {student.satScore ? ` · SAT ${student.satScore}` : ""}
+          {student.actScore ? ` · ACT ${student.actScore}` : ""} · saved{" "}
+          {printedOn.format(new Date())}
+        </div>
+      </div>
+
       <div className="view-head">
         <span className="eyebrow">Matches for {student.name}</span>
         <h2 className="section-title">
@@ -56,7 +80,7 @@ export default function Recommendations({
           Sorted by how you stack up on GPA, tests, major fit, region, and budget. Match scores are a
           guide, not a verdict — admissions weigh essays and context too.
         </p>
-        <div className="form-footer" style={{ marginTop: 20 }}>
+        <div className="form-footer no-print" style={{ marginTop: 20 }}>
           <button className="btn btn-ghost" onClick={onEdit}>
             Edit profile
           </button>
@@ -79,6 +103,24 @@ export default function Recommendations({
         </div>
       ) : (
         <>
+          <div className="export-bar no-print">
+            <div className="export-copy">
+              <strong>Keep this list.</strong> Save it as a PDF to print or email, or pull it into a
+              spreadsheet to track alongside your own notes.
+            </div>
+            <div className="export-actions">
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => downloadCsv(csvFilename(student), recommendationsToCsv(data))}
+              >
+                Export CSV
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={() => window.print()}>
+                Save as PDF
+              </button>
+            </div>
+          </div>
+
           <div className="rec-summary">
             {(["reach", "target", "safety"] as Tier[]).map((t) => (
               <div className={`rec-stat ${t}`} key={t}>
@@ -101,11 +143,33 @@ export default function Recommendations({
                 </div>
                 <div className="uni-grid">
                   {data.recommendations[t].map((uni) => (
-                    <UniCard key={uni.id} uni={uni} />
+                    <UniCard
+                      key={uni.id}
+                      uni={uni}
+                      comparing={compareIds.includes(uni.id)}
+                      compareFull={compareIds.length >= MAX_COMPARE}
+                      onToggleCompare={() => onToggleCompare(uni.id)}
+                    />
                   ))}
                 </div>
               </section>
             ) : null
+          )}
+
+          {compareIds.length > 0 && (
+            <div className="compare-tray no-print" role="status">
+              <span>
+                {compareIds.length} school{compareIds.length === 1 ? "" : "s"} picked to compare
+                {compareIds.length === 1 ? " — add one more" : ""}
+              </span>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={compareIds.length < 2}
+                onClick={onGoCompare}
+              >
+                Compare side by side <span className="btn-arrow">→</span>
+              </button>
+            </div>
           )}
         </>
       )}
@@ -122,7 +186,21 @@ function tierVar(t: Tier): React.CSSProperties {
   return { ["--tier" as string]: map[t] } as React.CSSProperties;
 }
 
-function UniCard({ uni }: { uni: Recommendation }) {
+function UniCard({
+  uni,
+  comparing,
+  compareFull,
+  onToggleCompare,
+}: {
+  uni: Recommendation;
+  comparing: boolean;
+  compareFull: boolean;
+  onToggleCompare: () => void;
+}) {
+  // A full tray shouldn't grey out the schools already in it — those are the
+  // ones you need to be able to click to make room.
+  const locked = compareFull && !comparing;
+
   return (
     <article className={`uni-card ${uni.tier}`}>
       <div className="uni-card-top">
@@ -164,6 +242,17 @@ function UniCard({ uni }: { uni: Recommendation }) {
           Tuition <b>${(uni.tuition / 1000).toFixed(0)}k</b>
         </span>
       </div>
+
+      <button
+        type="button"
+        className="cmp-toggle no-print"
+        aria-pressed={comparing}
+        disabled={locked}
+        title={locked ? `You can compare ${MAX_COMPARE} schools at a time` : undefined}
+        onClick={onToggleCompare}
+      >
+        {comparing ? "✓ In comparison" : "Compare"}
+      </button>
     </article>
   );
 }

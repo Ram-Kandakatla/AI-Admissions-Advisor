@@ -382,6 +382,53 @@ img {
   display: none;
 }
 
+/* ── Grouped nav ──
+   Two of the nine destinations pair off into menus. The trigger is a
+   .nav-link like any other so it picks up the same hover and current states;
+   it only adds a caret and, when a page inside it is open, the current
+   highlight stays on the closed group so you can still see where you are. */
+.nav-group {
+  position: relative;
+  display: flex;
+}
+.nav-group-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.nav-caret {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s;
+}
+.nav-group-btn[aria-expanded="true"] .nav-caret {
+  transform: rotate(180deg);
+}
+.nav-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 50;
+  min-width: 172px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--rl);
+  box-shadow: 0 18px 30px -18px var(--glow);
+}
+.nav-menu .nav-link {
+  width: 100%;
+  text-align: left;
+}
+
 /* ── Theme toggle (header) ── */
 .theme-toggle {
   display: inline-flex;
@@ -2032,10 +2079,6 @@ table.uni-table {
   color: var(--orange);
   margin-bottom: 22px;
 }
-.banner code {
-  background: color-mix(in srgb, var(--orange) 14%, transparent);
-}
-
 /* The ED warning is a rule you can break by accident, so it reads red rather
    than the informational orange above. Must stay *after* .banner — same
    specificity, so source order is what decides it. */
@@ -2092,6 +2135,605 @@ table.uni-table {
 }
 
 /* =========================================================================
+   Save & export (recommendations)
+   ========================================================================= */
+
+.export-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--rl);
+  padding: 13px 16px;
+  margin-bottom: 26px;
+}
+.export-copy {
+  flex: 1;
+  min-width: 240px;
+  font-size: 12.5px;
+  color: var(--txm);
+}
+.export-copy strong {
+  color: var(--tx);
+}
+.export-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* The print masthead is off-screen until the print stylesheet turns it on. */
+.print-only {
+  display: none;
+}
+
+/* =========================================================================
+   Compare
+
+   No row here declares a winner. A low acceptance rate is a hurdle, not a
+   feature, and the one figure with an honest direction — sticker tuition —
+   still isn't what a family pays. So the standout column on each row is
+   labelled with what it actually is, and the highlight is the same
+   informational blue everywhere rather than a good/bad color.
+   ========================================================================= */
+
+.cmp-toggle {
+  margin-top: auto;
+  align-self: flex-start;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: none;
+  border: 0.5px solid var(--bmed);
+  border-radius: 20px;
+  color: var(--txm);
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.cmp-toggle:hover:not(:disabled) {
+  background: var(--s2);
+  color: var(--tx);
+}
+.cmp-toggle[aria-pressed="true"] {
+  background: var(--bbg);
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 34%, transparent);
+}
+.cmp-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Rides at the bottom of the viewport while you scroll the tiers, so the
+   count and the way out of the page are always in reach. */
+.compare-tray {
+  position: sticky;
+  bottom: 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 26px;
+  padding: 11px 15px;
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--rl);
+  box-shadow: 0 18px 30px -18px var(--glow);
+  font-size: 13px;
+  color: var(--txm);
+}
+
+.cmp-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.cmp-picker {
+  position: relative;
+  flex: 1;
+  min-width: 240px;
+}
+.cmp-picker input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  height: 34px;
+  padding: 0 10px;
+  background: var(--s2);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+  color: var(--tx);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.cmp-picker input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+.cmp-picker input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.cmp-options {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  list-style: none;
+  margin: 0;
+  padding: 5px;
+  max-height: 302px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--rl);
+  box-shadow: 0 18px 30px -18px var(--glow);
+}
+.cmp-options button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--r);
+  padding: 7px 10px;
+  cursor: pointer;
+  color: var(--tx);
+}
+.cmp-options button[data-active] {
+  background: var(--s2);
+}
+.cmp-opt-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cmp-opt-sub {
+  display: block;
+  font-size: 11.5px;
+  color: var(--txm);
+}
+.cmp-empty {
+  padding: 9px 10px;
+  font-size: 12.5px;
+  color: var(--txm);
+}
+.cmp-chosen {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+/* Blue rather than the tag's default green: this is a selection, not a
+   verdict, and green already means "target" and "affordable" on this site. */
+.cmp-chosen .tag {
+  background: var(--bbg);
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 30%, transparent);
+}
+.cmp-chosen .tag button {
+  background: color-mix(in srgb, var(--blue) 16%, transparent);
+}
+.cmp-muted {
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+.cmp-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--rl);
+  scrollbar-width: thin;
+  scrollbar-color: var(--bmed) transparent;
+}
+.cmp-wrap::-webkit-scrollbar {
+  height: 8px;
+}
+.cmp-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cmp-wrap::-webkit-scrollbar-thumb {
+  background: var(--bmed);
+  border-radius: 4px;
+}
+table.cmp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  /* Sized from the column count so two schools don't stretch to a scroll bar
+     they don't need, and three still get room to breathe before it appears. */
+  min-width: calc(180px + var(--cols) * 190px);
+}
+.cmp-table thead th {
+  text-align: left;
+  vertical-align: top;
+  padding: 13px 14px;
+  background: var(--s2);
+  border-bottom: 0.5px solid var(--bmed);
+}
+.cmp-corner {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--txm);
+}
+.cmp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cmp-name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+  color: var(--tx);
+}
+.cmp-sub {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--txm);
+}
+.cmp-drop {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--txm);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cmp-drop:hover {
+  color: var(--red);
+}
+/* The label column stays put while the schools scroll under it — without it
+   a three-column comparison on a phone is just numbers with no rows. */
+.cmp-table th[scope="row"],
+.cmp-table thead th:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--s2);
+}
+.cmp-table thead th:first-child {
+  z-index: 2;
+}
+.cmp-table th[scope="row"] {
+  z-index: 1;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--txm);
+  padding: 11px 14px;
+  border-bottom: 0.5px solid var(--border);
+}
+.cmp-table td {
+  vertical-align: top;
+  padding: 11px 14px;
+  border-bottom: 0.5px solid var(--border);
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+.cmp-table tbody tr:last-child td,
+.cmp-table tbody tr:last-child th {
+  border-bottom: 0;
+}
+.cmp-table td[data-standout] {
+  background: var(--bbg);
+}
+.cmp-value {
+  font-size: 13.5px;
+}
+.cmp-flag {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--blue);
+}
+.cmp-majors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-variant-numeric: normal;
+}
+.cmp-majors span {
+  font-size: 11px;
+  color: var(--txm);
+  background: var(--s2);
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+.cmp-majors .cmp-hit {
+  background: var(--gbg);
+  color: var(--green);
+  font-weight: 600;
+}
+.cmp-over {
+  color: var(--green);
+  font-weight: 600;
+}
+.cmp-under {
+  color: var(--orange);
+  font-weight: 600;
+}
+
+/* =========================================================================
+   Application timeline (roadmap)
+
+   Its own `rm-` prefix rather than reusing the tracker's `tl-`: the tracker
+   draws a short list of one student's dates, this draws nine months of the
+   whole cycle with the student's dates threaded through it. Shared class
+   names would tie two layouts with different jobs to each other.
+   ========================================================================= */
+
+.rm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 18px;
+}
+.rm-key {
+  --k: var(--txm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--txm);
+}
+.rm-key i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--k);
+}
+/* Your own deadlines are told apart by shape, not color — their color is
+   already spoken for by how close they are. */
+.rm-key-own i {
+  width: 8px;
+  height: 8px;
+  background: none;
+  border: 1.6px solid var(--tx);
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+.rm-key[data-kind="apply"],
+.rm-item[data-kind="apply"] {
+  --k: var(--blue);
+}
+.rm-key[data-kind="aid"],
+.rm-item[data-kind="aid"] {
+  --k: var(--green);
+}
+.rm-key[data-kind="essays"],
+.rm-item[data-kind="essays"] {
+  --k: var(--orange);
+}
+.rm-key[data-kind="tests"],
+.rm-item[data-kind="tests"] {
+  --k: var(--txm);
+}
+.rm-key[data-kind="decide"],
+.rm-item[data-kind="decide"] {
+  --k: var(--tx);
+}
+
+.rm-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 13px 16px;
+  margin-bottom: 30px;
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--rl);
+  font-size: 12.5px;
+  color: var(--txm);
+}
+.rm-callout > div {
+  flex: 1;
+  min-width: 240px;
+}
+.rm-callout strong {
+  color: var(--tx);
+}
+
+.roadmap {
+  margin-bottom: 32px;
+}
+.rm-month + .rm-month {
+  margin-top: 24px;
+}
+/* Months that are behind you stay on the page — the shape of the year is the
+   point — but they step back so the eye lands on what's next. */
+.rm-month[data-past] {
+  opacity: 0.5;
+}
+.rm-month-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.rm-month-head h3 {
+  font-size: 15px;
+  letter-spacing: -0.2px;
+}
+.rm-now {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--on-accent);
+  background: var(--blue);
+  border-radius: 20px;
+  padding: 2px 9px;
+}
+
+.rm-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+/* The rail runs behind the dots and ties the month's rows into one thread. */
+.rm-items::before {
+  content: "";
+  position: absolute;
+  left: 81px;
+  top: 14px;
+  bottom: 14px;
+  width: 1px;
+  background: var(--bmed);
+}
+.rm-item {
+  --k: var(--txm);
+  display: grid;
+  grid-template-columns: 62px 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 7px 0;
+}
+.rm-item[data-passed] {
+  opacity: 0.5;
+}
+.rm-date {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--k);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+}
+.rm-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--k);
+  margin-inline: auto;
+  margin-top: 5px;
+  /* Punch the rail out behind the dot so the thread reads as passing through. */
+  box-shadow: 0 0 0 3px var(--bg);
+}
+.rm-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.rm-kind {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--k);
+  background: color-mix(in srgb, var(--k) 12%, transparent);
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+.rm-detail {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--txm);
+  max-width: 74ch;
+}
+
+/* ---- Your own deadlines, threaded in ---- */
+
+.rm-own {
+  --k: var(--txm);
+}
+.rm-own[data-urgency="past"],
+.rm-own[data-urgency="urgent"] {
+  --k: var(--red);
+}
+.rm-own[data-urgency="soon"] {
+  --k: var(--orange);
+}
+.rm-own[data-urgency="later"] {
+  --k: var(--blue);
+}
+.rm-own[data-urgency="done"] {
+  --k: var(--green);
+}
+.rm-own .rm-dot {
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+.rm-own .rm-title {
+  font-family: var(--font-display);
+}
+.rm-mine {
+  border: 0.5px solid color-mix(in srgb, var(--k) 40%, transparent);
+}
+
+.rm-rolling {
+  margin-bottom: 30px;
+}
+.rm-rolling h3 {
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+.rm-rolling-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rm-rolling-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  font-size: 13px;
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+}
+.rm-rolling-list .rm-name {
+  font-weight: 600;
+}
+.rm-rolling-list .rm-plan {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--txm);
+  background: var(--s2);
+  border-radius: 20px;
+  padding: 2px 9px;
+}
+
+/* =========================================================================
    Responsive
    ========================================================================= */
 
@@ -2121,12 +2763,32 @@ table.uni-table {
 }
 
 /* The collapse point is set by the nav's own width, not by a device size.
-   Seven links plus the theme toggle need roughly 700px, and the brand takes
-   another 225 — so below ~980px the row would wrap to two lines inside a
-   60px header. The hamburger has to take over before that happens, which is
-   well before the 720px the page's content layout switches at. Adding a nav
-   item means re-measuring this number. */
+   Three links, two group triggers and the theme toggle need roughly 570px,
+   and the brand takes another 225 — so below ~860px the row would wrap to
+   two lines inside a 60px header. 980px keeps a margin over that and matches
+   COMPACT_NAV in App.tsx, which is what switches the groups from dropdowns
+   to flat labelled sections. Change one and you must change the other, and
+   adding a nav item means re-measuring this number. */
 @media (max-width: 980px) {
+  /* No dropdowns down here: the panel has vertical room, so a group becomes
+     a heading over its links rather than a menu inside a menu. */
+  .nav-section {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 6px;
+  }
+  .nav-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--txm);
+    padding: 4px 12px 2px;
+  }
+  .nav-section .nav-link {
+    padding-left: 22px;
+  }
   .nav {
     position: fixed;
     inset: 60px 0 auto 0;
@@ -2223,6 +2885,24 @@ table.uni-table {
   .tl-items::before {
     left: 53px;
   }
+  /* The roadmap's date gutter narrows and the rail follows it. */
+  .rm-item {
+    grid-template-columns: 48px 18px minmax(0, 1fr);
+    column-gap: 8px;
+  }
+  .rm-items::before {
+    left: 65px;
+  }
+  .export-bar,
+  .rm-callout,
+  .compare-tray {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .export-actions .btn,
+  .compare-tray .btn {
+    flex: 1;
+  }
 }
 
 /* =========================================================================
@@ -2248,8 +2928,17 @@ table.uni-table {
   .field input[type="number"],
   .field select,
   .explorer-controls input,
-  .explorer-controls select {
+  .explorer-controls select,
+  .cmp-picker input {
     height: 44px;
+  }
+  .cmp-toggle,
+  .cmp-drop {
+    min-height: 44px;
+    padding-block: 8px;
+  }
+  .cmp-options button {
+    min-height: 44px;
   }
   .chip {
     height: 44px;
@@ -2316,6 +3005,249 @@ table.uni-table {
   .track-checklist label {
     min-height: 44px;
     padding-block: 6px;
+  }
+}
+
+/* =========================================================================
+   Print — "Save as PDF"
+
+   The export button on the matches page is just window.print(), so this
+   block *is* the PDF. Doing it here rather than with a server-side PDF
+   library keeps the saved list in the app's own type and color, and means
+   there is one layout to maintain instead of two that drift apart.
+
+   Everything is forced to the light palette regardless of the theme on
+   <html>: a student printing at 11pm in dark mode should not get a page of
+   black ink, and most browsers drop backgrounds on paper anyway, which would
+   leave pale dark-mode text on white.
+   ========================================================================= */
+
+@media print {
+  :root,
+  [data-theme="dark"] {
+    --bg: #fff;
+    --surface: #fff;
+    --s2: #f3f6f7;
+    --s3: #e9eef0;
+    --border: rgba(0, 0, 0, 0.16);
+    --bmed: rgba(0, 0, 0, 0.3);
+    --tx: #101a1e;
+    --txm: #454f53;
+    --txf: #8b989d;
+    --green: #1f6b32;
+    --gbg: #edf6ef;
+    --blue: #175795;
+    --bbg: #eaf1f8;
+    --orange: #94470a;
+    --obg: #fbf3e6;
+    --red: #b52020;
+    --rbg: #fbeeee;
+    --gline: #2c4048;
+    --glow: transparent;
+    --on-accent: #fff;
+    --on-ink: #fff;
+    --cloud-haze: 0;
+    --sky-stars: none;
+  }
+
+  /* Tier colors are load-bearing on this page — a reach printed the same as
+     a safety loses the only thing the list is sorting by. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page {
+    margin: 14mm;
+  }
+
+  html,
+  body {
+    background: #fff;
+  }
+  /* The drifting clouds and stars are a screen affordance. */
+  body::before,
+  body::after {
+    display: none;
+  }
+
+  .no-print {
+    display: none;
+  }
+  .print-only {
+    display: block;
+  }
+
+  .app {
+    display: block;
+    min-height: 0;
+  }
+  .view {
+    padding-block: 0;
+  }
+  .container {
+    max-width: none;
+    padding-inline: 0;
+  }
+
+  .print-head {
+    border-bottom: 1.5px solid var(--tx);
+    padding-bottom: 8px;
+    margin-bottom: 18px;
+  }
+  .print-brand {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  .print-meta {
+    font-size: 11px;
+    color: var(--txm);
+    margin-top: 2px;
+  }
+
+  /* The print masthead already names the student, so the on-screen eyebrow
+     that repeats it is redundant here and only costs a line. */
+  .view-head {
+    margin-bottom: 12px;
+  }
+  .view-head .eyebrow {
+    display: none;
+  }
+  .section-title {
+    font-size: 16px;
+    margin: 0 0 5px;
+  }
+  .lead {
+    font-size: 9.5px;
+    max-width: none;
+  }
+
+  /* The tier counts are a three-number summary, not a dashboard — on paper
+     they collapse to one thin strip so the schools start near the top. */
+  .rec-summary {
+    gap: 7px;
+    margin-bottom: 14px;
+  }
+  .rec-stat {
+    padding: 6px 10px;
+    border-top-width: 2px;
+    border-radius: var(--r);
+    min-width: 0;
+  }
+  .rec-stat .num {
+    font-size: 17px;
+  }
+  .rec-stat .label {
+    margin-top: 1px;
+    font-size: 9px;
+  }
+  .rec-stat .desc {
+    font-size: 8.5px;
+    line-height: 1.35;
+  }
+
+  /* Three columns rather than two. At A4 portrait a card gets ~57mm, which is
+     still wide enough for the longest school name in the set on two lines,
+     and it takes the list from roughly four and a half pages to two. Every
+     card and tier heading is kept off a page boundary. */
+  .uni-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .uni-card {
+    padding: 7px 8px;
+    gap: 5px;
+    border-radius: var(--r);
+    box-shadow: none;
+    transform: none;
+    break-inside: avoid;
+  }
+  .uni-card-top {
+    gap: 6px;
+  }
+  .uni-card h4 {
+    font-size: 11px;
+    letter-spacing: -0.2px;
+  }
+  .uni-card .loc {
+    font-size: 8.5px;
+    margin-top: 1px;
+  }
+  .score-badge {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+  }
+  .score-badge .s {
+    font-size: 13px;
+  }
+  .score-badge .l {
+    font-size: 6px;
+  }
+  .major-tags {
+    gap: 3px;
+  }
+  .major-tags span {
+    font-size: 8px;
+    padding: 1px 5px;
+  }
+  .reasons {
+    gap: 2px;
+  }
+  .reasons li {
+    font-size: 8.5px;
+    line-height: 1.35;
+    padding-left: 9px;
+  }
+  .reasons li::before {
+    left: 1px;
+    top: 4px;
+    width: 3.5px;
+    height: 3.5px;
+  }
+  .uni-stats {
+    gap: 2px 8px;
+    padding-top: 5px;
+    font-size: 8.5px;
+  }
+
+  .tier-block {
+    margin-bottom: 16px;
+  }
+  /* A tier heading never splits, and never sits alone at the foot of a page
+     with its schools overleaf. */
+  .tier-head {
+    padding-bottom: 5px;
+    margin-bottom: 8px;
+    break-inside: avoid;
+    break-after: avoid;
+  }
+  .tier-head h3 {
+    font-size: 13px;
+  }
+  .tier-head .count {
+    font-size: 9px;
+  }
+  .rec-stat,
+  .rm-item,
+  .rm-month-head,
+  .cmp-table tr {
+    break-inside: avoid;
+  }
+
+  /* Sticky anything is meaningless on paper and leaves a gap where it sat. */
+  .compare-tray,
+  .cmp-table th[scope="row"],
+  .cmp-table thead th:first-child {
+    position: static;
+  }
+  .cmp-wrap {
+    overflow-x: visible;
+  }
+  table.cmp-table {
+    min-width: 0;
   }
 }
 

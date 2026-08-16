@@ -87,16 +87,6 @@ export default function ChatBot({
         </p>
       </div>
 
-      {mode === "fallback" && (
-        <div className="banner">
-          <span>
-            Running in <strong>offline mode</strong> — answers come from a built-in guide. Add an
-            <code> ANTHROPIC_API_KEY</code> or <code>OPENAI_API_KEY</code> to the backend for full,
-            personalized answers.
-          </span>
-        </div>
-      )}
-
       <div className="chat-layout">
         <div className="chat-panel">
           <div className="chat-bar">
