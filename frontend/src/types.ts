@@ -113,6 +113,61 @@ export interface MajorInsights {
   schools: MajorSchool[];
 }
 
+// ---- Scholarships ----
+
+export type AwardTerm = "total" | "per-year" | "full-ride" | "full-need" | "full-tuition";
+
+export type Competitiveness = "elite" | "high" | "moderate" | "broad" | "entitlement";
+
+export type Effort = "short" | "essay" | "multi-stage";
+
+/** A month/year window, never an asserted date — see scholarshipEngine.js. */
+export interface DeadlineWindow {
+  month: number | null;
+  year: number | null;
+  label: string;
+  sortKey: string;
+  isTypical: true;
+  note: string;
+}
+
+export interface Scholarship {
+  id: string;
+  name: string;
+  sponsor: string;
+  url: string;
+  summary: string;
+  award: { min: number; max: number; term: AwardTerm; renewable: boolean };
+  awardsPerYear: number | null;
+  minGPA: number | null;
+  minSAT?: number | null;
+  need: "required" | "considered" | "none";
+  forMajors: string[];
+  audience: string[];
+  effort: Effort;
+  competitiveness: Competitiveness;
+  deadlineNote: string;
+  tags: string[];
+  // Added by the engine:
+  tier: Tier;
+  matchScore: number;
+  matchedMajors: string[];
+  gpaHeadroom: number | null;
+  expectedValue: number;
+  amountLabel: string;
+  deadline: DeadlineWindow;
+  /** Conditions Compass cannot check against the profile, in plain words. */
+  eligibilityToConfirm: string[];
+  reasons: string[];
+}
+
+export interface ScholarshipResponse {
+  studentId: string;
+  cycleYear: number;
+  counts: Record<Tier, number>;
+  scholarships: Record<Tier, Scholarship[]>;
+}
+
 // ---- Application tracker ----
 
 export type DecisionPlan = "ED" | "ED2" | "EA" | "REA" | "RD" | "PRIORITY" | "ROLLING";

@@ -7,7 +7,14 @@
 // driven by the @media print block in global.css, which is what keeps the
 // printed page in the app's type and color rather than a library's.
 
-import type { Recommendation, RecommendationResponse, StudentRecord, Tier } from "./types";
+import type {
+  Recommendation,
+  RecommendationResponse,
+  Scholarship,
+  ScholarshipResponse,
+  StudentRecord,
+  Tier,
+} from "./types";
 
 const TIER_ORDER: Tier[] = ["reach", "target", "safety"];
 
@@ -85,6 +92,65 @@ export function recommendationsToCsv(data: RecommendationResponse): string {
   return lines.join("\r\n");
 }
 
+// ---- Scholarships ----
+//
+// A separate sheet rather than more columns on the college one: the two lists
+// are worked at different times, and a student pasting deadlines into a
+// spreadsheet wants the awards on their own tab.
+
+const SCHOLARSHIP_HEADERS = [
+  "Tier",
+  "Scholarship",
+  "Sponsor",
+  "Amount",
+  "Renewable",
+  "Awards per year",
+  "Min GPA",
+  "Need",
+  "Effort",
+  "Typical deadline",
+  "Deadline is unconfirmed",
+  "Deadline note",
+  "Eligibility to confirm",
+  "Match score",
+  "Why it fits",
+  "Official page",
+];
+
+function scholarshipRow(s: Scholarship): (string | number)[] {
+  return [
+    TIER_LABEL[s.tier],
+    s.name,
+    s.sponsor,
+    s.amountLabel,
+    s.award.renewable ? "yes" : "no",
+    s.awardsPerYear ?? "",
+    s.minGPA ?? "",
+    s.need,
+    s.effort,
+    s.deadline.label,
+    // Every date in this file is the program's usual month, not a date the
+    // sponsor has published for this cycle. Saying so in the export matters
+    // more than in the UI, because the spreadsheet outlives the page.
+    "yes — confirm on the official page",
+    s.deadline.note,
+    s.eligibilityToConfirm.join("; "),
+    s.matchScore,
+    s.reasons.join(" · "),
+    s.url,
+  ];
+}
+
+export function scholarshipsToCsv(data: ScholarshipResponse): string {
+  const lines = [SCHOLARSHIP_HEADERS.map(cell).join(",")];
+  for (const tier of TIER_ORDER) {
+    for (const s of data.scholarships[tier]) {
+      lines.push(scholarshipRow(s).map(cell).join(","));
+    }
+  }
+  return lines.join("\r\n");
+}
+
 /** "Ada Lovelace" → "ada-lovelace"; empty or punctuation-only names fall back. */
 function slug(name: string): string {
   const s = name
@@ -95,10 +161,17 @@ function slug(name: string): string {
 }
 
 export function csvFilename(student: StudentRecord, now = new Date()): string {
-  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+  return `compass-college-list-${slug(student.name)}-${stamp(now)}.csv`;
+}
+
+export function scholarshipCsvFilename(student: StudentRecord, now = new Date()): string {
+  return `compass-scholarships-${slug(student.name)}-${stamp(now)}.csv`;
+}
+
+function stamp(now: Date): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
     now.getDate()
   ).padStart(2, "0")}`;
-  return `compass-college-list-${slug(student.name)}-${date}.csv`;
 }
 
 /**

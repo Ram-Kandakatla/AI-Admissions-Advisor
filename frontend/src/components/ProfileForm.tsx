@@ -92,8 +92,8 @@ export default function ProfileForm({
         <span className="eyebrow">Your profile</span>
         <h2 className="section-title">Tell us who you are as an applicant.</h2>
         <p className="lead">
-          The more honest and specific you are, the sharper your matches. Nothing here is shared —
-          it stays in this session.
+          The more honest and specific you are, the sharper your matches. Nothing here is shared or
+          sent anywhere — it&apos;s saved on the machine running Compass, and nowhere else.
         </p>
       </div>
 

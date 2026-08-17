@@ -5,6 +5,7 @@ import type { Meta, StudentRecord } from "./types";
 import Home from "./components/Home";
 import ProfileForm from "./components/ProfileForm";
 import Recommendations from "./components/Recommendations";
+import Scholarships from "./components/Scholarships";
 import SchoolCompare from "./components/SchoolCompare";
 import UniversityExplorer from "./components/UniversityExplorer";
 import ChatBot from "./components/ChatBot";
@@ -17,6 +18,7 @@ type View =
   | "home"
   | "profile"
   | "matches"
+  | "scholarships"
   | "compare"
   | "tracker"
   | "timeline"
@@ -35,7 +37,7 @@ type NavEntry =
   | { kind: "link"; item: NavItem }
   | { kind: "group"; id: string; label: string; items: NavItem[] };
 
-// Nine destinations is too many for one flat row, so the two that form a
+// Ten destinations is too many for one flat row, so the two that form a
 // natural pair of jobs — building the list versus working it — collapse into
 // menus. Home, Profile, and Ask stay at the top level: they're the entry, the
 // prerequisite, and the escape hatch, and burying any of them would cost more
@@ -49,6 +51,7 @@ const NAV: NavEntry[] = [
     label: "Plan",
     items: [
       { key: "matches", label: "Matches", needsProfile: true },
+      { key: "scholarships", label: "Scholarships", needsProfile: true },
       { key: "tracker", label: "Tracker", needsProfile: true },
       { key: "timeline", label: "Timeline" },
     ],
@@ -270,6 +273,14 @@ export default function App() {
           {view === "matches" && !student && (
             <NeedsProfile onGo={() => go("profile")} />
           )}
+          {view === "scholarships" && student && (
+            <Scholarships
+              student={student}
+              onEdit={() => go("profile")}
+              onAsk={() => go("chat")}
+            />
+          )}
+          {view === "scholarships" && !student && <NeedsProfile onGo={() => go("profile")} />}
           {view === "compare" && (
             <SchoolCompare
               student={student}

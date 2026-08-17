@@ -8,6 +8,7 @@
 //   GET  /api/students/:id                   Get a student profile
 //   PUT  /api/students/:id                   Update a student profile
 //   GET  /api/students/:id/recommendations   Tiered university matches
+//   GET  /api/students/:id/scholarships      Tiered scholarship matches
 //   POST /api/chat                           Ask the admissions chatbot
 //   GET  /api/students/:id/chat              Fetch conversation history
 //   GET  /api/majors                         Every major with a school count
@@ -36,6 +37,7 @@ const {
 } = require("./models/application");
 const store = require("./store/dataStore");
 const { recommendUniversities } = require("./services/recommendationEngine");
+const { recommendScholarships } = require("./services/scholarshipEngine");
 const { majorInsights, majorCatalog } = require("./services/majorInsights");
 const { answerAdmissionsQuestion, provider } = require("./services/llmService");
 
@@ -145,6 +147,26 @@ app.get("/api/students/:id/recommendations", (req, res) => {
     safety: recommendations.safety.length,
   };
   res.json({ studentId: student.id, counts, recommendations });
+});
+
+// ---- Scholarships ----
+
+app.get("/api/students/:id/scholarships", (req, res) => {
+  const student = store.getStudent(req.params.id);
+  if (!student) return res.status(404).json({ error: "Student not found" });
+
+  const scholarships = recommendScholarships(student);
+  const counts = {
+    reach: scholarships.reach.length,
+    target: scholarships.target.length,
+    safety: scholarships.safety.length,
+  };
+  res.json({
+    studentId: student.id,
+    cycleYear: currentCycleYear(),
+    counts,
+    scholarships,
+  });
 });
 
 // ---- Applications ----
@@ -316,9 +338,11 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
 
   try {
     const { answer, source } = await answerAdmissionsQuestion(question.trim(), student, history);
-    if (studentId) {
-      store.appendMessage(studentId, "user", question.trim());
-      store.appendMessage(studentId, "assistant", answer);
+    // Only persist history against a profile that exists — chat history is a
+    // child of the student row, so there is nothing to hang an unknown id off.
+    if (student) {
+      store.appendMessage(student.id, "user", question.trim());
+      store.appendMessage(student.id, "assistant", answer);
     }
     res.json({ answer, source });
   } catch (err) {

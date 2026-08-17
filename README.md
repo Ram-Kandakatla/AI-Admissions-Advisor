@@ -16,7 +16,8 @@ Built to the [step-by-step guide](ClaudeAIAdmissionsSteps.md) and the
 | **Frontend** | React + TypeScript (Vite) | [`frontend/`](frontend) |
 | **Backend API** | Node.js + Express | [`backend/`](backend) |
 | **Chatbot** | Claude or OpenAI, with an offline fallback | [`backend/services/llmService.js`](backend/services/llmService.js) |
-| **Data** | 42-university JSON dataset; profiles & chat in memory | [`backend/data/`](backend/data) |
+| **Data** | 42-university + 45-scholarship JSON datasets | [`backend/data/`](backend/data) |
+| **Persistence** | SQLite via built-in `node:sqlite` — profiles, chat, and applications survive a restart | [`backend/store/`](backend/store) |
 
 ### Features
 
@@ -25,6 +26,11 @@ Built to the [step-by-step guide](ClaudeAIAdmissionsSteps.md) and the
 - **Recommendation engine** — sorts real universities into **reach / target / safety**,
   each with a match score and plain-English reasons (GPA/test proximity, major fit,
   region, and financial fit).
+- **Scholarship matcher** — the same reach / target / safety treatment for money, over a
+  curated set of national awards. Anything whose GPA floor, major restriction, or need
+  requirement you don't meet is filtered out before you see it. Deadlines are shown as the
+  month a program *usually* closes, never as a confirmed date, and every card links to the
+  sponsor's own page.
 - **University explorer** — search, filter, and sort the whole dataset.
 - **Ask Compass chatbot** — LLM-powered answers on deadlines, essays, tests, and aid,
   personalized to the student's profile. Falls back to a built-in guide with no API key.
@@ -61,8 +67,11 @@ Open **http://localhost:5173**.
 ## Tests
 
 ```bash
-cd backend && npm test      # recommendation engine + API endpoint tests (Jest)
+cd backend && npm test      # engines, data integrity, and API endpoint tests (Jest)
 ```
+
+Jest runs against a private in-memory database, so the suites never touch
+`backend/data/compass.db`.
 
 ## Design
 
@@ -70,13 +79,30 @@ A warm, editorial "guidance-counselor" direction: cream paper, deep pine ink, a
 clay/terracotta accent with forest-green and ochre supports; Fraunces (display) + Inter
 Tight (body). Fully responsive, keyboard-accessible, and `prefers-reduced-motion`-aware.
 
+## Data & persistence
+
+Profiles, chat history, and tracked applications live in a SQLite file at
+`backend/data/compass.db`, created on first run and gitignored — it holds real student
+data and never belongs in the repo. It uses Node's built-in `node:sqlite`, so there is no
+database to install and no new dependency; [`store/dataStore.js`](backend/store/dataStore.js)
+kept its original synchronous signatures, so nothing above it changed. Point `COMPASS_DB`
+at another path (or `:memory:`) to override.
+
+Universities and scholarships stay as JSON in [`backend/data/`](backend/data) — they're
+reference data, not user data, and belong in version control where a diff is reviewable.
+Scholarship entries record the *month* a program typically closes plus the sponsor's URL;
+they deliberately never assert a date, for the same reason
+[`models/application.js`](backend/models/application.js) doesn't.
+
 ## Extending it (roadmap)
 
 The store and services are written to be swapped without touching the UI:
 
-- **Scholarships / internships** — add `data/scholarships.json` and a
-  `services/scholarshipEngine.js` mirroring the recommendation engine, then a
-  `GET /api/students/:id/scholarships` endpoint.
-- **Real database** — replace [`backend/store/dataStore.js`](backend/store/dataStore.js)
-  (same function signatures) with Postgres/SQLite.
-- **Accounts & persistence** — profiles currently live in memory and reset on restart.
+- **Accounts** — the schema is keyed by student id already; adding a users table and a
+  session cookie is the remaining step.
+- **Postgres** — swap the driver in [`backend/store/db.js`](backend/store/db.js). The one
+  real cost is that `pg` is async, so every store function and its callers become
+  promise-based.
+- **More scholarships** — [`backend/data/scholarships.json`](backend/data/scholarships.json)
+  is a plain curated file. No free public scholarship API exists (Fastweb and College Board
+  don't publish one), so growing this list means curating it or licensing a feed.

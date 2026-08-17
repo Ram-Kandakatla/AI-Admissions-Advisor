@@ -8,6 +8,12 @@ node_modules/
 !.env.example
 *.local
 
+# Local SQLite database — real student profiles typed into this machine's copy
+# of the app. Never in the repo. (WAL/SHM are SQLite's sidecar files.)
+backend/data/compass.db
+backend/data/compass.db-wal
+backend/data/compass.db-shm
+
 # Build output
 dist/
 build/

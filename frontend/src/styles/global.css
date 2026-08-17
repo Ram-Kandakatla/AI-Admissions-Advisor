@@ -3022,6 +3022,162 @@ table.cmp-table {
    leave pale dark-mode text on white.
    ========================================================================= */
 
+/* =========================================================================
+   Scholarships
+
+   Reuses the match-card shell (.uni-card, .tier-block, .rec-summary) on
+   purpose: it is the same reach/target/safety idea applied to money, and a
+   second visual language for it would imply a second system.
+
+   The two additions are both about honesty. .sch-deadline never shows a date
+   without the word "usually" attached, and .sch-confirm states the condition
+   Compass can't check rather than quietly guessing.
+   ========================================================================= */
+
+.sch-caveat {
+  background: var(--obg);
+  border: 0.5px solid var(--orange);
+  border-radius: var(--rl);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--txm);
+}
+.sch-caveat strong {
+  color: var(--tx);
+}
+
+.sch-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 26px 0 14px;
+}
+.sch-sort {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sch-filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--txm);
+  cursor: pointer;
+}
+.sch-filter-toggle input {
+  accent-color: var(--blue);
+}
+
+.sch-total {
+  font-size: 12.5px;
+  color: var(--txm);
+  margin-bottom: 20px;
+}
+
+.sch-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sch-money {
+  font-family: var(--display, inherit);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--tx);
+  letter-spacing: -0.01em;
+}
+.sch-flag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--green);
+  border: 0.5px solid var(--green);
+  border-radius: var(--rs);
+  padding: 1px 6px;
+}
+
+.sch-summary {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--txm);
+  margin: 0;
+}
+
+.sch-tag {
+  text-transform: capitalize;
+  opacity: 0.75;
+}
+
+.sch-confirm {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--txm);
+  background: var(--s2);
+  border-left: 2px solid var(--orange);
+  border-radius: 0 var(--rs) var(--rs) 0;
+  padding: 8px 10px;
+}
+.sch-confirm strong {
+  color: var(--tx);
+}
+
+.sch-deadline {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--border);
+}
+.sch-when {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tx);
+}
+/* The qualifier is part of the date, not a footnote to it — a deadline this
+   app has not verified must never read as one it has. */
+.sch-unconfirmed {
+  font-size: 9.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--orange);
+  background: var(--obg);
+  border-radius: var(--rs);
+  padding: 1px 5px;
+}
+.sch-note {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--txf);
+}
+
+.sch-link {
+  align-self: flex-start;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--blue);
+  text-decoration: none;
+  border-bottom: 0.5px solid transparent;
+}
+.sch-link:hover {
+  border-bottom-color: var(--blue);
+}
+
+.sch-url {
+  font-size: 8.5px;
+  color: var(--txf);
+  word-break: break-all;
+}
+
 @media print {
   :root,
   [data-theme="dark"] {
@@ -3235,6 +3391,28 @@ table.cmp-table {
   .rm-month-head,
   .cmp-table tr {
     break-inside: avoid;
+  }
+
+  /* The caveat about unconfirmed deadlines is the one block that has to
+     survive onto paper — a printed list is exactly where a stale date does
+     its damage. */
+  .sch-caveat {
+    break-inside: avoid;
+    font-size: 9px;
+    padding: 8px 10px;
+  }
+  .sch-money {
+    font-size: 12px;
+  }
+  .sch-summary,
+  .sch-confirm {
+    font-size: 9px;
+  }
+  .sch-when {
+    font-size: 10px;
+  }
+  .sch-note {
+    font-size: 8.5px;
   }
 
   /* Sticky anything is meaningless on paper and leaves a gap where it sat. */

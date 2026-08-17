@@ -7,6 +7,7 @@ import type {
   Meta,
   ProfileInput,
   RecommendationResponse,
+  ScholarshipResponse,
   StudentRecord,
   University,
 } from "./types";
@@ -52,6 +53,9 @@ export const api = {
 
   recommendations: (studentId: string) =>
     request<RecommendationResponse>(`/students/${studentId}/recommendations`),
+
+  scholarships: (studentId: string) =>
+    request<ScholarshipResponse>(`/students/${studentId}/scholarships`),
 
   chat: (question: string, studentId?: string) =>
     request<{ answer: string; source: LlmProvider }>("/chat", {
