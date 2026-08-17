@@ -3023,6 +3023,232 @@ table.cmp-table {
    ========================================================================= */
 
 /* =========================================================================
+   School notes & stars
+
+   One control set, used on match cards, the explorer table, the comparison
+   grid, tracked applications, and the Saved page. It looks the same in all
+   five because it *is* the same note — a different treatment per page would
+   imply five different notepads.
+   ========================================================================= */
+
+.note-star {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  font-size: 19px;
+  color: var(--txf);
+  transition: color 0.15s, transform 0.15s;
+}
+.note-star:hover {
+  color: var(--orange);
+  transform: scale(1.12);
+}
+.note-star[aria-pressed="true"] {
+  color: var(--orange);
+}
+.note-star:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: var(--rs);
+}
+
+/* The star sits above the match score rather than beside the title: the
+   score is the app's opinion, the star is yours, and they belong in the
+   same corner without competing with the school's name. */
+.card-aside {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The "here's where the notepad is" line under a page title. Tinted rather
+   than boxed: it's an aside about the furniture, and a full banner would
+   outrank the content it sits above. It disappears for good once the student
+   has saved anything, so it never has to earn its keep twice. */
+.note-hint {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 9px 13px;
+  max-width: 62ch;
+  border-radius: var(--rs);
+  border: 0.5px solid color-mix(in srgb, var(--orange) 26%, transparent);
+  background: color-mix(in srgb, var(--orange) 7%, transparent);
+  color: var(--txm);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.note-hint strong {
+  color: var(--tx);
+  font-weight: 600;
+}
+.note-hint-mark {
+  color: var(--orange);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.note-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.note-toggle {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--txm);
+  border-bottom: 0.5px solid transparent;
+}
+.note-toggle:hover {
+  color: var(--tx);
+  border-bottom-color: var(--bmed);
+}
+
+.note-box {
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.55;
+  width: 100%;
+  min-height: 62px;
+  resize: vertical;
+  color: var(--tx);
+  background: var(--s2);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+  padding: 8px 10px;
+  outline: none;
+}
+.note-box:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+/* Saving is automatic and quick, so this is empty almost always. It holds no
+   height of its own to avoid the row jumping each time it appears. */
+.note-status {
+  min-height: 12px;
+  font-size: 10.5px;
+  color: var(--txf);
+}
+
+.note-print {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--tx);
+  border-left: 2px solid var(--bmed);
+  padding-left: 8px;
+  margin: 4px 0 0;
+}
+
+/* ---- Explorer table ---- */
+
+.uni-th-star,
+.uni-td-star {
+  width: 1%;
+  padding-right: 0 !important;
+  text-align: center;
+}
+.uni-td-note {
+  width: 1%;
+  white-space: nowrap;
+}
+/* A one-line preview of the note in the name cell: enough to recognise what
+   you wrote, never enough to break the column. */
+.uni-note {
+  display: block;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--txf);
+  font-style: italic;
+  margin-top: 2px;
+}
+.uni-note-row td {
+  background: var(--s2);
+  padding: 10px 14px 14px;
+}
+
+/* ---- Comparison grid ---- */
+
+.cmp-note-row td {
+  vertical-align: top;
+}
+.cmp-note-row .note-box {
+  min-height: 76px;
+}
+
+/* ---- Tracker ---- */
+
+.track-notes-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.track-notes-hint {
+  font-size: 10.5px;
+  color: var(--txf);
+  margin: 0;
+}
+
+/* ---- Saved page ---- */
+
+.saved-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 14px;
+}
+.saved-card {
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--rl);
+  padding: 15px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+/* A starred school earns the left edge; an unstarred one with a note is
+   still here, just quieter. */
+.saved-card[data-starred] {
+  border-left: 2px solid var(--orange);
+}
+.saved-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.saved-top h4 {
+  font-family: var(--display, inherit);
+  font-size: 15px;
+  margin: 0 0 2px;
+  color: var(--tx);
+}
+.saved-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.saved-when {
+  font-size: 10.5px;
+  color: var(--txf);
+}
+
+/* =========================================================================
    Scholarships
 
    Reuses the match-card shell (.uni-card, .tier-block, .rec-summary) on
@@ -3391,6 +3617,24 @@ table.cmp-table {
   .rm-month-head,
   .cmp-table tr {
     break-inside: avoid;
+  }
+
+  /* On paper the note is the content and the controls are gone, so the
+     textarea is replaced by the plain text of what you wrote. */
+  .note-box,
+  .note-star,
+  .note-status {
+    display: none;
+  }
+  .saved-card {
+    break-inside: avoid;
+    padding: 8px 10px;
+  }
+  .saved-top h4 {
+    font-size: 11px;
+  }
+  .saved-when {
+    font-size: 8px;
   }
 
   /* The caveat about unconfirmed deadlines is the one block that has to

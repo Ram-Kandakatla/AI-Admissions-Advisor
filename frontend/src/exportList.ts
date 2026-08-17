@@ -12,6 +12,7 @@ import type {
   RecommendationResponse,
   Scholarship,
   ScholarshipResponse,
+  SchoolNote,
   StudentRecord,
   Tier,
 } from "./types";
@@ -151,6 +152,44 @@ export function scholarshipsToCsv(data: ScholarshipResponse): string {
   return lines.join("\r\n");
 }
 
+// ---- Saved schools ----
+
+const NOTE_HEADERS = [
+  "Starred",
+  "University",
+  "City",
+  "State",
+  "Region",
+  "Acceptance rate %",
+  "Tuition (USD)",
+  "Your note",
+  "Last written",
+];
+
+export function notesToCsv(rows: SchoolNote[]): string {
+  const lines = [NOTE_HEADERS.map(cell).join(",")];
+  for (const row of rows) {
+    const u = row.university;
+    lines.push(
+      [
+        row.starred ? "yes" : "no",
+        u?.name ?? `University ${row.universityId}`,
+        u?.city ?? "",
+        u?.state ?? "",
+        u?.region ?? "",
+        u?.acceptanceRate ?? "",
+        u?.tuition ?? "",
+        row.note,
+        // Date only: the time of day you typed a note is noise in a sheet.
+        (row.updatedAt ?? row.createdAt ?? "").slice(0, 10),
+      ]
+        .map(cell)
+        .join(",")
+    );
+  }
+  return lines.join("\r\n");
+}
+
 /** "Ada Lovelace" → "ada-lovelace"; empty or punctuation-only names fall back. */
 function slug(name: string): string {
   const s = name
@@ -166,6 +205,10 @@ export function csvFilename(student: StudentRecord, now = new Date()): string {
 
 export function scholarshipCsvFilename(student: StudentRecord, now = new Date()): string {
   return `compass-scholarships-${slug(student.name)}-${stamp(now)}.csv`;
+}
+
+export function savedCsvFilename(student: StudentRecord, now = new Date()): string {
+  return `compass-saved-schools-${slug(student.name)}-${stamp(now)}.csv`;
 }
 
 function stamp(now: Date): string {

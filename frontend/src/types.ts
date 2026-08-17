@@ -113,6 +113,33 @@ export interface MajorInsights {
   schools: MajorSchool[];
 }
 
+// ---- School notes ----
+
+export interface SchoolNote {
+  universityId: number;
+  starred: boolean;
+  note: string;
+  createdAt?: string;
+  updatedAt?: string;
+  university: {
+    id: number;
+    name: string;
+    shortName: string;
+    city: string;
+    state: string;
+    region: string;
+    acceptanceRate: number;
+    tuition: number;
+  } | null;
+  /** Set when the write emptied and unstarred the note, deleting the record. */
+  removed?: boolean;
+}
+
+export interface NotesResponse {
+  studentId: string;
+  notes: SchoolNote[];
+}
+
 // ---- Scholarships ----
 
 export type AwardTerm = "total" | "per-year" | "full-ride" | "full-need" | "full-tuition";

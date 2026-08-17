@@ -5,9 +5,11 @@ import type {
   LlmProvider,
   MajorInsights,
   Meta,
+  NotesResponse,
   ProfileInput,
   RecommendationResponse,
   ScholarshipResponse,
+  SchoolNote,
   StudentRecord,
   University,
 } from "./types";
@@ -56,6 +58,17 @@ export const api = {
 
   scholarships: (studentId: string) =>
     request<ScholarshipResponse>(`/students/${studentId}/scholarships`),
+
+  notes: (studentId: string) => request<NotesResponse>(`/students/${studentId}/notes`),
+
+  saveNote: (studentId: string, universityId: number, body: { starred?: boolean; note?: string }) =>
+    request<SchoolNote>(`/students/${studentId}/notes/${universityId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  forgetNote: (studentId: string, universityId: number) =>
+    request<void>(`/students/${studentId}/notes/${universityId}`, { method: "DELETE" }),
 
   chat: (question: string, studentId?: string) =>
     request<{ answer: string; source: LlmProvider }>("/chat", {

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { MAX_COMPARE } from "../compare";
 import { csvFilename, downloadCsv, recommendationsToCsv } from "../exportList";
+import SchoolNote, { NoteHint, StarButton } from "./SchoolNote";
+import type { NotesStore } from "../useSchoolNotes";
 import type { Recommendation, RecommendationResponse, StudentRecord, Tier } from "../types";
 
 const TIER_META: Record<Tier, { title: string; blurb: string }> = {
@@ -21,6 +23,7 @@ export default function Recommendations({
   compareIds,
   onToggleCompare,
   onGoCompare,
+  notes,
 }: {
   student: StudentRecord;
   onEdit: () => void;
@@ -28,6 +31,7 @@ export default function Recommendations({
   compareIds: number[];
   onToggleCompare: (id: number) => void;
   onGoCompare: () => void;
+  notes: NotesStore;
 }) {
   const [data, setData] = useState<RecommendationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +84,10 @@ export default function Recommendations({
           Sorted by how you stack up on GPA, tests, major fit, region, and budget. Match scores are a
           guide, not a verdict — admissions weigh essays and context too.
         </p>
+        <NoteHint notes={notes}>
+          Tap the star beside a match score to save a school, or <strong>Add a note</strong> to write
+          down what you thought. Both follow the school to every other page.
+        </NoteHint>
         <div className="form-footer no-print" style={{ marginTop: 20 }}>
           <button className="btn btn-ghost" onClick={onEdit}>
             Edit profile
@@ -149,6 +157,7 @@ export default function Recommendations({
                       comparing={compareIds.includes(uni.id)}
                       compareFull={compareIds.length >= MAX_COMPARE}
                       onToggleCompare={() => onToggleCompare(uni.id)}
+                      notes={notes}
                     />
                   ))}
                 </div>
@@ -191,11 +200,13 @@ function UniCard({
   comparing,
   compareFull,
   onToggleCompare,
+  notes,
 }: {
   uni: Recommendation;
   comparing: boolean;
   compareFull: boolean;
   onToggleCompare: () => void;
+  notes: NotesStore;
 }) {
   // A full tray shouldn't grey out the schools already in it — those are the
   // ones you need to be able to click to make room.
@@ -210,9 +221,12 @@ function UniCard({
             {uni.city}, {uni.state} · {uni.region} · {uni.type}
           </div>
         </div>
-        <div className="score-badge">
-          <span className="s">{uni.matchScore}</span>
-          <span className="l">match</span>
+        <div className="card-aside">
+          <StarButton universityId={uni.id} name={uni.name} notes={notes} />
+          <div className="score-badge">
+            <span className="s">{uni.matchScore}</span>
+            <span className="l">match</span>
+          </div>
         </div>
       </div>
 
@@ -242,6 +256,8 @@ function UniCard({
           Tuition <b>${(uni.tuition / 1000).toFixed(0)}k</b>
         </span>
       </div>
+
+      <SchoolNote universityId={uni.id} name={uni.name} notes={notes} />
 
       <button
         type="button"

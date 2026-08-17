@@ -17,7 +17,7 @@ Built to the [step-by-step guide](ClaudeAIAdmissionsSteps.md) and the
 | **Backend API** | Node.js + Express | [`backend/`](backend) |
 | **Chatbot** | Claude or OpenAI, with an offline fallback | [`backend/services/llmService.js`](backend/services/llmService.js) |
 | **Data** | 42-university + 45-scholarship JSON datasets | [`backend/data/`](backend/data) |
-| **Persistence** | SQLite via built-in `node:sqlite` — profiles, chat, and applications survive a restart | [`backend/store/`](backend/store) |
+| **Persistence** | SQLite via built-in `node:sqlite` — profiles, chat, applications, and notes survive a restart | [`backend/store/`](backend/store) |
 
 ### Features
 
@@ -32,6 +32,10 @@ Built to the [step-by-step guide](ClaudeAIAdmissionsSteps.md) and the
   month a program *usually* closes, never as a confirmed date, and every card links to the
   sponsor's own page.
 - **University explorer** — search, filter, and sort the whole dataset.
+- **Notes & saved schools** — star any school and write down what you thought
+  ("great CS program", "too expensive", "emailed their admissions officer"). There is exactly
+  one note per school, shared by the match cards, the explorer, the comparison grid and the
+  tracker, collected on a **Saved** page that prints or exports.
 - **Ask Compass chatbot** — LLM-powered answers on deadlines, essays, tests, and aid,
   personalized to the student's profile. Falls back to a built-in guide with no API key.
 

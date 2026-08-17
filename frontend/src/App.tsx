@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { toggleCompare } from "./compare";
+import { useSchoolNotes } from "./useSchoolNotes";
 import type { Meta, StudentRecord } from "./types";
 import Home from "./components/Home";
 import ProfileForm from "./components/ProfileForm";
 import Recommendations from "./components/Recommendations";
 import Scholarships from "./components/Scholarships";
+import SavedSchools from "./components/SavedSchools";
 import SchoolCompare from "./components/SchoolCompare";
 import UniversityExplorer from "./components/UniversityExplorer";
 import ChatBot from "./components/ChatBot";
@@ -19,6 +21,7 @@ type View =
   | "profile"
   | "matches"
   | "scholarships"
+  | "saved"
   | "compare"
   | "tracker"
   | "timeline"
@@ -37,7 +40,7 @@ type NavEntry =
   | { kind: "link"; item: NavItem }
   | { kind: "group"; id: string; label: string; items: NavItem[] };
 
-// Ten destinations is too many for one flat row, so the two that form a
+// Eleven destinations is too many for one flat row, so the two that form a
 // natural pair of jobs — building the list versus working it — collapse into
 // menus. Home, Profile, and Ask stay at the top level: they're the entry, the
 // prerequisite, and the escape hatch, and burying any of them would cost more
@@ -52,6 +55,7 @@ const NAV: NavEntry[] = [
     items: [
       { key: "matches", label: "Matches", needsProfile: true },
       { key: "scholarships", label: "Scholarships", needsProfile: true },
+      { key: "saved", label: "Saved", needsProfile: true },
       { key: "tracker", label: "Tracker", needsProfile: true },
       { key: "timeline", label: "Timeline" },
     ],
@@ -107,6 +111,11 @@ export default function App() {
   // A question handed to the chatbot from another page (the major deep dive
   // sends "tell me about X at Y"). Cleared once the chatbot has sent it.
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+
+  // Notes and stars are shared by five pages, so they live here rather than
+  // in any one of them — a star tapped on a match card has to be lit when the
+  // explorer renders the same school a second later.
+  const notes = useSchoolNotes(student?.id ?? null);
 
   const compact = useCompactNav();
   const navRef = useRef<HTMLElement>(null);
@@ -268,6 +277,7 @@ export default function App() {
               compareIds={compareIds}
               onToggleCompare={(id) => setCompareIds((ids) => toggleCompare(ids, id))}
               onGoCompare={() => go("compare")}
+              notes={notes}
             />
           )}
           {view === "matches" && !student && (
@@ -287,10 +297,20 @@ export default function App() {
               selected={compareIds}
               onChange={setCompareIds}
               onGoMatches={() => go("matches")}
+              notes={notes}
             />
           )}
+          {view === "saved" && student && (
+            <SavedSchools
+              student={student}
+              notes={notes}
+              onGoMatches={() => go("matches")}
+              onGoExplore={() => go("explore")}
+            />
+          )}
+          {view === "saved" && !student && <NeedsProfile onGo={() => go("profile")} />}
           {view === "tracker" && student && (
-            <ApplicationTracker student={student} onGoMatches={() => go("matches")} />
+            <ApplicationTracker student={student} onGoMatches={() => go("matches")} notes={notes} />
           )}
           {view === "tracker" && !student && <NeedsProfile onGo={() => go("profile")} />}
           {view === "timeline" && (
@@ -308,7 +328,7 @@ export default function App() {
               }}
             />
           )}
-          {view === "explore" && <UniversityExplorer meta={meta} />}
+          {view === "explore" && <UniversityExplorer meta={meta} notes={student ? notes : null} />}
           {view === "chat" && (
             <ChatBot
               student={student}

@@ -10,6 +10,8 @@ import type {
   StudentRecord,
   University,
 } from "../types";
+import SchoolNote, { NoteHint } from "./SchoolNote";
+import type { NotesStore } from "../useSchoolNotes";
 
 // Mirrors the server's ordering. Applied on every render rather than only on
 // load, because editing a deadline locally would otherwise leave the card in
@@ -37,9 +39,11 @@ const CLOSED: ApplicationStatus[] = ["submitted", "accepted", "waitlisted", "den
 export default function ApplicationTracker({
   student,
   onGoMatches,
+  notes,
 }: {
   student: StudentRecord;
   onGoMatches: () => void;
+  notes: NotesStore;
 }) {
   const [meta, setMeta] = useState<ApplicationMeta | null>(null);
   const [apps, setApps] = useState<Application[] | null>(null);
@@ -157,6 +161,13 @@ export default function ApplicationTracker({
           convention for each plan — replace them with the real date from the school&apos;s
           admissions page as you confirm it.
         </p>
+        {/* Held back until there's an application to carry a note — the empty
+            tracker already has its own "add a school" prompt, and a second
+            instruction above it would just be two things to read. */}
+        <NoteHint notes={apps.length > 0 ? notes : null}>
+          Each card carries that school&apos;s note — the same one you&apos;d see on its match card
+          or in the explorer. Open <strong>Add a note</strong> on an application to write in it.
+        </NoteHint>
       </div>
 
       {error && (
@@ -267,6 +278,7 @@ export default function ApplicationTracker({
                 meta={meta}
                 onPatch={patch}
                 onRemove={remove}
+                notes={notes}
               />
             ))}
           </div>
@@ -354,6 +366,7 @@ function ApplicationCard({
   meta,
   onPatch,
   onRemove,
+  notes,
 }: {
   app: Application;
   meta: ApplicationMeta;
@@ -363,9 +376,12 @@ function ApplicationCard({
     optimistic?: Partial<Application>
   ) => void;
   onRemove: (app: Application) => void;
+  notes: NotesStore;
 }) {
+  // The note here is the school's note, not the application's — the same text
+  // you'd see on the match card or in a comparison. One school, one notepad.
   const [showNotes, setShowNotes] = useState(false);
-  const [notes, setNotes] = useState(app.notes);
+  const saved = notes.byId.get(app.universityId)?.note ?? "";
 
   const doneCount = meta.checklist.filter((c) => app.checklist[c.key]).length;
   const total = meta.checklist.length;
@@ -481,7 +497,7 @@ function ApplicationCard({
 
       <div className="track-foot">
         <button className="btn btn-ghost btn-sm" onClick={() => setShowNotes((s) => !s)}>
-          {showNotes ? "Hide notes" : app.notes ? "Notes ✓" : "Add notes"}
+          {showNotes ? "Hide notes" : saved ? "Notes ✓" : "Add notes"}
         </button>
         <button
           className="btn btn-ghost btn-sm track-remove"
@@ -493,13 +509,18 @@ function ApplicationCard({
       </div>
 
       {showNotes && (
-        <textarea
-          className="track-notes"
-          value={notes}
-          placeholder="Supplemental prompts, who's writing your recs, portal login reminders…"
-          onChange={(e) => setNotes(e.target.value)}
-          onBlur={() => notes !== app.notes && onPatch(app, { notes })}
-        />
+        <div className="track-notes-wrap">
+          <SchoolNote
+            universityId={app.universityId}
+            name={app.university?.name ?? "this school"}
+            notes={notes}
+            alwaysOpen
+            placeholder="Supplemental prompts, who's writing your recs, portal login reminders…"
+          />
+          <p className="track-notes-hint">
+            Shared with this school&apos;s card everywhere else in Compass.
+          </p>
+        </div>
       )}
     </article>
   );

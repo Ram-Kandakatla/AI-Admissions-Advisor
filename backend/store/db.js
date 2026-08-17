@@ -73,6 +73,35 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS applications_by_student ON applications(student_id);
+
+  -- One note per student per school, shared by every page that shows it. The
+  -- primary key is the pair, which is what makes "one school, one notepad"
+  -- true in the data rather than only in the UI.
+  CREATE TABLE IF NOT EXISTS school_notes (
+    student_id    TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    university_id INTEGER NOT NULL,
+    starred       INTEGER NOT NULL DEFAULT 0,
+    note          TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT,
+    PRIMARY KEY (student_id, university_id)
+  );
+`);
+
+// One-time backfill: before school notes existed, the only place to write
+// about a school was the tracker's own notes field. Those notes are the same
+// kind of thing, so they are copied across rather than stranded. The
+// applications.notes column stays exactly where it was — nothing is deleted,
+// and re-running this is a no-op because the pair is already present.
+db.exec(`
+  INSERT INTO school_notes (student_id, university_id, starred, note, created_at)
+  SELECT a.student_id, a.university_id, 0, a.notes, a.created_at
+    FROM applications a
+   WHERE TRIM(a.notes) <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM school_notes n
+        WHERE n.student_id = a.student_id AND n.university_id = a.university_id
+     )
 `);
 
 // --- JSON column helpers -------------------------------------------------

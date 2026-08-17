@@ -9,6 +9,9 @@
 //   PUT  /api/students/:id                   Update a student profile
 //   GET  /api/students/:id/recommendations   Tiered university matches
 //   GET  /api/students/:id/scholarships      Tiered scholarship matches
+//   GET  /api/students/:id/notes             Starred schools + notes
+//   PUT  /api/students/:id/notes/:uniId      Star and/or annotate one school
+//   DELETE /api/students/:id/notes/:uniId    Forget a school entirely
 //   POST /api/chat                           Ask the admissions chatbot
 //   GET  /api/students/:id/chat              Fetch conversation history
 //   GET  /api/majors                         Every major with a school count
@@ -311,6 +314,84 @@ app.delete("/api/students/:id/applications/:appId", (req, res) => {
   if (!requireStudent(req, res)) return;
   const removed = store.deleteApplication(req.params.id, req.params.appId);
   if (!removed) return res.status(404).json({ error: "Application not found" });
+  res.status(204).end();
+});
+
+// ---- School notes ----
+//
+// Notes are joined to their university on the way out, the same as
+// applications are, so every page that renders a note has the school's name
+// without a second request or a client-side lookup table.
+
+const MAX_NOTE = 1000;
+
+function decorateNote(note, universitiesById) {
+  const uni = universitiesById.get(note.universityId) || null;
+  return {
+    ...note,
+    university: uni
+      ? {
+          id: uni.id,
+          name: uni.name,
+          shortName: uni.shortName,
+          city: uni.city,
+          state: uni.state,
+          region: uni.region,
+          acceptanceRate: uni.acceptanceRate,
+          tuition: uni.tuition,
+        }
+      : null,
+  };
+}
+
+app.get("/api/students/:id/notes", (req, res) => {
+  if (!requireStudent(req, res)) return;
+  const index = universityIndex();
+  const notes = store.getSchoolNotes(req.params.id).map((n) => decorateNote(n, index));
+  res.json({ studentId: req.params.id, notes });
+});
+
+app.put("/api/students/:id/notes/:universityId", (req, res) => {
+  if (!requireStudent(req, res)) return;
+
+  const index = universityIndex();
+  const universityId = Number(req.params.universityId);
+  if (!Number.isInteger(universityId) || !index.has(universityId)) {
+    return res.status(404).json({ error: "University not found" });
+  }
+
+  const body = req.body || {};
+  const existing = store.getSchoolNote(req.params.id, universityId);
+
+  // A partial write keeps the other half: starring a school from a card must
+  // not wipe the paragraph typed about it on another page, and vice versa.
+  const starred =
+    body.starred === undefined ? Boolean(existing?.starred) : Boolean(body.starred);
+
+  let note = existing?.note ?? "";
+  if (body.note !== undefined) {
+    if (typeof body.note !== "string") {
+      return res.status(400).json({ error: "note must be a string" });
+    }
+    note = body.note.slice(0, MAX_NOTE);
+  }
+
+  const record = store.saveSchoolNote(req.params.id, universityId, { starred, note });
+
+  // Emptied and unstarred, so the row is gone. The client still gets the same
+  // shape back — an empty note for that school — plus `removed` so it can drop
+  // the card from a saved list without refetching.
+  if (!record) {
+    const blank = { universityId, starred: false, note: "" };
+    return res.json({ ...decorateNote(blank, index), removed: true });
+  }
+  res.json(decorateNote(record, index));
+});
+
+app.delete("/api/students/:id/notes/:universityId", (req, res) => {
+  if (!requireStudent(req, res)) return;
+  const removed = store.deleteSchoolNote(req.params.id, Number(req.params.universityId));
+  if (!removed) return res.status(404).json({ error: "No note for that school" });
   res.status(204).end();
 });
 

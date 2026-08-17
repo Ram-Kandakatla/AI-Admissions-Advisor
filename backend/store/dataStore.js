@@ -267,6 +267,72 @@ function deleteApplication(studentId, applicationId) {
   return deleteApplicationRow.run(studentId, applicationId).changes > 0;
 }
 
+// ---- School notes ----
+//
+// A star and a scrap of text per school, keyed by the pair rather than by an
+// id of its own: there is exactly one note per school, and every page edits
+// the same one. A note that is emptied and unstarred is deleted rather than
+// kept as a blank row — an empty note is the absence of a note.
+
+function noteFromRow(row) {
+  if (!row) return null;
+  const record = {
+    universityId: row.university_id,
+    starred: Boolean(row.starred),
+    note: row.note,
+    createdAt: row.created_at,
+  };
+  if (row.updated_at) record.updatedAt = row.updated_at;
+  return record;
+}
+
+const selectNotes = db.prepare(
+  "SELECT * FROM school_notes WHERE student_id = ? ORDER BY starred DESC, updated_at DESC, created_at DESC"
+);
+
+const selectNote = db.prepare(
+  "SELECT * FROM school_notes WHERE student_id = ? AND university_id = ?"
+);
+
+// The pair is the primary key, so an upsert is the whole write path: no
+// read-then-branch, and no way to end up with two notes for one school.
+const upsertNote = db.prepare(`
+  INSERT INTO school_notes (student_id, university_id, starred, note, created_at)
+  VALUES (?, ?, ?, ?, ?)
+  ON CONFLICT (student_id, university_id) DO UPDATE SET
+    starred = excluded.starred,
+    note = excluded.note,
+    updated_at = excluded.created_at
+`);
+
+const deleteNoteRow = db.prepare(
+  "DELETE FROM school_notes WHERE student_id = ? AND university_id = ?"
+);
+
+function getSchoolNotes(studentId) {
+  if (typeof studentId !== "string") return [];
+  return selectNotes.all(studentId).map(noteFromRow);
+}
+
+function getSchoolNote(studentId, universityId) {
+  if (typeof studentId !== "string") return null;
+  return noteFromRow(selectNote.get(studentId, universityId));
+}
+
+function saveSchoolNote(studentId, universityId, { starred = false, note = "" } = {}) {
+  if (!starred && note.trim() === "") {
+    deleteNoteRow.run(studentId, universityId);
+    return null;
+  }
+  upsertNote.run(studentId, universityId, bool(starred), note, new Date().toISOString());
+  return getSchoolNote(studentId, universityId);
+}
+
+function deleteSchoolNote(studentId, universityId) {
+  if (typeof studentId !== "string") return false;
+  return deleteNoteRow.run(studentId, universityId).changes > 0;
+}
+
 module.exports = {
   loadUniversities,
   loadScholarships,
@@ -281,4 +347,8 @@ module.exports = {
   createApplication,
   updateApplication,
   deleteApplication,
+  getSchoolNotes,
+  getSchoolNote,
+  saveSchoolNote,
+  deleteSchoolNote,
 };

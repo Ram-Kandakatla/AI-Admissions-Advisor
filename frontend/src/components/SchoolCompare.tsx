@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { api } from "../api";
 import { MAX_COMPARE, toggleCompare } from "../compare";
 import type { Recommendation, StudentRecord, Tier, University } from "../types";
+import SchoolNote, { NoteHint, StarButton } from "./SchoolNote";
+import type { NotesStore } from "../useSchoolNotes";
 
 // Side-by-side comparison across the whole dataset.
 //
@@ -38,11 +40,13 @@ export default function SchoolCompare({
   selected,
   onChange,
   onGoMatches,
+  notes,
 }: {
   student: StudentRecord | null;
   selected: number[];
   onChange: (ids: number[]) => void;
   onGoMatches: () => void;
+  notes: NotesStore;
 }) {
   const [all, setAll] = useState<University[] | null>(null);
   const [recs, setRecs] = useState<Map<number, Recommendation>>(new Map());
@@ -215,6 +219,14 @@ export default function SchoolCompare({
           trade-off between a reach and a safety is a thing you can actually see.
           {student ? " Your own tier and GPA standing come along with them." : ""}
         </p>
+        {/* Gated on a profile *and* on there being a column: this hint points
+            at a header and a row, and pointing at either before the table
+            exists is worse than saying nothing. */}
+        <NoteHint notes={student && columns.length >= 2 ? notes : null}>
+          The star in a column header saves that school, and the last row of the table is a notepad
+          for each one — handy for writing the reason you preferred a school while it&apos;s in
+          front of you.
+        </NoteHint>
       </div>
 
       {error && (
@@ -280,7 +292,10 @@ export default function SchoolCompare({
                     {columns.map((u) => (
                       <th scope="col" key={u.id}>
                         <div className="cmp-head">
-                          <span className="cmp-name">{u.name}</span>
+                          <span className="cmp-name">
+                            {student && <StarButton universityId={u.id} name={u.name} notes={notes} />}
+                            {u.name}
+                          </span>
                           <span className="cmp-sub">
                             {u.city}, {u.state}
                           </span>
@@ -314,6 +329,26 @@ export default function SchoolCompare({
                       </tr>
                     );
                   })}
+
+                  {/* Your own words, on the same grid as the numbers — the
+                      whole point of comparing is deciding, and the reason
+                      you liked a school belongs next to its stats. */}
+                  {student && (
+                    <tr className="cmp-note-row">
+                      <th scope="row">Your notes</th>
+                      {columns.map((u) => (
+                        <td key={u.id}>
+                          <SchoolNote
+                            universityId={u.id}
+                            name={u.name}
+                            notes={notes}
+                            alwaysOpen
+                            placeholder="What you thought…"
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
