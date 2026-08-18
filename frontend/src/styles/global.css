@@ -4,12 +4,12 @@
    The page is a sky. Content sits on white "cloud decks" — the header and
    footer end in a scalloped cloud fringe rather than a hairline, and the
    cards that carry a college list are propped up on cloud tufts. Dark mode
-   is the same sky after dusk: deeper teal, slate-blue clouds, a scatter of
-   translucent yellow stars and one crescent moon.
+   is the same sky at true dark: deep indigo, clouds holding the same hue, a
+   scatter of translucent yellow stars and one crescent moon.
 
    The accent set is unchanged in meaning (blue / green / orange / red carry
-   safety / target / reach / urgent), only darkened enough to clear WCAG AA
-   against the new cooler ground.
+   safety / target / reach / urgent) in both themes — darkened to clear WCAG
+   AA on the pale sky by day, lightened to clear it on the indigo by night.
 
    Display: Bricolage Grotesque · Body: IBM Plex Sans.
    ========================================================================= */
@@ -93,33 +93,45 @@
   --maxw: 1140px;
 }
 
+/* Night is a deep indigo — the sky at true dark, not at dusk.
+   The neutral ramp sits at roughly hue 245 and holds it from --bg all the
+   way up to --gline, so the greys never drift toward the blue-grey the old
+   teal night was built on, and never toward the plum it was briefly. The
+   ramp is deliberately low-contrast between steps: --surface is only just
+   readable against --bg, which is what keeps a page of cards calm. */
 [data-theme="dark"] {
-  --bg: #0b2733;
-  --surface: #123642;
-  --s2: #1a4453;
-  --s3: #235062;
-  --border: rgba(190, 232, 244, 0.1);
-  --bmed: rgba(190, 232, 244, 0.18);
-  --tx: #e6f3f7;
-  --txm: #a6c2cb;
-  --txf: #4e6f7c;
-  --green: #57c986;
-  --gbg: #0f3327;
-  --blue: #66b8f0;
-  --bbg: #10344c;
-  --orange: #f0a94a;
-  --obg: #33240c;
-  --red: #f4706e;
-  --rbg: #38181a;
-  --gline: #b9d2db;
+  --bg: #1a1830;
+  --surface: #24223f;
+  --s2: #2f2c4e;
+  --s3: #3a375d;
+  --border: rgba(226, 222, 248, 0.11);
+  --bmed: rgba(226, 222, 248, 0.19);
+  --tx: #f0f0f5;
+  --txm: #b6b4cb;
+  --txf: #656087;
+  /* The accents keep their jobs (green target, blue safety, orange reach,
+     red urgent). Blue is the one under pressure here: on an indigo ground a
+     cyan-blue disappears, so safety is periwinkle, far enough up in value to
+     read as a mark on the sky rather than part of it. Red is lifted a step
+     past where it sat on plum — at #f88079 it missed AA on --s3 by 0.07. */
+  --green: #6acb87;
+  --gbg: #16311f;
+  --blue: #93b4f7;
+  --bbg: #1e2452;
+  --orange: #f7b264;
+  --obg: #382a12;
+  --red: #fa9088;
+  --rbg: #3a1e2e;
+  --gline: #c9c6dc;
   --glow: rgba(0, 0, 0, 0.5);
-  --on-accent: #08222c;
-  --on-ink: #0b2733;
+  --on-accent: #14122a;
+  --on-ink: #1a1830;
 
-  /* Night clouds are lit from below by the city, not by the sun — they go
-     slate teal rather than grey, and the haze drops so the stars read. */
-  --cloud: #17414f;
-  --cloud-haze: 0.62;
+  /* Night clouds are lit from below by the city, not by the sun — they take
+     the sky's indigo rather than going grey, and the haze drops so the stars
+     read through them. */
+  --cloud: #292649;
+  --cloud-haze: 0.6;
   --sky-stars: var(--stars), var(--stars-far), var(--moon);
 
   /* Two star layers on deliberately mismatched tiles (520 and 730). A single
