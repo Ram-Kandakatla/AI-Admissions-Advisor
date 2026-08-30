@@ -26,6 +26,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 
 const { validateProfile } = require("./models/studentProfile");
@@ -47,8 +48,62 @@ const { answerAdmissionsQuestion, provider } = require("./services/llmService");
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors());
-app.use(express.json());
+// ---- Security middleware ----
+//
+// Everything in this block is the difference between "safe on localhost" and
+// "safe on the internet". It runs before any route so there is no ordering
+// mistake that leaves an endpoint uncovered.
+
+// How many reverse proxies sit in front of us. This is what express-rate-limit
+// uses to find the real client IP: with the default 0, `req.ip` is the socket
+// address, which is correct locally but becomes the *platform's* proxy IP once
+// hosted — collapsing every visitor into one rate-limit bucket. Render and
+// Fly.io are a single hop, so TRUST_PROXY=1 there. Do not set this higher than
+// the real hop count: each extra hop is one more X-Forwarded-For entry a client
+// can forge to look like a fresh IP and walk around the limiter.
+app.set("trust proxy", Number(process.env.TRUST_PROXY) || 0);
+
+// Express sends no hardening headers on its own — no X-Content-Type-Options,
+// no Referrer-Policy, no HSTS. Helmet supplies the set.
+app.use(
+  helmet({
+    // Helmet's default is "same-origin", which tells the browser to drop this
+    // response whenever the page reading it lives on another origin. That is
+    // right for a server that also serves the HTML, but wrong the moment the
+    // frontend is deployed separately (Phase 8 Option B). The CORS allowlist
+    // below is what actually decides who may read this API; CORP would only
+    // duplicate it and silently break a split deployment.
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
+
+// Bare `cors()` reflects any Origin, so once this is public every site on the
+// internet can call the API from a visitor's browser. Allowlist instead.
+// Requests with no Origin at all (curl, health checks, server-to-server) are
+// unaffected — the header is a browser mechanism, not a firewall.
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+app.use(cors({ origin: allowedOrigins }));
+
+// A light limiter across everything. `chatLimiter` further down stays much
+// stricter because that route costs real money per call; this one exists so the
+// write endpoints (students, applications, notes) cannot be hammered for free.
+// 300 per 15 minutes is far above what a student clicking through the app will
+// ever produce.
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests — please slow down and try again shortly." },
+});
+app.use(globalLimiter);
+
+// 100kb is already express.json()'s default; stating it means a future change
+// to that default cannot quietly widen what this API will swallow.
+app.use(express.json({ limit: "100kb" }));
 
 // Derive the list of majors/regions actually present in the dataset.
 function buildMeta() {
@@ -442,10 +497,32 @@ app.get("/api/students/:id/chat", (req, res) => {
 
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 
+// The client is told what went wrong, never how the server is built: no stack,
+// no file paths, no driver messages. The full error goes to the server log,
+// which is the only place with the context to act on it.
+//
+// Client mistakes keep their own status. Body-parser is the reason this matters
+// in practice — it raises 413 for a payload over the 100kb cap and 400 for
+// malformed JSON, and answering either with a blanket 500 would tell an honest
+// caller to retry a request that can never succeed.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: "Internal server error" });
+  const status = Number(err.status || err.statusCode) || 500;
+  const clientError = status >= 400 && status < 500;
+
+  if (clientError) {
+    console.warn(`${req.method} ${req.originalUrl} -> ${status}: ${err.message}`);
+  } else {
+    console.error(err);
+  }
+
+  res.status(status).json({
+    error: clientError
+      ? err.type === "entity.too.large"
+        ? "Request body is too large."
+        : "Malformed request."
+      : "Internal server error",
+  });
 });
 
 if (require.main === module) {

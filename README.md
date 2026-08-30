@@ -41,41 +41,64 @@ Built to the [step-by-step guide](ClaudeAIAdmissionsSteps.md) and the
 
 ## Run it locally
 
-You need **two terminals** — the backend API and the frontend dev server.
+Requires **Node 22.5 or newer** — `node:sqlite` is a built-in that only stabilised in
+22.5. There's an `.nvmrc`, so `nvm use` picks the right one.
 
-**1 · Backend** (port 4000)
 ```bash
-cd backend
-npm install
-cp .env.example .env     # optional — add an API key for live chatbot answers
-npm start
+npm run install:all      # installs backend + frontend
+cp backend/.env.example backend/.env
+npm run dev              # both servers, one terminal
 ```
+
+Open **http://localhost:5173**. The frontend proxies `/api` to the backend on port 4000.
+
+<details>
+<summary>Prefer two terminals?</summary>
+
+```bash
+npm run dev:backend      # port 4000
+npm run dev:frontend     # port 5173
+```
+</details>
 
 Set **one** key in `backend/.env` to enable the live chatbot — `ANTHROPIC_API_KEY`
 ([console.anthropic.com](https://console.anthropic.com)) or `OPENAI_API_KEY`
 ([platform.openai.com/api-keys](https://platform.openai.com/api-keys)). Claude wins if
-both are present.
-
-**2 · Frontend** (port 5173, proxies `/api` → backend)
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open **http://localhost:5173**.
+both are present. A key that's set but malformed is reported at startup and then ignored,
+so a bad paste shows up in your terminal rather than as a failed chat message later.
 
 > **No API key?** The chatbot runs in offline mode with a built-in knowledge base, so the
 > whole app is fully usable for demos.
 
+### Configuration
+
+Everything is optional; [`backend/.env.example`](backend/.env.example) documents each one.
+
+| Variable | Default | What it does |
+|----------|---------|--------------|
+| `PORT` | `4000` | API port. Note it applies to the *backend*: if `PORT` is already exported in your shell, `npm run dev` will start the API there instead of 4000, and the frontend proxy (which targets 4000) will fail to connect. |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | unset | Enables the live chatbot. |
+| `COMPASS_DB` | `backend/data/compass.db` | SQLite path. `:memory:` is honoured. |
+| `CORS_ORIGIN` | `http://localhost:5173` | Comma-separated origins allowed to call the API from a browser. |
+| `TRUST_PROXY` | `0` | Reverse-proxy hops in front of the app, so rate limiting sees the real client IP. Render and Fly.io are `1`. |
+
+`TRUST_PROXY` is worth setting deliberately when you host this. Too low and every visitor
+shares one rate-limit bucket; too high and a client can forge `X-Forwarded-For` to look
+like a new IP and step around the limiter.
+
 ## Tests
 
 ```bash
-cd backend && npm test      # engines, data integrity, and API endpoint tests (Jest)
+npm test      # engines, data integrity, API endpoints, and hardening (Jest)
 ```
 
 Jest runs against a private in-memory database, so the suites never touch
 `backend/data/compass.db`.
+
+[`tests/security.test.js`](backend/tests/security.test.js) covers the middleware rather
+than any feature — security headers, the CORS allowlist, the request-size cap, that errors
+carry no stack traces, and API-key validation. None of that changes app behaviour when it
+regresses, which is precisely why it needs its own test.
 
 ## Design
 

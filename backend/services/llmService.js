@@ -1,10 +1,12 @@
 // LLM service for the admissions chatbot.
 //
-// Supports either provider, chosen by whichever key is present in the environment:
+// Supports either provider, chosen by whichever key is present AND well-formed:
 //   ANTHROPIC_API_KEY -> Claude   (preferred when both are set)
 //   OPENAI_API_KEY    -> OpenAI
 // With no key at all, it falls back to a small built-in knowledge base so the
-// whole app stays usable in local development without any credentials.
+// whole app stays usable in local development without any credentials. A key
+// that is present but malformed is reported at boot and then treated as absent,
+// which lands in that same fallback instead of a 401 mid-conversation.
 
 const Anthropic = require("@anthropic-ai/sdk");
 const OpenAI = require("openai");
@@ -12,16 +14,85 @@ const OpenAI = require("openai");
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-8";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
-const provider = process.env.ANTHROPIC_API_KEY
+// ---- Key validation ----
+//
+// A key that is present but wrong — a paste that dropped the last characters,
+// the placeholder from .env.example left in place — is worse than no key at
+// all: the app boots looking healthy and then throws a 401 at the first student
+// who asks a question. Checking the shape at startup moves that discovery to
+// the terminal of the person who can fix it.
+//
+// This is deliberately a shape check, not a live API call. Booting must not
+// depend on the network, and only the provider can say whether a well-formed
+// key is actually valid.
+
+const KEY_SPECS = {
+  ANTHROPIC_API_KEY: { prefix: "sk-ant-", minLength: 40, provider: "claude" },
+  // Anthropic keys also begin "sk-", so the prefix alone would wave one through
+  // if it were pasted into the wrong line. `reject` catches that swap.
+  OPENAI_API_KEY: { prefix: "sk-", reject: "sk-ant-", minLength: 40, provider: "openai" },
+};
+
+/**
+ * Inspect one API key from the environment.
+ * @returns {{present: boolean, valid: boolean, problems: string[]}}
+ */
+function inspectApiKey(name, raw) {
+  const spec = KEY_SPECS[name];
+  const value = typeof raw === "string" ? raw.trim() : "";
+
+  // Absent and blank are the same thing: run offline, say nothing. This is a
+  // supported way to use Compass, not a misconfiguration.
+  if (value === "") return { present: false, valid: false, problems: [] };
+
+  const problems = [];
+  if (!value.startsWith(spec.prefix)) {
+    problems.push(`should start with "${spec.prefix}"`);
+  } else if (spec.reject && value.startsWith(spec.reject)) {
+    problems.push(`starts with "${spec.reject}" — that is an Anthropic key, in the OpenAI slot`);
+  }
+  if (value.length < spec.minLength) {
+    problems.push(`is only ${value.length} characters — it looks truncated`);
+  }
+  if (/\s/.test(value)) {
+    problems.push("contains a space or line break — check for a broken paste");
+  }
+
+  return { present: true, valid: problems.length === 0, problems };
+}
+
+const keyStatus = {
+  ANTHROPIC_API_KEY: inspectApiKey("ANTHROPIC_API_KEY", process.env.ANTHROPIC_API_KEY),
+  OPENAI_API_KEY: inspectApiKey("OPENAI_API_KEY", process.env.OPENAI_API_KEY),
+};
+
+for (const [name, status] of Object.entries(keyStatus)) {
+  if (status.present && !status.valid) {
+    console.warn(
+      [
+        "",
+        `  !  ${name} is set but does not look like a valid key:`,
+        ...status.problems.map((p) => `       - it ${p}`),
+        `     Ignoring it. ${KEY_SPECS[name].provider === "claude" ? "Claude" : "OpenAI"} will not be used.`,
+        "     Fix it in backend/.env, or remove the line to run offline on purpose.",
+        "",
+      ].join("\n")
+    );
+  }
+}
+
+// Only a key that passed the shape check gets to select a provider — a
+// malformed one degrades to the offline fallback rather than to a runtime 401.
+const provider = keyStatus.ANTHROPIC_API_KEY.valid
   ? "claude"
-  : process.env.OPENAI_API_KEY
+  : keyStatus.OPENAI_API_KEY.valid
     ? "openai"
     : "fallback";
 
 const anthropic =
-  provider === "claude" ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
+  provider === "claude" ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY.trim() }) : null;
 const openai =
-  provider === "openai" ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+  provider === "openai" ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY.trim() }) : null;
 
 const SYSTEM_PROMPT = `You are Compass, a warm, plain-spoken college admissions advisor for U.S. high school students.
 Help with the application process: timelines and deadlines, essays, standardized tests, recommendation letters,
@@ -180,4 +251,4 @@ function fallbackAnswer(question) {
   );
 }
 
-module.exports = { answerAdmissionsQuestion, provider };
+module.exports = { answerAdmissionsQuestion, provider, inspectApiKey };
