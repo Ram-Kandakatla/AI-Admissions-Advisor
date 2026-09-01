@@ -2,17 +2,20 @@
   "name": "compass",
   "private": true,
   "version": "1.0.0",
-  "description": "Compass — AI college admissions advisor. Root workspace scripts; the app itself lives in backend/ and frontend/.",
+  "description": "Compass — AI college admissions advisor. Root workspace scripts; the app itself lives in backend/ (Hono on Cloudflare Workers) and frontend/ (React + Vite).",
   "engines": {
     "node": ">=22.5.0"
   },
   "scripts": {
     "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "setup": "npm run install:all && npm run db:migrate",
+    "db:migrate": "npm run db:migrate:local --prefix backend",
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev": "concurrently -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
     "build": "npm run build --prefix frontend",
     "test": "npm test --prefix backend",
+    "typecheck": "npm run typecheck --prefix backend",
     "start": "npm start --prefix backend"
   },
   "devDependencies": {

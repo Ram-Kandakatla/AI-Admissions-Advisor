@@ -7,17 +7,19 @@ and financial-aid questions. The architecture is built to extend toward scholars
 internship recommendation engines.
 
 Built to the [step-by-step guide](ClaudeAIAdmissionsSteps.md) and the
-[web-design standards](ClaudeWebDesign.md) in this repo.
+[web-design standards](ClaudeWebDesign.md) in this repo. The hosting roadmap is
+[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md); the Workers/D1 migration that
+Phase 1 performed is written up in [PHASE-1.md](PHASE-1.md).
 
 ## What's inside
 
 | Piece | Stack | Folder |
 |-------|-------|--------|
 | **Frontend** | React + TypeScript (Vite) | [`frontend/`](frontend) |
-| **Backend API** | Node.js + Express | [`backend/`](backend) |
-| **Chatbot** | Claude or OpenAI, with an offline fallback | [`backend/services/llmService.js`](backend/services/llmService.js) |
+| **Backend API** | Hono on the Cloudflare Workers runtime | [`backend/`](backend) |
+| **Chatbot** | Claude or OpenAI, with an offline fallback | [`backend/src/services/llmService.ts`](backend/src/services/llmService.ts) |
 | **Data** | 42-university + 45-scholarship JSON datasets | [`backend/data/`](backend/data) |
-| **Persistence** | SQLite via built-in `node:sqlite` — profiles, chat, applications, and notes survive a restart | [`backend/store/`](backend/store) |
+| **Persistence** | Cloudflare D1 — profiles, chat, applications, and notes survive a restart | [`backend/src/store/`](backend/src/store) |
 
 ### Features
 
@@ -41,64 +43,76 @@ Built to the [step-by-step guide](ClaudeAIAdmissionsSteps.md) and the
 
 ## Run it locally
 
-Requires **Node 22.5 or newer** — `node:sqlite` is a built-in that only stabilised in
-22.5. There's an `.nvmrc`, so `nvm use` picks the right one.
+Requires **Node 22.5 or newer**. There's an `.nvmrc`, so `nvm use` picks the right one.
 
 ```bash
-npm run install:all      # installs backend + frontend
-cp backend/.env.example backend/.env
+npm run setup            # installs backend + frontend, then creates the local D1 schema
 npm run dev              # both servers, one terminal
 ```
 
-Open **http://localhost:5173**. The frontend proxies `/api` to the backend on port 4000.
+Open **http://localhost:5173**. The frontend proxies `/api` to the backend Worker on
+port 8787.
+
+The `setup` step matters on a first run: the backend is a Cloudflare Worker backed by
+D1, and `wrangler dev` will happily boot against a database with no tables in it. If
+every route returns a 500, you skipped the migration — `npm run db:migrate`.
+
+No Cloudflare account is needed. `wrangler dev` runs a real local D1 (SQLite under
+`backend/.wrangler/state`), so the whole stack works offline.
 
 <details>
 <summary>Prefer two terminals?</summary>
 
 ```bash
-npm run dev:backend      # port 4000
-npm run dev:frontend     # port 5173
+npm run dev:backend      # wrangler dev, port 8787
+npm run dev:frontend     # vite, port 5173
 ```
 </details>
 
-Set **one** key in `backend/.env` to enable the live chatbot — `ANTHROPIC_API_KEY`
+Set **one** key in `backend/.dev.vars` to enable the live chatbot — `ANTHROPIC_API_KEY`
 ([console.anthropic.com](https://console.anthropic.com)) or `OPENAI_API_KEY`
 ([platform.openai.com/api-keys](https://platform.openai.com/api-keys)). Claude wins if
-both are present. A key that's set but malformed is reported at startup and then ignored,
-so a bad paste shows up in your terminal rather than as a failed chat message later.
+both are present. A key that's set but malformed is logged and then ignored, so a bad
+paste shows up in your terminal rather than as a failed chat message later.
 
 > **No API key?** The chatbot runs in offline mode with a built-in knowledge base, so the
 > whole app is fully usable for demos.
 
 ### Configuration
 
-Everything is optional; [`backend/.env.example`](backend/.env.example) documents each one.
+Secrets go in `backend/.dev.vars` (gitignored; see
+[`backend/.dev.vars.example`](backend/.dev.vars.example)). Non-secret settings live in
+[`backend/wrangler.toml`](backend/wrangler.toml). Everything is optional.
 
-| Variable | Default | What it does |
-|----------|---------|--------------|
-| `PORT` | `4000` | API port. Note it applies to the *backend*: if `PORT` is already exported in your shell, `npm run dev` will start the API there instead of 4000, and the frontend proxy (which targets 4000) will fail to connect. |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | unset | Enables the live chatbot. |
-| `COMPASS_DB` | `backend/data/compass.db` | SQLite path. `:memory:` is honoured. |
-| `CORS_ORIGIN` | `http://localhost:5173` | Comma-separated origins allowed to call the API from a browser. |
-| `TRUST_PROXY` | `0` | Reverse-proxy hops in front of the app, so rate limiting sees the real client IP. Render and Fly.io are `1`. |
+| Variable | Where | Default | What it does |
+|----------|-------|---------|--------------|
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | `.dev.vars` | unset | Enables the live chatbot. |
+| `ANTHROPIC_MODEL` / `OPENAI_MODEL` | `.dev.vars` | per-provider default | Override the model. |
+| `CORS_ORIGIN` | `wrangler.toml` | `http://localhost:5173` | Comma-separated origins allowed to call the API from a browser. |
 
-`TRUST_PROXY` is worth setting deliberately when you host this. Too low and every visitor
-shares one rate-limit bucket; too high and a client can forge `X-Forwarded-For` to look
-like a new IP and step around the limiter.
+`PORT`, `COMPASS_DB`, and `TRUST_PROXY` are gone. The first two were Node concepts with
+no Worker equivalent. `TRUST_PROXY` existed so the rate limiter could find the real
+client IP behind a proxy — Cloudflare sets `CF-Connecting-IP` itself and a client cannot
+forge it, so that whole class of misconfiguration disappeared with the platform change.
 
 ## Tests
 
 ```bash
-npm test      # engines, data integrity, API endpoints, and hardening (Jest)
+npm test      # engines, data integrity, API endpoints, and hardening
 ```
 
-Jest runs against a private in-memory database, so the suites never touch
+99 tests across 7 suites, run by Vitest **inside the real Workers runtime**
+(`@cloudflare/vitest-pool-workers`), against a real D1 database built from the same
+`migrations/` files that get deployed. Plain Node has no D1 binding and no per-request
+`env`, so a mock would have meant tests that pass while the real Worker breaks.
+
+The suites share one test database and never touch `backend/.wrangler/state` or the old
 `backend/data/compass.db`.
 
-[`tests/security.test.js`](backend/tests/security.test.js) covers the middleware rather
-than any feature — security headers, the CORS allowlist, the request-size cap, that errors
-carry no stack traces, and API-key validation. None of that changes app behaviour when it
-regresses, which is precisely why it needs its own test.
+[`test/security.test.ts`](backend/test/security.test.ts) covers the middleware rather
+than any feature — security headers, the CORS allowlist, the request-size cap, the chat
+rate limiter, that errors carry no stack traces, and API-key validation. None of that
+changes app behaviour when it regresses, which is precisely why it needs its own test.
 
 ## Design
 
@@ -108,18 +122,21 @@ Tight (body). Fully responsive, keyboard-accessible, and `prefers-reduced-motion
 
 ## Data & persistence
 
-Profiles, chat history, and tracked applications live in a SQLite file at
-`backend/data/compass.db`, created on first run and gitignored — it holds real student
-data and never belongs in the repo. It uses Node's built-in `node:sqlite`, so there is no
-database to install and no new dependency; [`store/dataStore.js`](backend/store/dataStore.js)
-kept its original synchronous signatures, so nothing above it changed. Point `COMPASS_DB`
-at another path (or `:memory:`) to override.
+Profiles, chat history, tracked applications, and school notes live in Cloudflare D1.
+The schema is in [`backend/migrations/`](backend/migrations) and applied with
+`npm run db:migrate`. Locally that is a SQLite file under `backend/.wrangler/state`,
+gitignored — it holds real student data and never belongs in the repo — and in
+production it is the managed D1 database, same SQL either way.
+
+[`store/dataStore.ts`](backend/src/store/dataStore.ts) is a `createStore(db)` factory
+built once per request, because a Worker has no module-level state that survives between
+requests to hold a connection in.
 
 Universities and scholarships stay as JSON in [`backend/data/`](backend/data) — they're
 reference data, not user data, and belong in version control where a diff is reviewable.
 Scholarship entries record the *month* a program typically closes plus the sponsor's URL;
 they deliberately never assert a date, for the same reason
-[`models/application.js`](backend/models/application.js) doesn't.
+[`models/application.ts`](backend/src/models/application.ts) doesn't.
 
 ## Extending it (roadmap)
 
@@ -127,9 +144,10 @@ The store and services are written to be swapped without touching the UI:
 
 - **Accounts** — the schema is keyed by student id already; adding a users table and a
   session cookie is the remaining step.
-- **Postgres** — swap the driver in [`backend/store/db.js`](backend/store/db.js). The one
-  real cost is that `pg` is async, so every store function and its callers become
-  promise-based.
+- **Beyond D1** — D1 is SQLite, so it is single-writer per database. If write throughput
+  ever outgrows it, [Hyperdrive](https://developers.cloudflare.com/hyperdrive/) lets a
+  Worker talk to an external Postgres. That is a "years from now, if ever" concern at this
+  scale — and the store is already async, so it would no longer be the rewrite it once was.
 - **More scholarships** — [`backend/data/scholarships.json`](backend/data/scholarships.json)
   is a plain curated file. No free public scholarship API exists (Fastweb and College Board
   don't publish one), so growing this list means curating it or licensing a feed.

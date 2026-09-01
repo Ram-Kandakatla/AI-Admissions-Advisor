@@ -2,14 +2,24 @@
 node_modules/
 
 # Env / secrets — these hold the real ANTHROPIC_API_KEY / OPENAI_API_KEY and
-# must only ever live on this machine, never in the repo.
+# must only ever live on this machine, never in the repo. `.dev.vars` is the
+# Workers equivalent of `.env`: wrangler loads it for local runs, and deployed
+# the same values are set with `wrangler secret put`.
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 *.local
 
-# Local SQLite database — real student profiles typed into this machine's copy
-# of the app. Never in the repo. (WAL/SHM are SQLite's sidecar files.)
+# Local D1 state — wrangler's SQLite files for `wrangler dev` and the test
+# runs, holding whatever profiles were typed into this machine's copy of the
+# app. Never in the repo.
+backend/.wrangler/
+
+# The pre-D1 SQLite database, from when the backend ran on node:sqlite. Kept
+# ignored so an existing clone doesn't suddenly start offering to commit it.
 backend/data/compass.db
 backend/data/compass.db-wal
 backend/data/compass.db-shm

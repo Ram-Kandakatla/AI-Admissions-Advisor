@@ -20,8 +20,33 @@
 //      sponsor's own URL, and the client labels it as unconfirmed — the same
 //      rule models/application.js follows for college deadlines.
 
-const { loadScholarships } = require("../store/dataStore");
-const { currentCycleYear } = require("../models/application");
+import { loadScholarships } from "../store/staticData.js";
+import { currentCycleYear } from "../models/application.js";
+import type { Scholarship, StudentRecord, Tier, Tiered } from "../types.js";
+
+/** The deadline shape the client renders — a month and a year, never a date. */
+export interface DeadlineWindow {
+  month: number | null;
+  year: number | null;
+  label: string;
+  sortKey: string;
+  isTypical: boolean;
+  note: string;
+}
+
+/** A scholarship plus everything the engine worked out about it for one student. */
+export interface ScholarshipMatch extends Scholarship {
+  tier: Tier;
+  matchScore: number;
+  matchedMajors: string[];
+  gpaHeadroom: number | null;
+  /** Ceiling of the award, for sorting ties. Uncapped awards sort at the top. */
+  expectedValue: number;
+  amountLabel: string;
+  deadline: DeadlineWindow;
+  eligibilityToConfirm: string[];
+  reasons: string[];
+}
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -30,15 +55,19 @@ const MONTHS = [
 
 // How much a household at each need level can absorb before sticker price
 // bites — reused from the university engine's thinking, applied to awards.
-const NEED_WEIGHT = { high: 1, medium: 0.6, low: 0.25 };
+const NEED_WEIGHT: Record<string, number> = { high: 1, medium: 0.6, low: 0.25 };
 
-function recommendScholarships(student, all = loadScholarships(), cycleYear = currentCycleYear()) {
+export function recommendScholarships(
+  student: StudentRecord,
+  all: Scholarship[] = loadScholarships(),
+  cycleYear: number = currentCycleYear()
+): Tiered<ScholarshipMatch> {
   const scored = all
     .map((s) => evaluate(s, student, cycleYear))
-    .filter((r) => r !== null)
+    .filter((r): r is ScholarshipMatch => r !== null)
     .sort((a, b) => b.matchScore - a.matchScore || b.expectedValue - a.expectedValue);
 
-  const tiers = { reach: [], target: [], safety: [] };
+  const tiers: Tiered<ScholarshipMatch> = { reach: [], target: [], safety: [] };
   for (const rec of scored) {
     tiers[rec.tier].push(rec);
   }
@@ -52,7 +81,11 @@ function recommendScholarships(student, all = loadScholarships(), cycleYear = cu
  * when they've told us they have no financial need. Everything else is shown,
  * because a scholarship you don't apply for is a scholarship you don't win.
  */
-function evaluate(scholarship, student, cycleYear = currentCycleYear()) {
+export function evaluate(
+  scholarship: Scholarship,
+  student: StudentRecord,
+  cycleYear: number = currentCycleYear()
+): ScholarshipMatch | null {
   const majors = student.interestedMajors || [];
 
   // --- Hard eligibility gates ---
@@ -66,7 +99,7 @@ function evaluate(scholarship, student, cycleYear = currentCycleYear()) {
   }
 
   const matchedMajors = scholarship.forMajors.length
-    ? majors.filter((m) => scholarship.forMajors.includes(m))
+    ? majors.filter((m: string) => scholarship.forMajors.includes(m))
     : [];
   if (scholarship.forMajors.length && matchedMajors.length === 0) return null;
 
@@ -171,7 +204,7 @@ function evaluate(scholarship, student, cycleYear = currentCycleYear()) {
   // told us their financial need, and the hard gate above already acted on it.
   // Repeating it here would ask them to confirm something they just typed in.
   const eligibilityToConfirm = (scholarship.audience || [])
-    .filter((key) => !VERIFIED_BY_PROFILE.has(key))
+    .filter((key: string) => !VERIFIED_BY_PROFILE.has(key))
     .map(audienceLabel);
   if (eligibilityToConfirm.length) {
     reasons.push(`Open only to ${joinList(eligibilityToConfirm)} — confirm you qualify before investing the time.`);
@@ -202,7 +235,11 @@ function evaluate(scholarship, student, cycleYear = currentCycleYear()) {
  * gated on a condition we can't verify stops at target no matter how broad it
  * is, and the elite national programs are a reach for everyone, by design.
  */
-function classifyTier(scholarship, gpaHeadroom, unverifiedCondition) {
+export function classifyTier(
+  scholarship: Pick<Scholarship, "competitiveness">,
+  gpaHeadroom: number | null,
+  unverifiedCondition: boolean
+): Tier {
   if (scholarship.competitiveness === "entitlement") return "safety";
   if (scholarship.competitiveness === "elite") return "reach";
 
@@ -221,7 +258,10 @@ function classifyTier(scholarship, gpaHeadroom, unverifiedCondition) {
 // A month, a year, and the sponsor's own words about it — never a date this
 // app invented. Months from August on belong to the autumn the cycle opens;
 // January through July fall in the calendar year after it.
-function deadlineWindow(scholarship, cycleYear) {
+export function deadlineWindow(
+  scholarship: Pick<Scholarship, "deadlineMonth" | "deadlineNote">,
+  cycleYear: number
+): DeadlineWindow {
   if (scholarship.deadlineMonth == null) {
     return { month: null, year: null, label: "Rolling / varies", sortKey: "9999-99", isTypical: true, note: scholarship.deadlineNote };
   }
@@ -244,7 +284,7 @@ function deadlineWindow(scholarship, cycleYear) {
 // so it survives JSON and sorts against the fixed sums without special cases.
 const FULL_COST_PROXY = 300000;
 
-function awardCeiling(scholarship) {
+function awardCeiling(scholarship: Pick<Scholarship, "award">): number {
   const { min, max, term } = scholarship.award;
   // Full-ride/full-need/full-tuition awards carry 0/0 in the data because the
   // number depends on the college; treat them as above every fixed sum.
@@ -253,9 +293,9 @@ function awardCeiling(scholarship) {
   return max || min || 0;
 }
 
-const usd = (n) => `$${n.toLocaleString("en-US")}`;
+const usd = (n: number) => `$${n.toLocaleString("en-US")}`;
 
-function amountLabel(scholarship) {
+export function amountLabel(scholarship: Pick<Scholarship, "award">): string {
   const { min, max, term } = scholarship.award;
   if (term === "full-ride") return "Full cost of attendance";
   if (term === "full-need") return "Full demonstrated need";
@@ -269,7 +309,7 @@ const VERIFIED_BY_PROFILE = new Set(["low-income"]);
 
 // Audience keys exist so the data stays machine-readable; these are the
 // student-facing words for them.
-const AUDIENCE_LABELS = {
+const AUDIENCE_LABELS: Record<string, string> = {
   "minority-students": "students of colour",
   "black-students": "Black students",
   "hispanic-students": "Hispanic and Latino students",
@@ -287,26 +327,24 @@ const AUDIENCE_LABELS = {
   "military-service": "students willing to take on a service commitment",
 };
 
-function audienceLabel(key) {
+function audienceLabel(key: string): string {
   return AUDIENCE_LABELS[key] || key.replace(/-/g, " ");
 }
 
-function joinList(items) {
+function joinList(items: string[]): string {
   if (items.length <= 1) return items[0] || "";
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-function formatCount(n) {
+function formatCount(n: number): string {
   return n >= 1000 ? `${Math.round(n / 1000)},000` : String(n);
 }
 
-function round(n, places) {
+function round(n: number, places: number): number {
   const f = 10 ** places;
   return Math.round(n * f) / f;
 }
 
-function clamp(n, lo, hi) {
+function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
-
-module.exports = { recommendScholarships, evaluate, classifyTier, deadlineWindow, amountLabel };

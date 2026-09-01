@@ -5,47 +5,62 @@
 //   OPENAI_API_KEY    -> OpenAI
 // With no key at all, it falls back to a small built-in knowledge base so the
 // whole app stays usable in local development without any credentials. A key
-// that is present but malformed is reported at boot and then treated as absent,
-// which lands in that same fallback instead of a 401 mid-conversation.
+// that is present but malformed is reported and then treated as absent, which
+// lands in that same fallback instead of a 401 mid-conversation.
+//
+// WHAT THE WORKERS PORT CHANGED
+//
+// Both SDKs are fetch-based and run in a Worker unmodified, so the two API
+// calls at the bottom are untouched. What could not survive is the *shape* of
+// this module: it used to read process.env at import time and freeze
+// `provider` and the two clients into module constants. A Worker has no
+// process.env and gets its bindings per request, so all of that moved into
+// `createLlmService(env)`. `inspectApiKey` stays a free function — it is pure,
+// and the tests call it directly.
 
-const Anthropic = require("@anthropic-ai/sdk");
-const OpenAI = require("openai");
+import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
+import type { Env, ChatMessage, StudentRecord } from "../types.js";
 
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-8";
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
+const DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-8";
+const DEFAULT_OPENAI_MODEL = "gpt-4o";
+
+export type Provider = "claude" | "openai" | "fallback";
 
 // ---- Key validation ----
 //
 // A key that is present but wrong — a paste that dropped the last characters,
 // the placeholder from .env.example left in place — is worse than no key at
-// all: the app boots looking healthy and then throws a 401 at the first student
-// who asks a question. Checking the shape at startup moves that discovery to
-// the terminal of the person who can fix it.
+// all: the app looks healthy and then throws a 401 at the first student who
+// asks a question. Checking the shape moves that discovery to a log line.
 //
-// This is deliberately a shape check, not a live API call. Booting must not
-// depend on the network, and only the provider can say whether a well-formed
-// key is actually valid.
+// This is deliberately a shape check, not a live API call. Serving a request
+// must not depend on a round trip to the provider, and only the provider can
+// say whether a well-formed key is actually valid.
 
-const KEY_SPECS = {
+const KEY_SPECS: Record<string, { prefix: string; reject?: string; minLength: number; provider: string }> = {
   ANTHROPIC_API_KEY: { prefix: "sk-ant-", minLength: 40, provider: "claude" },
   // Anthropic keys also begin "sk-", so the prefix alone would wave one through
   // if it were pasted into the wrong line. `reject` catches that swap.
   OPENAI_API_KEY: { prefix: "sk-", reject: "sk-ant-", minLength: 40, provider: "openai" },
 };
 
-/**
- * Inspect one API key from the environment.
- * @returns {{present: boolean, valid: boolean, problems: string[]}}
- */
-function inspectApiKey(name, raw) {
-  const spec = KEY_SPECS[name];
+export interface KeyStatus {
+  present: boolean;
+  valid: boolean;
+  problems: string[];
+}
+
+/** Inspect one API key. */
+export function inspectApiKey(name: string, raw: unknown): KeyStatus {
+  const spec = KEY_SPECS[name]!;
   const value = typeof raw === "string" ? raw.trim() : "";
 
   // Absent and blank are the same thing: run offline, say nothing. This is a
   // supported way to use Compass, not a misconfiguration.
   if (value === "") return { present: false, valid: false, problems: [] };
 
-  const problems = [];
+  const problems: string[] = [];
   if (!value.startsWith(spec.prefix)) {
     problems.push(`should start with "${spec.prefix}"`);
   } else if (spec.reject && value.startsWith(spec.reject)) {
@@ -61,38 +76,23 @@ function inspectApiKey(name, raw) {
   return { present: true, valid: problems.length === 0, problems };
 }
 
-const keyStatus = {
-  ANTHROPIC_API_KEY: inspectApiKey("ANTHROPIC_API_KEY", process.env.ANTHROPIC_API_KEY),
-  OPENAI_API_KEY: inspectApiKey("OPENAI_API_KEY", process.env.OPENAI_API_KEY),
-};
+// A Worker isolate is reused across requests, so this is the closest thing to
+// "at boot" available: the warning prints on the first request an isolate
+// serves and then stays quiet, instead of once per request forever.
+const warnedIsolates = new Set<string>();
 
-for (const [name, status] of Object.entries(keyStatus)) {
-  if (status.present && !status.valid) {
-    console.warn(
-      [
-        "",
-        `  !  ${name} is set but does not look like a valid key:`,
-        ...status.problems.map((p) => `       - it ${p}`),
-        `     Ignoring it. ${KEY_SPECS[name].provider === "claude" ? "Claude" : "OpenAI"} will not be used.`,
-        "     Fix it in backend/.env, or remove the line to run offline on purpose.",
-        "",
-      ].join("\n")
-    );
-  }
+function warnOnce(name: string, status: KeyStatus): void {
+  if (!status.present || status.valid || warnedIsolates.has(name)) return;
+  warnedIsolates.add(name);
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      message: `${name} is set but does not look like a valid key — ignoring it`,
+      problems: status.problems,
+      hint: "Fix it in backend/.dev.vars (local) or `wrangler secret put` (deployed), or remove it to run offline on purpose.",
+    })
+  );
 }
-
-// Only a key that passed the shape check gets to select a provider — a
-// malformed one degrades to the offline fallback rather than to a runtime 401.
-const provider = keyStatus.ANTHROPIC_API_KEY.valid
-  ? "claude"
-  : keyStatus.OPENAI_API_KEY.valid
-    ? "openai"
-    : "fallback";
-
-const anthropic =
-  provider === "claude" ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY.trim() }) : null;
-const openai =
-  provider === "openai" ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY.trim() }) : null;
 
 const SYSTEM_PROMPT = `You are Compass, a warm, plain-spoken college admissions advisor for U.S. high school students.
 Help with the application process: timelines and deadlines, essays, standardized tests, recommendation letters,
@@ -108,9 +108,9 @@ Guidelines:
   counselor or the college's financial aid office.
 - Stay on topic. If asked something unrelated to college/admissions/financial aid, gently redirect.`;
 
-function buildContextLine(studentContext) {
+function buildContextLine(studentContext: StudentRecord | null): string {
   if (!studentContext) return "";
-  const bits = [];
+  const bits: string[] = [];
   if (studentContext.name) bits.push(`Name: ${studentContext.name}`);
   if (studentContext.gpa != null) bits.push(`GPA: ${studentContext.gpa}`);
   if (studentContext.satScore) bits.push(`SAT: ${studentContext.satScore}`);
@@ -118,79 +118,125 @@ function buildContextLine(studentContext) {
   if (studentContext.interestedMajors?.length)
     bits.push(`Intended majors: ${studentContext.interestedMajors.join(", ")}`);
   if (studentContext.careerGoals) bits.push(`Career goal: ${studentContext.careerGoals}`);
-  if (studentContext.financialNeed)
-    bits.push(`Financial need: ${studentContext.financialNeed}`);
+  if (studentContext.financialNeed) bits.push(`Financial need: ${studentContext.financialNeed}`);
   if (bits.length === 0) return "";
   return `\n\nHere is context about the student you are helping (use it to personalize, don't recite it back):\n${bits.join(
     "\n"
   )}`;
 }
 
+export interface LlmAnswer {
+  answer: string;
+  source: Provider;
+}
+
+export type LlmService = ReturnType<typeof createLlmService>;
+
 /**
- * Answer an admissions question.
- * @param {string} question
- * @param {object} studentContext - the student's profile (optional)
- * @param {Array<{role, content}>} history - prior turns (optional)
- * @returns {Promise<{answer: string, source: 'claude'|'openai'|'fallback'}>}
+ * Build the chatbot service for one request's environment.
+ *
+ * Cheap to call — the constructors below only stash a key; no connection is
+ * opened until a question is actually asked.
  */
-async function answerAdmissionsQuestion(question, studentContext = null, history = []) {
-  if (provider === "fallback") {
-    return { answer: fallbackAnswer(question), source: "fallback" };
+export function createLlmService(env: Env) {
+  const keyStatus = {
+    ANTHROPIC_API_KEY: inspectApiKey("ANTHROPIC_API_KEY", env.ANTHROPIC_API_KEY),
+    OPENAI_API_KEY: inspectApiKey("OPENAI_API_KEY", env.OPENAI_API_KEY),
+  };
+
+  for (const [name, status] of Object.entries(keyStatus)) warnOnce(name, status);
+
+  // Only a key that passed the shape check gets to select a provider — a
+  // malformed one degrades to the offline fallback rather than to a runtime 401.
+  const provider: Provider = keyStatus.ANTHROPIC_API_KEY.valid
+    ? "claude"
+    : keyStatus.OPENAI_API_KEY.valid
+      ? "openai"
+      : "fallback";
+
+  const anthropicModel = env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
+  const openaiModel = env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
+
+  /** Answer an admissions question. */
+  async function answerAdmissionsQuestion(
+    question: string,
+    studentContext: StudentRecord | null = null,
+    history: ChatMessage[] = []
+  ): Promise<LlmAnswer> {
+    if (provider === "fallback") {
+      return { answer: fallbackAnswer(question), source: "fallback" };
+    }
+
+    const system = SYSTEM_PROMPT + buildContextLine(studentContext);
+    const messages = [
+      ...history
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .slice(-10)
+        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      { role: "user" as const, content: question },
+    ];
+
+    try {
+      const answer =
+        provider === "claude"
+          ? await askClaude(system, messages)
+          : await askOpenAI(system, messages);
+      return answer
+        ? { answer, source: provider }
+        : { answer: fallbackAnswer(question), source: "fallback" };
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: `${provider} API error`,
+          detail: err instanceof Error ? err.message : String(err),
+        })
+      );
+      return {
+        answer:
+          "I'm having trouble reaching my knowledge service right now. Here's a general pointer:\n\n" +
+          fallbackAnswer(question),
+        source: "fallback",
+      };
+    }
   }
 
-  const system = SYSTEM_PROMPT + buildContextLine(studentContext);
-  const messages = [
-    ...history
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .slice(-10)
-      .map((m) => ({ role: m.role, content: m.content })),
-    { role: "user", content: question },
-  ];
-
-  try {
-    const answer =
-      provider === "claude"
-        ? await askClaude(system, messages)
-        : await askOpenAI(system, messages);
-    return answer
-      ? { answer, source: provider }
-      : { answer: fallbackAnswer(question), source: "fallback" };
-  } catch (err) {
-    console.error(`${provider} API error:`, err.message);
-    return {
-      answer:
-        "I'm having trouble reaching my knowledge service right now. Here's a general pointer:\n\n" +
-        fallbackAnswer(question),
-      source: "fallback",
-    };
+  // Claude takes the system prompt as its own top-level parameter.
+  async function askClaude(
+    system: string,
+    messages: { role: "user" | "assistant"; content: string }[]
+  ): Promise<string> {
+    const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY!.trim() });
+    const response = await anthropic.messages.create({
+      model: anthropicModel,
+      max_tokens: 700,
+      temperature: 0.7,
+      system,
+      messages,
+    });
+    return response.content
+      .filter((block): block is Anthropic.TextBlock => block.type === "text")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
   }
-}
 
-// Claude takes the system prompt as its own top-level parameter.
-async function askClaude(system, messages) {
-  const response = await anthropic.messages.create({
-    model: ANTHROPIC_MODEL,
-    max_tokens: 700,
-    temperature: 0.7,
-    system,
-    messages,
-  });
-  return response.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n")
-    .trim();
-}
+  // OpenAI takes the system prompt as the first message in the list.
+  async function askOpenAI(
+    system: string,
+    messages: { role: "user" | "assistant"; content: string }[]
+  ): Promise<string> {
+    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY!.trim() });
+    const response = await openai.chat.completions.create({
+      model: openaiModel,
+      max_tokens: 700,
+      temperature: 0.7,
+      messages: [{ role: "system", content: system }, ...messages],
+    });
+    return (response.choices[0]?.message?.content || "").trim();
+  }
 
-// OpenAI takes the system prompt as the first message in the list.
-async function askOpenAI(system, messages) {
-  const response = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
-    max_tokens: 700,
-    temperature: 0.7,
-    messages: [{ role: "system", content: system }, ...messages],
-  });
-  return (response.choices[0]?.message?.content || "").trim();
+  return { provider, answerAdmissionsQuestion };
 }
 
 // ---- Offline fallback knowledge base ----
@@ -239,7 +285,7 @@ const FALLBACKS = [
   },
 ];
 
-function fallbackAnswer(question) {
+export function fallbackAnswer(question: string): string {
   const q = (question || "").toLowerCase();
   const hit = FALLBACKS.find((f) => f.keys.some((k) => q.includes(k)));
   if (hit) return hit.answer;
@@ -247,8 +293,6 @@ function fallbackAnswer(question) {
     "I can help with admissions timelines, essays, tests, building a balanced college list, and financial aid basics. " +
     "Try asking something like \"When are early action deadlines?\", \"How do I start my personal statement?\", or " +
     "\"How does the FAFSA work?\"\n\n(Note: I'm running in offline mode right now. Add an ANTHROPIC_API_KEY or " +
-    "OPENAI_API_KEY to the backend .env for full, personalized answers.)"
+    "OPENAI_API_KEY to backend/.dev.vars for full, personalized answers.)"
   );
 }
-
-module.exports = { answerAdmissionsQuestion, provider, inspectApiKey };

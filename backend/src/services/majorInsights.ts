@@ -9,13 +9,39 @@
 // either a question for the student to research or a handoff to the chatbot,
 // which can answer with its own knowledge and its own caveats.
 
-const { loadUniversities } = require("../store/dataStore");
-const { classifyTier } = require("./recommendationEngine");
+import { loadUniversities } from "../store/staticData.js";
+import { classifyTier } from "./recommendationEngine.js";
+import type { StudentRecord, Tier, University } from "../types.js";
+
+/** Where one student sits against the schools that offer this major. */
+interface Position {
+  tiers: Record<Tier, number>;
+  gpa: number;
+  medianGPA: number | null;
+  gpaGapToMedian: number | null;
+  satScore: number | null;
+  medianSAT: number | null;
+  affordable: number;
+}
+
+/** Another of the student's majors, and how many of these schools also cover it. */
+interface Combination {
+  major: string;
+  count: number;
+  schools: number[];
+}
+
+/** min / median / max over one numeric column of the matching schools. */
+interface Spread {
+  min: number;
+  median: number | null;
+  max: number;
+}
 
 // Questions worth answering on a school's own admissions/department site.
 // Advice about *how* to research a program — deliberately not claims about
 // any particular one.
-const RESEARCH_QUESTIONS = [
+export const RESEARCH_QUESTIONS = [
   "Do you apply directly into this major, or declare it after freshman year? Direct-admit programs can be far more selective than the university overall.",
   "What is the intro course sequence, and how large are those first classes?",
   "Can undergraduates join research, and how early do they typically start?",
@@ -25,14 +51,16 @@ const RESEARCH_QUESTIONS = [
   "Which clubs, competitions, or project teams serve this field on campus?",
 ];
 
-function median(values) {
+function median(values: number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  // The length check above guarantees these indexes exist; the assertions are
+  // for noUncheckedIndexedAccess, which cannot see that guarantee.
+  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
 }
 
-function spread(values) {
+function spread(values: number[]): Spread | null {
   if (values.length === 0) return null;
   return {
     min: Math.min(...values),
@@ -41,15 +69,15 @@ function spread(values) {
   };
 }
 
-function tally(items) {
-  const counts = new Map();
+function tally(items: string[]): { key: string; count: number }[] {
+  const counts = new Map<string, number>();
   for (const item of items) counts.set(item, (counts.get(item) || 0) + 1);
   return [...counts.entries()]
     .map(([key, count]) => ({ key, count }))
     .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
 }
 
-function round(n, places = 2) {
+function round(n: number | null, places = 2): number | null {
   if (n === null) return null;
   const f = 10 ** places;
   return Math.round(n * f) / f;
@@ -59,7 +87,11 @@ function round(n, places = 2) {
  * Everything the dataset supports about one major, optionally positioned
  * against a student's profile.
  */
-function majorInsights(major, student = null, universities = loadUniversities()) {
+export function majorInsights(
+  major: string,
+  student: StudentRecord | null = null,
+  universities: University[] = loadUniversities()
+) {
   const schools = universities.filter((u) => u.majors.includes(major));
 
   if (schools.length === 0) {
@@ -84,13 +116,13 @@ function majorInsights(major, student = null, universities = loadUniversities())
   }));
 
   // --- Position the student against those specific schools ---
-  let position = null;
-  let combinations = null;
+  let position: Position | null = null;
+  let combinations: Combination[] | null = null;
 
   if (student && typeof student.gpa === "number") {
-    const tiers = { reach: 0, target: 0, safety: 0 };
+    const tiers: Record<Tier, number> = { reach: 0, target: 0, safety: 0 };
     for (const uni of schools) {
-      tiers[classifyTier(uni, round(uni.avgGPA - student.gpa, 2))] += 1;
+      tiers[classifyTier(uni, round(uni.avgGPA - student.gpa, 2) ?? 0)] += 1;
     }
 
     const gpas = schools.map((u) => u.avgGPA);
@@ -100,7 +132,7 @@ function majorInsights(major, student = null, universities = loadUniversities())
       tiers,
       gpa: student.gpa,
       medianGPA: round(medianGPA, 2),
-      gpaGapToMedian: round(student.gpa - medianGPA, 2),
+      gpaGapToMedian: medianGPA === null ? null : round(student.gpa - medianGPA, 2),
       satScore: student.satScore ?? null,
       medianSAT: student.satScore ? median(schools.map((u) => u.avgSAT)) : null,
       // How many of these schools the student could afford at sticker price.
@@ -115,7 +147,7 @@ function majorInsights(major, student = null, universities = loadUniversities())
     // --- Schools that serve more than one of the student's interests ---
     const others = (student.interestedMajors || []).filter((m) => m !== major);
     combinations = others
-      .map((other) => {
+      .map((other: string) => {
         const both = schools.filter((u) => u.majors.includes(other));
         return { major: other, count: both.length, schools: both.map((u) => u.id) };
       })
@@ -159,7 +191,7 @@ function majorInsights(major, student = null, universities = loadUniversities())
           : [],
         tier:
           student && typeof student.gpa === "number"
-            ? classifyTier(u, round(u.avgGPA - student.gpa, 2))
+            ? classifyTier(u, round(u.avgGPA - student.gpa, 2) ?? 0)
             : null,
       }))
       .sort((a, b) => a.acceptanceRate - b.acceptanceRate),
@@ -167,11 +199,9 @@ function majorInsights(major, student = null, universities = loadUniversities())
 }
 
 /** Every major in the dataset with how many schools offer it. */
-function majorCatalog(universities = loadUniversities()) {
+export function majorCatalog(universities: University[] = loadUniversities()) {
   return tally(universities.flatMap((u) => u.majors)).map(({ key, count }) => ({
     major: key,
     schoolCount: count,
   }));
 }
-
-module.exports = { majorInsights, majorCatalog, RESEARCH_QUESTIONS };

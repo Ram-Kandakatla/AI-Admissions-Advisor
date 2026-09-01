@@ -1,28 +1,38 @@
 {
   "name": "ai-college-advisor-backend",
   "version": "1.0.0",
-  "description": "Backend API for the AI College Admissions Advisor",
-  "main": "server.js",
-  "type": "commonjs",
+  "description": "Backend API for the AI College Admissions Advisor — Hono on Cloudflare Workers, D1 for storage",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
   "engines": {
     "node": ">=22.5.0"
   },
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
-    "test": "jest"
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply compass-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply compass-db --remote",
+    "cf-typegen": "wrangler types"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "express-rate-limit": "^7.4.1",
-    "helmet": "^8.3.0",
+    "hono": "^4.6.14",
     "openai": "^4.73.0"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
-    "supertest": "^7.0.0"
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260828.1",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.124.0"
+  },
+  "allowScripts": {
+    "workerd@1.20260815.1": true,
+    "workerd@1.20260828.1": true,
+    "esbuild@0.28.1": true
   }
 }

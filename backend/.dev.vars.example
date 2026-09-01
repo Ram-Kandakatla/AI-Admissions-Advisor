@@ -1,0 +1,28 @@
+# Local secrets for `wrangler dev`.
+#
+#   cp .dev.vars.example .dev.vars
+#
+# This file is the Workers equivalent of the old backend/.env: wrangler loads
+# it into `env` automatically for local runs, and it is gitignored. Deployed,
+# the same values are set with `wrangler secret put NAME` — never in
+# wrangler.toml, whose [vars] block is committed plaintext.
+#
+# Every value is optional. With an empty file the API still serves and the
+# chatbot answers from its built-in offline knowledge base, so a fresh clone is
+# fully usable before you have any credentials.
+
+# --- Chatbot provider -------------------------------------------------------
+# Set ONE of the two. Claude wins if both are set. With neither, the chatbot
+# runs in offline fallback mode (canned answers).
+
+# Anthropic Claude — key from https://console.anthropic.com  (starts with "sk-ant-")
+ANTHROPIC_API_KEY=
+
+# OpenAI — key from https://platform.openai.com/api-keys     (starts with "sk-")
+OPENAI_API_KEY=
+
+# Optional model overrides. Left commented so llmService.ts's own defaults are
+# the single place a model version is chosen — an example file that pins a
+# model goes stale the week after the next one ships.
+# ANTHROPIC_MODEL=claude-opus-4-8
+# OPENAI_MODEL=gpt-4o

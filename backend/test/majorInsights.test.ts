@@ -1,6 +1,7 @@
-const request = require("supertest");
-const app = require("../server");
-const { majorInsights, majorCatalog } = require("../services/majorInsights");
+import { describe, expect, test } from "vitest";
+import { majorCatalog, majorInsights } from "../src/services/majorInsights.js";
+import { body, get, post } from "./helpers.js";
+import type { StudentRecord, University } from "../src/types.js";
 
 // A small hand-built dataset, so the assertions are about the logic rather
 // than about whatever happens to be in universities.json today.
@@ -25,7 +26,7 @@ const FIXTURE = [
     majors: ["Business"], acceptanceRate: 70, tuition: 20000,
     region: "South", city: "D", state: "TX", setting: "Urban", type: "Public",
   },
-];
+] as University[];
 
 describe("majorInsights", () => {
   test("counts only the schools that actually offer the major", () => {
@@ -45,10 +46,10 @@ describe("majorInsights", () => {
   test("adjacent majors are ranked by how often they co-occur", () => {
     const cs = majorInsights("CS", null, FIXTURE);
     // Math and Business each appear at 2 of the 3 CS schools; CS excludes itself.
-    expect(cs.adjacent.map((a) => a.key)).not.toContain("CS");
-    const math = cs.adjacent.find((a) => a.key === "Math");
-    expect(math.count).toBe(2);
-    expect(math.share).toBeCloseTo(0.667, 2);
+    expect(cs.adjacent!.map((a) => a.key)).not.toContain("CS");
+    const math = cs.adjacent!.find((a) => a.key === "Math");
+    expect(math!.count).toBe(2);
+    expect(math!.share).toBeCloseTo(0.667, 2);
   });
 
   test("schools are sorted most selective first", () => {
@@ -64,49 +65,49 @@ describe("majorInsights", () => {
   });
 
   test("position tiers are computed against the student's own GPA", () => {
-    const strong = majorInsights("CS", { gpa: 4.0, interestedMajors: ["CS"] }, FIXTURE);
-    const weak = majorInsights("CS", { gpa: 3.0, interestedMajors: ["CS"] }, FIXTURE);
+    const strong = majorInsights("CS", { gpa: 4.0, interestedMajors: ["CS"] } as unknown as StudentRecord as unknown as StudentRecord, FIXTURE);
+    const weak = majorInsights("CS", { gpa: 3.0, interestedMajors: ["CS"] } as unknown as StudentRecord as unknown as StudentRecord, FIXTURE);
     // A stronger student converts reaches into targets and safeties.
-    expect(strong.position.tiers.safety).toBeGreaterThan(weak.position.tiers.safety);
-    expect(weak.position.tiers.reach).toBeGreaterThan(strong.position.tiers.reach);
+    expect(strong.position!.tiers.safety).toBeGreaterThan(weak.position!.tiers.safety);
+    expect(weak.position!.tiers.reach).toBeGreaterThan(strong.position!.tiers.reach);
   });
 
   test("gpaGapToMedian is signed relative to the major's median", () => {
-    const above = majorInsights("CS", { gpa: 3.9, interestedMajors: ["CS"] }, FIXTURE);
-    expect(above.position.medianGPA).toBe(3.7);
-    expect(above.position.gpaGapToMedian).toBeCloseTo(0.2, 2);
+    const above = majorInsights("CS", { gpa: 3.9, interestedMajors: ["CS"] } as unknown as StudentRecord as unknown as StudentRecord, FIXTURE);
+    expect(above.position!.medianGPA).toBe(3.7);
+    expect(above.position!.gpaGapToMedian).toBeCloseTo(0.2, 2);
 
-    const below = majorInsights("CS", { gpa: 3.5, interestedMajors: ["CS"] }, FIXTURE);
-    expect(below.position.gpaGapToMedian).toBeCloseTo(-0.2, 2);
+    const below = majorInsights("CS", { gpa: 3.5, interestedMajors: ["CS"] } as unknown as StudentRecord as unknown as StudentRecord, FIXTURE);
+    expect(below.position!.gpaGapToMedian).toBeCloseTo(-0.2, 2);
   });
 
   test("combinations count schools covering a second interest", () => {
     const cs = majorInsights(
       "CS",
-      { gpa: 3.7, interestedMajors: ["CS", "Math", "Business"] },
+      { gpa: 3.7, interestedMajors: ["CS", "Math", "Business"] } as unknown as StudentRecord as unknown as StudentRecord,
       FIXTURE
     );
-    const math = cs.combinations.find((c) => c.major === "Math");
-    const business = cs.combinations.find((c) => c.major === "Business");
-    expect(math.count).toBe(2); // Alpha, Gamma
-    expect(business.count).toBe(2); // Beta, Gamma
+    const math = cs.combinations!.find((c) => c.major === "Math");
+    const business = cs.combinations!.find((c) => c.major === "Business");
+    expect(math!.count).toBe(2); // Alpha, Gamma
+    expect(business!.count).toBe(2); // Beta, Gamma
     // The major itself is never listed as a combination with itself.
-    expect(cs.combinations.map((c) => c.major)).not.toContain("CS");
+    expect(cs.combinations!.map((c) => c.major)).not.toContain("CS");
   });
 
   test("alsoCovers lists the student's other majors per school", () => {
-    const cs = majorInsights("CS", { gpa: 3.7, interestedMajors: ["CS", "Math"] }, FIXTURE);
+    const cs = majorInsights("CS", { gpa: 3.7, interestedMajors: ["CS", "Math"] } as unknown as StudentRecord as unknown as StudentRecord, FIXTURE);
     const gamma = cs.schools.find((s) => s.shortName === "Gamma");
     const beta = cs.schools.find((s) => s.shortName === "Beta");
-    expect(gamma.alsoCovers).toEqual(["Math"]);
-    expect(beta.alsoCovers).toEqual([]);
+    expect(gamma!.alsoCovers).toEqual(["Math"]);
+    expect(beta!.alsoCovers).toEqual([]);
   });
 
   test("affordability respects the student's stated need", () => {
-    const high = majorInsights("CS", { gpa: 3.7, financialNeed: "high", interestedMajors: [] }, FIXTURE);
-    const low = majorInsights("CS", { gpa: 3.7, financialNeed: "low", interestedMajors: [] }, FIXTURE);
-    expect(high.position.affordable).toBe(1); // only Beta at 30k
-    expect(low.position.affordable).toBe(3); // no ceiling
+    const high = majorInsights("CS", { gpa: 3.7, financialNeed: "high", interestedMajors: [] } as unknown as StudentRecord as unknown as StudentRecord, FIXTURE);
+    const low = majorInsights("CS", { gpa: 3.7, financialNeed: "low", interestedMajors: [] } as unknown as StudentRecord as unknown as StudentRecord, FIXTURE);
+    expect(high.position!.affordable).toBe(1); // only Beta at 30k
+    expect(low.position!.affordable).toBe(3); // no ceiling
   });
 
   test("a major nobody offers returns an empty result rather than throwing", () => {
@@ -117,45 +118,42 @@ describe("majorInsights", () => {
 
   test("catalog counts every major across the dataset", () => {
     const catalog = majorCatalog(FIXTURE);
-    expect(catalog.find((c) => c.major === "Business").schoolCount).toBe(3);
-    expect(catalog.find((c) => c.major === "Math").schoolCount).toBe(2);
+    expect(catalog.find((c) => c.major === "Business")!.schoolCount).toBe(3);
+    expect(catalog.find((c) => c.major === "Math")!.schoolCount).toBe(2);
   });
 });
 
 describe("major endpoints", () => {
   test("GET /api/majors lists majors with counts", async () => {
-    const res = await request(app).get("/api/majors");
-    expect(res.status).toBe(200);
-    expect(res.body.majors.length).toBeGreaterThan(5);
-    expect(res.body.majors[0]).toHaveProperty("schoolCount");
+    const b = await body(await get("/api/majors"), 200);
+    expect(b.majors.length).toBeGreaterThan(5);
+    expect(b.majors[0]).toHaveProperty("schoolCount");
   });
 
   test("GET /api/majors/:major works anonymously", async () => {
-    const res = await request(app).get("/api/majors/CS");
-    expect(res.status).toBe(200);
-    expect(res.body.position).toBeNull();
-    expect(res.body.researchQuestions.length).toBeGreaterThan(0);
+    const b = await body(await get("/api/majors/CS"), 200);
+    expect(b.position).toBeNull();
+    expect(b.researchQuestions.length).toBeGreaterThan(0);
   });
 
   test("a studentId personalizes the response", async () => {
-    const student = await request(app)
-      .post("/api/students")
-      .send({ name: "Kai", gpa: 3.9, interestedMajors: ["CS", "Math"] });
+    const student = await body(
+      await post("/api/students", { name: "Kai", gpa: 3.9, interestedMajors: ["CS", "Math"] }),
+      201
+    );
 
-    const res = await request(app).get(`/api/majors/CS?studentId=${student.body.id}`);
-    expect(res.status).toBe(200);
-    expect(res.body.position).not.toBeNull();
-    expect(res.body.combinations.map((c) => c.major)).toContain("Math");
+    const b = await body(await get(`/api/majors/CS?studentId=${student.id}`), 200);
+    expect(b.position).not.toBeNull();
+    expect(b.combinations.map((c: { major: string }) => c.major)).toContain("Math");
   });
 
   test("majors with spaces survive URL encoding", async () => {
-    const res = await request(app).get(`/api/majors/${encodeURIComponent("Data Science")}`);
-    expect(res.status).toBe(200);
-    expect(res.body.major).toBe("Data Science");
+    const b = await body(await get(`/api/majors/${encodeURIComponent("Data Science")}`), 200);
+    expect(b.major).toBe("Data Science");
   });
 
   test("unknown major and unknown student both 404", async () => {
-    expect((await request(app).get("/api/majors/Nonexistent")).status).toBe(404);
-    expect((await request(app).get("/api/majors/CS?studentId=nope")).status).toBe(404);
+    expect((await get("/api/majors/Nonexistent")).status).toBe(404);
+    expect((await get("/api/majors/CS?studentId=nope")).status).toBe(404);
   });
 });

@@ -1,4 +1,6 @@
-const { recommendUniversities, classifyTier } = require("../services/recommendationEngine");
+import { describe, expect, test } from "vitest";
+import { classifyTier, recommendUniversities } from "../src/services/recommendationEngine.js";
+import type { StudentRecord, University } from "../src/types.js";
 
 const sampleUniversities = [
   {
@@ -53,7 +55,7 @@ const sampleUniversities = [
     city: "Portland",
     state: "OR",
   },
-];
+] as unknown as University[];
 
 const baseStudent = {
   gpa: 3.7,
@@ -62,7 +64,7 @@ const baseStudent = {
   extracurriculars: [],
   financialNeed: "low",
   preferredRegions: [],
-};
+} as unknown as StudentRecord;
 
 test("groups schools into reach, target, and safety", () => {
   const recs = recommendUniversities(baseStudent, sampleUniversities);
@@ -82,8 +84,8 @@ test("high financial need penalizes expensive schools in score", () => {
   const highNeed = recommendUniversities({ ...baseStudent, financialNeed: "high" }, sampleUniversities);
   const eliteLow = [...wealthyOk.reach].find((u) => u.shortName === "ET");
   const eliteHigh = [...highNeed.reach].find((u) => u.shortName === "ET");
-  expect(eliteHigh.matchScore).toBeLessThan(eliteLow.matchScore);
-  expect(eliteHigh.affordable).toBe(false);
+  expect(eliteHigh!.matchScore).toBeLessThan(eliteLow!.matchScore);
+  expect(eliteHigh!.affordable).toBe(false);
 });
 
 test("region preference boosts matching schools", () => {
@@ -92,8 +94,8 @@ test("region preference boosts matching schools", () => {
     sampleUniversities
   );
   const midState = [...recs.reach, ...recs.target, ...recs.safety].find((u) => u.shortName === "MS");
-  expect(midState.regionFit).toBe(true);
-  expect(midState.reasons.join(" ")).toMatch(/region/i);
+  expect(midState!.regionFit).toBe(true);
+  expect(midState!.reasons.join(" ")).toMatch(/region/i);
 });
 
 test("classifyTier marks highly selective schools as reach", () => {

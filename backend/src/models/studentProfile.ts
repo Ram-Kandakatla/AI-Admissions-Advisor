@@ -1,27 +1,37 @@
 // Student profile shape + validation/normalization helpers.
-// Profiles are kept in memory (see store/dataStore.js) for the MVP.
+//
+// Pure logic, no I/O — unchanged from the Express build apart from types.
 
-const FINANCIAL_NEED = ["high", "medium", "low"];
+import type { FinancialNeed, StudentProfile } from "../types.js";
 
-const REGIONS = ["Northeast", "South", "Midwest", "West"];
+export const FINANCIAL_NEED: FinancialNeed[] = ["high", "medium", "low"];
+
+export const REGIONS = ["Northeast", "South", "Midwest", "West"];
+
+export interface ProfileValidation {
+  valid: boolean;
+  errors: string[];
+  profile: StudentProfile;
+}
 
 /**
  * Validate and normalize an incoming profile payload.
  * Returns { valid, errors, profile } where `profile` holds cleaned values.
  */
-function validateProfile(payload = {}) {
-  const errors = [];
-  const profile = {};
+export function validateProfile(payload: unknown = {}): ProfileValidation {
+  const body = (payload ?? {}) as Record<string, unknown>;
+  const errors: string[] = [];
+  const profile: Partial<StudentProfile> = {};
 
   // Name — required, non-empty string
-  if (typeof payload.name !== "string" || payload.name.trim() === "") {
+  if (typeof body.name !== "string" || body.name.trim() === "") {
     errors.push("name is required");
   } else {
-    profile.name = payload.name.trim().slice(0, 80);
+    profile.name = body.name.trim().slice(0, 80);
   }
 
   // GPA — required, 0-4.0 (we allow a little headroom for weighted scales)
-  const gpa = Number(payload.gpa);
+  const gpa = Number(body.gpa);
   if (Number.isNaN(gpa) || gpa < 0 || gpa > 5) {
     errors.push("gpa must be a number between 0 and 5.0");
   } else {
@@ -29,8 +39,8 @@ function validateProfile(payload = {}) {
   }
 
   // SAT — optional, 400-1600
-  if (payload.satScore !== undefined && payload.satScore !== null && payload.satScore !== "") {
-    const sat = Number(payload.satScore);
+  if (body.satScore !== undefined && body.satScore !== null && body.satScore !== "") {
+    const sat = Number(body.satScore);
     if (Number.isNaN(sat) || sat < 400 || sat > 1600) {
       errors.push("satScore must be between 400 and 1600");
     } else {
@@ -41,8 +51,8 @@ function validateProfile(payload = {}) {
   }
 
   // ACT — optional, 1-36
-  if (payload.actScore !== undefined && payload.actScore !== null && payload.actScore !== "") {
-    const act = Number(payload.actScore);
+  if (body.actScore !== undefined && body.actScore !== null && body.actScore !== "") {
+    const act = Number(body.actScore);
     if (Number.isNaN(act) || act < 1 || act > 36) {
       errors.push("actScore must be between 1 and 36");
     } else {
@@ -53,33 +63,37 @@ function validateProfile(payload = {}) {
   }
 
   // Interested majors — required, at least one
-  const majors = toStringArray(payload.interestedMajors);
+  const majors = toStringArray(body.interestedMajors);
   if (majors.length === 0) {
     errors.push("interestedMajors must include at least one major");
   }
   profile.interestedMajors = majors;
 
   // Extracurriculars — optional
-  profile.extracurriculars = toStringArray(payload.extracurriculars);
+  profile.extracurriculars = toStringArray(body.extracurriculars);
 
   // Career goals — optional free text
   profile.careerGoals =
-    typeof payload.careerGoals === "string" ? payload.careerGoals.trim().slice(0, 500) : "";
+    typeof body.careerGoals === "string" ? body.careerGoals.trim().slice(0, 500) : "";
 
   // Financial need — defaults to medium
-  profile.financialNeed = FINANCIAL_NEED.includes(payload.financialNeed)
-    ? payload.financialNeed
+  profile.financialNeed = FINANCIAL_NEED.includes(body.financialNeed as FinancialNeed)
+    ? (body.financialNeed as FinancialNeed)
     : "medium";
 
   // Preferred regions — optional, validated against known regions
-  profile.preferredRegions = toStringArray(payload.preferredRegions).filter((r) =>
+  profile.preferredRegions = toStringArray(body.preferredRegions).filter((r) =>
     REGIONS.includes(r)
   );
 
-  return { valid: errors.length === 0, errors, profile };
+  return {
+    valid: errors.length === 0,
+    errors,
+    profile: profile as StudentProfile,
+  };
 }
 
-function toStringArray(value) {
+function toStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map((v) => String(v).trim()).filter(Boolean);
   }
@@ -92,5 +106,3 @@ function toStringArray(value) {
   }
   return [];
 }
-
-module.exports = { validateProfile, FINANCIAL_NEED, REGIONS };

@@ -14,7 +14,11 @@ import type {
   University,
 } from "./types";
 
-// All requests go through the Vite proxy to the Express backend (/api -> :4000).
+// All requests go through the Vite proxy to the backend Worker (/api -> :8787).
+//
+// Phase 7 puts the frontend and the API on one Cloudflare Pages origin, at
+// which point /api resolves directly and the proxy goes away — this file needs
+// no change either way, since every path here is already origin-relative.
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {

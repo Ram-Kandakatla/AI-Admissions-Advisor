@@ -10,7 +10,16 @@
 // as unconfirmed until the student replaces them with the real date off the
 // school's admissions page, which flips the flag to false.
 
-const DECISION_PLANS = {
+import type { ApplicationInput, Checklist } from "../types.js";
+
+export interface DecisionPlan {
+  label: string;
+  binding: boolean;
+  typical: { month: number; day: number; offsetYears: number } | null;
+  note: string;
+}
+
+export const DECISION_PLANS: Record<string, DecisionPlan> = {
   ED: {
     label: "Early Decision",
     binding: true,
@@ -57,7 +66,7 @@ const DECISION_PLANS = {
   },
 };
 
-const STATUSES = [
+export const STATUSES = [
   "planning",
   "in-progress",
   "submitted",
@@ -69,7 +78,7 @@ const STATUSES = [
 
 // The tasks common to essentially every US application. Kept generic on
 // purpose — school-specific requirements vary too much to hard-code.
-const CHECKLIST = [
+export const CHECKLIST = [
   { key: "essay", label: "Personal essay" },
   { key: "supplements", label: "Supplemental essays" },
   { key: "recommendations", label: "Recommendation letters" },
@@ -79,7 +88,7 @@ const CHECKLIST = [
   { key: "aid", label: "Financial aid forms" },
 ];
 
-const CHECKLIST_KEYS = CHECKLIST.map((c) => c.key);
+export const CHECKLIST_KEYS = CHECKLIST.map((c) => c.key);
 
 /**
  * Which application cycle are we in? A cycle is named for the autumn the
@@ -87,7 +96,7 @@ const CHECKLIST_KEYS = CHECKLIST.map((c) => c.key);
  * cycle. July is the changeover — by then the previous cycle's decisions are
  * long settled and rising seniors are starting their lists.
  */
-function currentCycleYear(now = new Date()) {
+export function currentCycleYear(now: Date = new Date()): number {
   return now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
 }
 
@@ -96,7 +105,10 @@ function currentCycleYear(now = new Date()) {
  * Date-only strings dodge the timezone trap where a UTC-midnight Date
  * renders as the previous day for anyone west of Greenwich.
  */
-function typicalDeadline(plan, cycleYear = currentCycleYear()) {
+export function typicalDeadline(
+  plan: string,
+  cycleYear: number = currentCycleYear()
+): string | null {
   const spec = DECISION_PLANS[plan];
   if (!spec || !spec.typical) return null;
   const { month, day, offsetYears } = spec.typical;
@@ -104,27 +116,34 @@ function typicalDeadline(plan, cycleYear = currentCycleYear()) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function isDateString(value) {
+export function isDateString(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const [y, m, d] = value.split("-").map(Number);
+  const [y, m, d] = value.split("-").map(Number) as [number, number, number];
   if (m < 1 || m > 12 || d < 1 || d > 31) return false;
   // Round-trip through UTC to reject things like 2026-02-30.
   const probe = new Date(Date.UTC(y, m - 1, d));
   return probe.getUTCFullYear() === y && probe.getUTCMonth() === m - 1 && probe.getUTCDate() === d;
 }
 
-function emptyChecklist() {
-  return CHECKLIST_KEYS.reduce((acc, key) => ({ ...acc, [key]: false }), {});
+export function emptyChecklist(): Checklist {
+  return CHECKLIST_KEYS.reduce<Checklist>((acc, key) => ({ ...acc, [key]: false }), {});
 }
 
-function normalizeChecklist(value) {
+export function normalizeChecklist(value: unknown): Checklist {
   const checklist = emptyChecklist();
   if (value && typeof value === "object") {
+    const source = value as Record<string, unknown>;
     for (const key of CHECKLIST_KEYS) {
-      if (typeof value[key] === "boolean") checklist[key] = value[key];
+      if (typeof source[key] === "boolean") checklist[key] = source[key];
     }
   }
   return checklist;
+}
+
+export interface ApplicationValidation {
+  valid: boolean;
+  errors: string[];
+  application: ApplicationInput;
 }
 
 /**
@@ -132,11 +151,15 @@ function normalizeChecklist(value) {
  * `universityIds` is the set of ids that actually exist, so we reject
  * applications pointing at schools not in the dataset.
  */
-function validateApplication(payload = {}, universityIds = null) {
-  const errors = [];
-  const application = {};
+export function validateApplication(
+  payload: unknown = {},
+  universityIds: Set<number> | null = null
+): ApplicationValidation {
+  const body = (payload ?? {}) as Record<string, unknown>;
+  const errors: string[] = [];
+  const application: Partial<ApplicationInput> = {};
 
-  const universityId = Number(payload.universityId);
+  const universityId = Number(body.universityId);
   if (!Number.isInteger(universityId)) {
     errors.push("universityId must be an integer");
   } else if (universityIds && !universityIds.has(universityId)) {
@@ -145,14 +168,14 @@ function validateApplication(payload = {}, universityIds = null) {
     application.universityId = universityId;
   }
 
-  const plan = typeof payload.plan === "string" ? payload.plan.toUpperCase() : "RD";
+  const plan = typeof body.plan === "string" ? body.plan.toUpperCase() : "RD";
   if (!DECISION_PLANS[plan]) {
     errors.push(`plan must be one of: ${Object.keys(DECISION_PLANS).join(", ")}`);
   } else {
     application.plan = plan;
   }
 
-  const status = typeof payload.status === "string" ? payload.status : "planning";
+  const status = typeof body.status === "string" ? body.status : "planning";
   if (!STATUSES.includes(status)) {
     errors.push(`status must be one of: ${STATUSES.join(", ")}`);
   } else {
@@ -161,32 +184,22 @@ function validateApplication(payload = {}, universityIds = null) {
 
   // A deadline the student typed in is theirs — we keep it and stop calling
   // the date typical. Omitting it falls back to the plan's convention.
-  if (payload.deadline === null || payload.deadline === undefined || payload.deadline === "") {
+  if (body.deadline === null || body.deadline === undefined || body.deadline === "") {
     application.deadline = application.plan ? typicalDeadline(application.plan) : null;
     application.deadlineIsTypical = application.deadline !== null;
-  } else if (!isDateString(payload.deadline)) {
+  } else if (!isDateString(body.deadline)) {
     errors.push("deadline must be a YYYY-MM-DD date");
   } else {
-    application.deadline = payload.deadline;
+    application.deadline = body.deadline;
     application.deadlineIsTypical = false;
   }
 
-  application.checklist = normalizeChecklist(payload.checklist);
-  application.notes =
-    typeof payload.notes === "string" ? payload.notes.trim().slice(0, 1000) : "";
+  application.checklist = normalizeChecklist(body.checklist);
+  application.notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 1000) : "";
 
-  return { valid: errors.length === 0, errors, application };
+  return {
+    valid: errors.length === 0,
+    errors,
+    application: application as ApplicationInput,
+  };
 }
-
-module.exports = {
-  DECISION_PLANS,
-  STATUSES,
-  CHECKLIST,
-  CHECKLIST_KEYS,
-  currentCycleYear,
-  typicalDeadline,
-  isDateString,
-  emptyChecklist,
-  normalizeChecklist,
-  validateApplication,
-};

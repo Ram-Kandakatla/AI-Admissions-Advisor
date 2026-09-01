@@ -1,0 +1,37 @@
+# Compass API — Cloudflare Worker.
+#
+# Phase 1 runs this as a standalone Worker (`npm run dev` → wrangler dev on
+# :8787, which the Vite dev server proxies /api to). Phase 7 adds a thin
+# functions/api/[[route]].ts adapter that imports the same src/app.ts, so
+# nothing here has to move when the API becomes a Pages Function.
+
+name = "compass-api"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+# The Anthropic and OpenAI SDKs pull in a few Node built-in shims (streams,
+# buffer). This flag is what makes those resolve inside the isolate; without it
+# the bundle fails at build time rather than at runtime.
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "compass-db"
+# Filled in by `wrangler d1 create compass-db` (Phase 7.3). Local `wrangler dev`
+# ignores this and uses a SQLite file under .wrangler/state, so the local dev
+# loop works before the real database exists.
+database_id = "local-placeholder-replace-in-phase-7"
+migrations_dir = "migrations"
+
+[vars]
+# Comma-separated browser origins allowed to call this API. The Vite dev server
+# is the only one that matters until Phase 7. Same allowlist decision as the
+# Express build, just read from a Worker var instead of process.env.
+CORS_ORIGIN = "http://localhost:5173"
+
+# ANTHROPIC_API_KEY / OPENAI_API_KEY are secrets, never vars — set them in
+# .dev.vars locally (gitignored) and with `wrangler secret put` in production.
+# With neither set the chatbot runs its offline fallback, same as before.

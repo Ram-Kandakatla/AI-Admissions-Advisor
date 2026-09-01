@@ -5,18 +5,33 @@
 // The rules are intentionally simple and transparent so they can be validated
 // with real students before any move to a learned model.
 
-const { loadUniversities } = require("../store/dataStore");
+import { loadUniversities } from "../store/staticData.js";
+import type { StudentRecord, Tier, Tiered, University } from "../types.js";
+
+/** A university plus everything the engine worked out about it for one student. */
+export interface Recommendation extends University {
+  tier: Tier;
+  matchScore: number;
+  matchedMajors: string[];
+  gpaGap: number;
+  affordable: boolean;
+  regionFit: boolean;
+  reasons: string[];
+}
 
 // Tuition thresholds used to judge financial fit by need level (USD/year sticker).
-const AFFORDABLE_CEILING = { high: 35000, medium: 55000, low: Infinity };
+const AFFORDABLE_CEILING: Record<string, number> = { high: 35000, medium: 55000, low: Infinity };
 
-function recommendUniversities(student, allUniversities = loadUniversities()) {
+export function recommendUniversities(
+  student: StudentRecord,
+  allUniversities: University[] = loadUniversities()
+): Tiered<Recommendation> {
   const scored = allUniversities
     .map((uni) => evaluate(uni, student))
-    .filter((r) => r !== null)
+    .filter((r): r is Recommendation => r !== null)
     .sort((a, b) => b.matchScore - a.matchScore);
 
-  const tiers = { reach: [], target: [], safety: [] };
+  const tiers: Tiered<Recommendation> = { reach: [], target: [], safety: [] };
   for (const rec of scored) {
     tiers[rec.tier].push(rec);
   }
@@ -28,9 +43,9 @@ function recommendUniversities(student, allUniversities = loadUniversities()) {
  * Returns null when the school has no overlap with the student's intended majors
  * (a hard requirement), otherwise a recommendation object.
  */
-function evaluate(uni, student) {
+export function evaluate(uni: University, student: StudentRecord): Recommendation | null {
   const majors = student.interestedMajors || [];
-  const matchedMajors = majors.filter((m) => uni.majors.includes(m));
+  const matchedMajors = majors.filter((m: string) => uni.majors.includes(m));
   if (matchedMajors.length === 0) return null; // Rule 1: must offer an intended major
 
   const reasons = [];
@@ -117,19 +132,17 @@ function evaluate(uni, student) {
 }
 
 // Reach / target / safety based on selectivity and GPA distance.
-function classifyTier(uni, gpaGap) {
+export function classifyTier(uni: Pick<University, "acceptanceRate">, gpaGap: number): Tier {
   if (uni.acceptanceRate < 12 || gpaGap >= 0.15) return "reach";
   if (uni.acceptanceRate > 40 && gpaGap <= -0.1) return "safety";
   return "target";
 }
 
-function round(n, places) {
+function round(n: number, places: number): number {
   const f = 10 ** places;
   return Math.round(n * f) / f;
 }
 
-function clamp(n, lo, hi) {
+function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
-
-module.exports = { recommendUniversities, evaluate, classifyTier };
