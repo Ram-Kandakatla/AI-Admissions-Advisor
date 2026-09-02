@@ -77,7 +77,13 @@ export default function ProfileForm({
     setSaving(true);
     setErrors([]);
     try {
-      const record = await api.createStudent(form);
+      // An account holds one profile, so an edit updates the row it already
+      // has. Before Phase 2 this always POSTed, which quietly created a second
+      // student on every edit and left the first one — with its notes and
+      // tracked applications still attached — stranded.
+      const record = existing
+        ? await api.updateStudent(existing.id, form)
+        : await api.createStudent(form);
       onSaved(record);
     } catch (err) {
       setErrors([(err as Error).message]);
@@ -92,8 +98,8 @@ export default function ProfileForm({
         <span className="eyebrow">Your profile</span>
         <h2 className="section-title">Tell us who you are as an applicant.</h2>
         <p className="lead">
-          The more honest and specific you are, the sharper your matches. Nothing here is shared or
-          sent anywhere — it&apos;s saved on the machine running Compass, and nowhere else.
+          The more honest and specific you are, the sharper your matches. This stays private to
+          your account — it is never shown to other students and never sold.
         </p>
       </div>
 
@@ -274,7 +280,14 @@ export default function ProfileForm({
 
         <div className="form-footer">
           <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? "Finding matches…" : "Get my matches"} <span className="btn-arrow">→</span>
+            {saving
+              ? existing
+                ? "Saving…"
+                : "Finding matches…"
+              : existing
+                ? "Save changes"
+                : "Get my matches"}{" "}
+            <span className="btn-arrow">→</span>
           </button>
           <span className="hero-note">You can edit this any time.</span>
         </div>

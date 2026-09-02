@@ -153,7 +153,10 @@ describe("application endpoints", () => {
     expect(listB.applications).toHaveLength(0);
   });
 
-  test("unknown student gets a 404, not an empty list", async () => {
-    expect((await get("/api/students/not-a-real-id/applications")).status).toBe(404);
+  test("an unowned student gets a 403, not an empty list", async () => {
+    // Sign in as somebody, so this asserts the ownership check rather than
+    // the signed-out check the security suite already covers.
+    await newStudent();
+    expect((await get("/api/students/not-a-real-id/applications")).status).toBe(403);
   });
 });

@@ -7,7 +7,7 @@ import {
   recommendScholarships,
 } from "../src/services/scholarshipEngine.js";
 import { loadScholarships } from "../src/store/staticData.js";
-import { body, get, post } from "./helpers.js";
+import { body, get, newStudent, post } from "./helpers.js";
 import type { Scholarship, StudentRecord } from "../src/types.js";
 
 const student = (overrides: Record<string, unknown> = {}): StudentRecord => ({
@@ -228,7 +228,10 @@ describe("GET /api/students/:id/scholarships", () => {
     expect(first.deadline.isTypical).toBe(true);
   });
 
-  test("404s for an unknown student", async () => {
-    expect((await get("/api/students/nope/scholarships")).status).toBe(404);
+  test("403s for a student the caller does not own", async () => {
+    // Sign in as somebody, so this asserts the ownership check rather than
+    // the signed-out check the security suite already covers.
+    await newStudent();
+    expect((await get("/api/students/nope/scholarships")).status).toBe(403);
   });
 });

@@ -73,6 +73,10 @@ first student who asks a question.
 
 | Method | Path | Description |
 |--------|------|-------------|
+| POST | `/api/auth/signup` | Create an account — claims the caller's guest profile |
+| POST | `/api/auth/login` | Start a session |
+| POST | `/api/auth/logout` | Revoke the session |
+| GET | `/api/auth/me` | Current user + their student id |
 | GET | `/api/health` | Service + LLM + D1 status |
 | GET | `/api/meta` | Majors / regions / need levels for form dropdowns |
 | GET | `/api/universities` | All universities. Filters: `region`, `major`, `maxTuition`, `search` |
@@ -91,12 +95,24 @@ first student who asks a question.
 | POST | `/api/students/:id/applications` | Track a university |
 | PATCH | `/api/students/:id/applications/:appId` | Update one application |
 | DELETE | `/api/students/:id/applications/:appId` | Stop tracking |
-| POST | `/api/chat` | Ask the chatbot (`{ studentId?, question }`) — rate limited, 30/15min |
+| POST | `/api/chat` | Ask the chatbot (`{ studentId?, question }`) — rate limited, 30/15min per account (per IP for guests) |
 | GET | `/api/students/:id/chat` | Conversation history |
 
-> **No authentication yet.** Every route takes whatever `:id` a client sends,
-> with no ownership check. That is Phase 2, and it is the reason this should not
-> be publicly hosted before then.
+> **Every `/api/students/:id` route is behind an ownership check** (Phase 2).
+> The session cookie names an account; the account owns at most one profile;
+> the id in the path must be that profile. `/api/majors/:major?studentId=` and
+> `POST /api/chat`'s `studentId` are checked the same way, since they return
+> profile-derived output from outside that path prefix.
+>
+> **No account is required to start.** The first `POST /api/students` from a
+> visitor with no session mints an anonymous account and issues the cookie, so
+> a guest profile is owned from the moment it exists. Signing up later fills in
+> the email and password on that same account row — the profile is never
+> reparented.
+>
+> An id you do not own answers **403**, whether or not it exists, and a caller
+> with no session at all answers **401**. Existence is deliberately not
+> distinguishable from lack of access.
 
 ### Student profile shape
 

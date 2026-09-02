@@ -20,6 +20,25 @@ export interface StudentRecord extends Omit<ProfileInput, "gpa" | "satScore" | "
   createdAt: string;
 }
 
+/**
+ * The signed-in account, or the anonymous one standing in for it.
+ *
+ * A guest is a real account server-side with no email or password yet — which
+ * is what lets a profile built before signing up simply carry over rather than
+ * being migrated. `guest` is the flag the UI branches on.
+ */
+export interface AuthUser {
+  id: number;
+  email: string | null;
+  guest: boolean;
+  createdAt: string;
+}
+
+export interface AuthState {
+  user: AuthUser | null;
+  studentId: string | null;
+}
+
 export interface University {
   id: number;
   name: string;

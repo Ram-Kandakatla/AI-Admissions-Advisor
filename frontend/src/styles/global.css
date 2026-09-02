@@ -757,6 +757,8 @@ img {
 }
 .field input[type="text"],
 .field input[type="number"],
+.field input[type="email"],
+.field input[type="password"],
 .field select,
 .field textarea {
   font-family: inherit;
@@ -2746,6 +2748,176 @@ table.cmp-table {
 }
 
 /* =========================================================================
+   Accounts
+
+   The sign-in page is composed like the hero, not like a login box: an
+   editorial left column carrying the argument, the form to its right. A
+   visitor arrives here holding a list they have not saved, so the page has
+   to answer "why would I" before it asks for a password — a centred card
+   floating in an empty viewport answers nothing.
+   ========================================================================= */
+
+.acct {
+  padding-block: clamp(20px, 4vw, 44px);
+}
+
+/* Wider on the pitch side than the hero is, because the form column has a
+   fixed comfortable width and does not want the extra space. */
+.acct-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: clamp(28px, 5vw, 60px);
+  align-items: start;
+}
+
+/* Deliberately a step down from the hero's clamp: this is a second-level
+   page, and matching the front door exactly would flatten the hierarchy
+   between them. */
+.acct-pitch h1 {
+  font-size: clamp(27px, 3.6vw, 40px);
+  font-weight: 700;
+  letter-spacing: -1.1px;
+  line-height: 1.12;
+  margin: 16px 0 0;
+  max-width: 15ch;
+}
+.acct-pitch h1 em {
+  font-style: normal;
+  color: var(--blue);
+}
+.acct-pitch .lead {
+  margin-top: 16px;
+  font-size: 14.5px;
+  max-width: 46ch;
+}
+
+/* What an account actually keeps. Concrete nouns from this app — matches,
+   notes, deadlines — rather than a feature list that would fit any product.
+   The rule is a divider, not a card: four short lines do not need a box. */
+.acct-keeps {
+  list-style: none;
+  margin: 22px 0 0;
+  padding: 18px 0 0;
+  border-top: 0.5px solid var(--border);
+  display: grid;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--txm);
+  max-width: 44ch;
+}
+.acct-keeps li {
+  position: relative;
+  padding-left: 20px;
+}
+.acct-keeps li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--blue);
+}
+
+.acct-panel {
+  max-width: 400px;
+}
+
+.acct-tabs {
+  display: flex;
+  width: 100%;
+  margin-bottom: 18px;
+}
+.acct-tabs button {
+  flex: 1;
+}
+
+/* The banner is a paragraph here rather than the usual div, so it needs the
+   vertical centring back that .banner's flex row assumes. */
+.acct-draft {
+  display: block;
+  line-height: 1.5;
+}
+
+.acct-field {
+  margin-top: 14px;
+}
+
+.acct-submit {
+  width: 100%;
+  height: 38px;
+  margin-top: 20px;
+}
+
+/* ---- Account control in the header ---- */
+
+.account-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding-left: 12px;
+  border-left: 0.5px solid var(--border);
+}
+
+/* Truncated rather than wrapped: the header is a fixed 60px row, and a long
+   address would push the whole bar taller. The full value is in the title.  */
+.account-email {
+  font-size: 12px;
+  color: var(--txm);
+  max-width: 15ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-in {
+  margin-left: 8px;
+}
+
+/* ---- Notices ---- */
+
+.banner-x {
+  margin-left: auto;
+  flex: none;
+  background: none;
+  border: 0;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+  /* 44px of tappable area from a 16px glyph, without a 44px-tall banner. */
+  padding: 12px;
+  margin-block: -12px;
+}
+.banner-x:hover {
+  opacity: 1;
+}
+
+/* The unsaved-work nudge. Informational orange, not the red reserved for a
+   rule you can break by accident (the ED warning) — losing a list you never
+   saved is a real cost, but it is not a mistake yet. */
+.save-prompt {
+  flex-wrap: wrap;
+}
+.save-prompt strong {
+  font-weight: 700;
+}
+.save-prompt-go {
+  flex: none;
+  border-color: var(--orange);
+  background: var(--surface);
+  color: var(--orange);
+  font-weight: 600;
+}
+.save-prompt-go:hover {
+  background: var(--orange);
+  color: var(--on-accent);
+}
+
+/* =========================================================================
    Responsive
    ========================================================================= */
 
@@ -2753,6 +2925,28 @@ table.cmp-table {
   .hero-grid {
     grid-template-columns: 1fr;
     gap: 38px;
+  }
+  .acct-grid {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+  /* The form is the reason for the page on a phone — the argument for having
+     an account can sit under it, where it reads as reassurance rather than as
+     an obstacle between the visitor and the fields. */
+  .acct-panel {
+    order: -1;
+    max-width: none;
+  }
+  /* The app's fields are 34px, which is right for the dense profile form on a
+     desktop but under the 44px touch minimum. Typing an email and a password
+     is the entire job of this panel on a phone, so these two get the taller
+     control rather than inheriting the compact one. */
+  .acct-panel .field input,
+  .acct-submit {
+    height: 44px;
+  }
+  .acct-tabs button {
+    padding-block: 11px;
   }
   .list-preview {
     max-width: 440px;
@@ -2829,6 +3023,31 @@ table.cmp-table {
     padding: 11px 12px;
     font-size: 14px;
   }
+  /* In the panel the account control is a stacked row, not a trailing item:
+     the vertical divider that separates it from the nav on a wide header
+     becomes a horizontal one, and the button goes full width so it is a real
+     44px target rather than a chip floating at the left margin. */
+  .account-box {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+    border-top: 0.5px solid var(--border);
+    margin-top: 8px;
+    padding-top: 10px;
+    justify-content: space-between;
+  }
+  .account-email {
+    max-width: none;
+    font-size: 13px;
+    padding-left: 12px;
+  }
+  .account-in {
+    margin-left: 0;
+    margin-top: 10px;
+    height: 44px;
+    width: 100%;
+  }
+
   .theme-toggle .toggle-track {
     margin-left: auto;
   }

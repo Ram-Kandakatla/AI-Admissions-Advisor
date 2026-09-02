@@ -17,6 +17,7 @@
 // fine on a laptop and is the reason it is written down rather than assumed.
 
 import { createMiddleware } from "hono/factory";
+import type { Context } from "hono";
 import type { AppEnv } from "../types.js";
 
 export interface RateLimitOptions {
@@ -28,6 +29,12 @@ export interface RateLimitOptions {
   windowMs: number;
   /** Body of the 429 response. */
   message: string;
+  /**
+   * Identify the caller as something other than their IP — an account, say.
+   * Returning null falls back to the IP, so a route can budget signed-in
+   * callers individually while still limiting anonymous ones by address.
+   */
+  key?: (c: Context<AppEnv>) => Promise<string | null> | string | null;
 }
 
 /**
@@ -46,10 +53,10 @@ function clientKey(headers: Headers): string {
   return headers.get("CF-Connecting-IP") ?? "unknown";
 }
 
-export function rateLimit({ bucket, limit, windowMs, message }: RateLimitOptions) {
+export function rateLimit({ bucket, limit, windowMs, message, key }: RateLimitOptions) {
   return createMiddleware<AppEnv>(async (c, next) => {
     const db = c.env.DB;
-    const client = clientKey(c.req.raw.headers);
+    const client = (key ? await key(c) : null) ?? clientKey(c.req.raw.headers);
     // Fixed windows rather than a sliding log: the window id is part of the
     // primary key, so a new window is a new row and nothing has to be expired
     // on a timer for the count to reset.

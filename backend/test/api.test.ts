@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { body, get, post } from "./helpers.js";
+import { body, get, newStudent, post } from "./helpers.js";
 
 describe("API endpoints", () => {
   test("GET /api/health reports status, llm mode and D1 reachability", async () => {
@@ -84,14 +84,19 @@ describe("API endpoints", () => {
     expect(updated.updatedAt).toBeDefined();
   });
 
-  test("unknown student ids 404 across every student route", async () => {
+  // 403 rather than 404 since Phase 2: whether a profile you cannot see exists
+  // is not something this API tells you.
+  test("student ids the caller does not own are refused across every route", async () => {
+    // Sign in as somebody, so this asserts the ownership check rather than
+    // the signed-out check the security suite already covers.
+    await newStudent();
     for (const path of [
       "/api/students/nope",
       "/api/students/nope/recommendations",
       "/api/students/nope/scholarships",
       "/api/students/nope/chat",
     ]) {
-      expect((await get(path)).status, path).toBe(404);
+      expect((await get(path)).status, path).toBe(403);
     }
   });
 });

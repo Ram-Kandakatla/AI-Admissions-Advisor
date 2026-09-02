@@ -41,6 +41,12 @@ export type AppEnv = {
     llm: import("./services/llmService.js").LlmService;
     /** Set by requireStudent; only present on routes behind it. */
     student: StudentRecord;
+    /**
+     * The caller's session, resolved from the cookie on every request.
+     * Null when there is no cookie or it names an expired/deleted session —
+     * which is the normal state for a first-time visitor, not an error.
+     */
+    session: SessionRecord | null;
   };
 };
 
@@ -111,6 +117,26 @@ export interface StudentRecord extends StudentProfile {
   id: string;
   createdAt: string;
   updatedAt?: string;
+}
+
+/**
+ * An account.
+ *
+ * `email` is null for a guest — see migrations/0003_auth.sql for why guests
+ * get a row here at all rather than a separate anonymous identity. `guest` is
+ * derived from that rather than stored, so the two can never disagree.
+ */
+export interface UserRecord {
+  id: number;
+  email: string | null;
+  guest: boolean;
+  createdAt: string;
+}
+
+export interface SessionRecord {
+  id: string;
+  userId: number;
+  expiresAt: string;
 }
 
 export interface ChatMessage {

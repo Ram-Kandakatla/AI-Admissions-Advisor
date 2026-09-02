@@ -41,8 +41,10 @@ run on Cloudflare Workers, so Phase 1 re-does the *decisions* (allowlist
 origins, header set, rate-limit thresholds) in a Workers-compatible form
 rather than starting security thinking from zero.
 
-**The two things that matter most for "should I host this today"**: there is
-still **no authentication** (Phase 2), and — new concern specific to your
+**Both blockers below are now cleared.** Authentication landed in Phase 2
+(accounts, sessions, and an ownership check on every student route), and the
+Hono/D1 migration landed in Phase 1. The original framing is kept for the
+reasoning: **no authentication** (Phase 2), and — new concern specific to your
 target platform — **Express and `node:sqlite` cannot run on Cloudflare
 Workers at all.** Workers execute in V8 isolates, not Node.js: no
 filesystem, no native addons, no long-lived process to hold a module-level
@@ -163,6 +165,10 @@ at this app's scale; don't reach for it preemptively.
 
 ## Phase 2 — Accounts & authentication
 
+> **Built. See [PHASE-2.md](PHASE-2.md) for what shipped and why.** The plan
+> below is preserved as written; where the build deviated, a note says so
+> inline. The one structural deviation is in 2.1.
+
 This is the biggest structural gap, unrelated to the hosting platform:
 `GET /api/students/:id` (and every route under it) takes whatever `:id` a
 client sends, no ownership check at all. Build this directly on Hono + D1
@@ -181,6 +187,16 @@ CREATE TABLE IF NOT EXISTS users (
 
 Add this to `schema.sql` alongside the existing tables, and apply it as a
 D1 migration (`wrangler d1 migrations create add-users`).
+
+*(Changed during Phase 2 — `email` and `password_hash` shipped **nullable**.
+This plan assumed accounts-only, but the homepage promises "no account", and
+supporting guests the obvious way needs two ownership paths — session→student
+for a guest, session→user→student for a member — which is two ways to write
+every future check and one way to forget it. A guest instead gets a real users
+row with both columns NULL, so `students.user_id` stays the single ownership
+column and signing up is one UPDATE on the row that already owns the profile.
+A NULL email is unloggable-into by construction, since `WHERE email = ?` is
+never true for a NULL.)*
 
 ### 2.2 Link students to users
 
@@ -208,6 +224,15 @@ JavaScript/WASM in a sandboxed isolate. Two real options:
 - **`bcryptjs`** (pure JS, no native code) if you want drop-in
   bcrypt-compatible hashes — slower per call than the native version, but
   fine at this app's login volume.
+
+*(Built with PBKDF2, as recommended. Two things this sketch omits that the
+build adds: the stored hash carries its own iteration count and salt
+(`pbkdf2$SHA-256$100000$…`) so the cost can be changed later without stranding
+existing rows, and an unknown email still runs a dummy derivation — otherwise
+"no such account" returns in microseconds while "wrong password" takes ~50ms,
+and the timing gap enumerates accounts regardless of how generic the error
+message is. Note also that 100k iterations exceeds the Workers **free** plan's
+10ms CPU cap; see PHASE-2.md.)*
 
 ### 2.4 Sessions vs. JWT — still sessions, now backed by D1
 
@@ -257,6 +282,13 @@ async function requireOwner(c, next) {
 Write tests for the 401/403 paths specifically — a route that silently
 drops its auth check on a future edit is the single most common regression
 in apps like this.
+
+*(Done, and the sketch above needs one addition: `requireOwner` keys on the
+`:id` path param, so it does nothing for the two routes that take a student id
+elsewhere — `GET /majors/:major?studentId=` and `POST /chat`'s body. Both
+return profile-derived output and are checked explicitly. Note also that the
+build answers **403 for an unknown id too**, not 404: a 404/403 split tells an
+unauthenticated caller which ids are real.)*
 
 ### 2.7 Frontend: login/signup screens + session-aware fetch
 
@@ -637,14 +669,31 @@ land rather than trusting memory.
 - [ ] **Deploy-day leftover:** the global 300/15min limit is a WAF rule, not code.
       The exact rules to create are in [PHASE-1.md](PHASE-1.md#left-for-deploy-day-the-global-rate-limit).
 
-**Phase 2 — Accounts & authentication**
-- [ ] `users` table
-- [ ] `students.user_id` link
-- [ ] Password hashing (Web Crypto PBKDF2 or `bcryptjs`)
-- [ ] `sessions` table + cookie-based auth
-- [ ] `/api/auth/*` routes
-- [ ] `requireOwner` middleware on existing routes
-- [ ] Frontend login/signup + `credentials: "include"`
+**Phase 2 — Accounts & authentication** — **done**, written up in [PHASE-2.md](PHASE-2.md)
+- [x] `users` table — with `email`/`password_hash` nullable, so a guest is a real
+      account rather than a second kind of owner (see PHASE-2.md for why that
+      choice is what keeps `requireOwner` to one code path)
+- [x] `students.user_id` link, `UNIQUE`, applied as migration `0003_auth.sql`
+- [x] Password hashing — Web Crypto PBKDF2, self-describing hash format,
+      constant-time compare, plus a dummy hash on unknown emails so login
+      timing is not an account-enumeration oracle
+- [x] `sessions` table + `httpOnly` / `SameSite=Lax` cookie, rotated on login
+      and signup, revoked server-side on logout
+- [x] `/api/auth/*` routes (signup claims the caller's guest profile in place)
+- [x] `requireOwner` on every `/students/:id` route — **and** on the two routes
+      that take a student id off that path (`/majors/:major?studentId=`,
+      `POST /chat`), which §2.6's sketch does not cover
+- [x] Frontend login/signup + `credentials: "include"`; profile now survives a
+      page refresh, and editing updates rather than duplicating
+- [x] Chat rate limiter re-keyed from IP to account — the follow-up PHASE-1.md
+      left open. Guests still key on IP, deliberately.
+- [x] 143 tests passing (was 111), incl. per-route 401 *and* 403 coverage
+- [ ] **Deploy-day leftover:** PBKDF2 at 100k iterations costs ~40-60ms CPU,
+      over the Workers **free** plan's 10ms limit. Fine on Workers Paid; on free,
+      lower `ITERATIONS` in `backend/src/auth/password.ts`. See
+      [PHASE-2.md](PHASE-2.md#left-for-deploy-day-the-free-plan-cpu-limit).
+- [ ] *Not built:* password reset / email verification — both need an email
+      provider, which arrives with Phase 6.1
 
 **Phase 3 — Testing & CI**
 - [x] Backend tests migrated to Vitest + `@cloudflare/vitest-pool-workers` *(done in Phase 1)*
@@ -658,7 +707,9 @@ land rather than trusting memory.
 - [x] `/api/health` extended to check D1 (`SELECT 1`) *(done in Phase 1)*
 
 **Phase 5 — Frontend polish**
-- [ ] `react-router-dom` routing
+- [ ] `react-router-dom` routing *(§2.7 suggested pulling this into Phase 2;
+      deliberately not done, so the auth change stayed reviewable on its own.
+      Auth is two more `View` states in `App.tsx` until this lands.)*
 - [ ] Code-splitting (`React.lazy` + `Suspense`) on heavy pages
 - [ ] SEO meta tags, Open Graph, favicon set
 - [ ] Accessibility audit (Lighthouse/axe, 95+ on core screens)

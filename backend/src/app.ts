@@ -1,6 +1,10 @@
 // Compass API — Hono on the Cloudflare Workers runtime.
 //
 // Endpoints (unchanged from the Express build):
+//   POST /api/auth/signup                    Create an account (claims a guest)
+//   POST /api/auth/login                     Start a session
+//   POST /api/auth/logout                    Revoke the session
+//   GET  /api/auth/me                        Current user + their student id
 //   GET  /api/health                         Service + LLM + D1 status
 //   GET  /api/universities                   List all universities (with filters)
 //   GET  /api/meta                           Majors / regions for form dropdowns
@@ -31,7 +35,6 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { HTTPException } from "hono/http-exception";
-import { createMiddleware } from "hono/factory";
 
 import { validateProfile } from "./models/studentProfile.js";
 import {
@@ -51,6 +54,14 @@ import { majorCatalog, majorInsights } from "./services/majorInsights.js";
 import { createLlmService } from "./services/llmService.js";
 import { bodyLimit } from "./middleware/bodyLimit.js";
 import { rateLimit } from "./middleware/rateLimit.js";
+import {
+  ensureSession,
+  ownedStudent,
+  ownsStudent,
+  requireOwner,
+  sessionContext,
+} from "./middleware/auth.js";
+import authRoutes from "./routes/auth.js";
 import { readJson } from "./http.js";
 import type {
   ApplicationInput,
@@ -101,9 +112,11 @@ app.use("*", async (c, next) => {
     .filter(Boolean);
   return cors({
     origin: (origin) => (allowed.includes(origin) ? origin : null),
-    // Phase 2 turns this on for session cookies. Stated now so the reason it
-    // is currently off is a decision on record rather than an omission.
-    credentials: false,
+    // On since Phase 2: the session cookie is not sent on a cross-origin
+    // request without it. Safe only because `origin` above is an allowlist —
+    // credentials:true combined with a reflected-any origin would let every
+    // site on the internet make authenticated calls as a visitor.
+    credentials: true,
   })(c, next);
 });
 
@@ -120,6 +133,13 @@ app.use("*", async (c, next) => {
   c.set("llm", createLlmService(c.env));
   await next();
 });
+
+// Resolves the session cookie onto the context for every route. It does not
+// create a session — see middleware/auth.ts for why that is lazy.
+app.use("*", sessionContext);
+
+// ---- Accounts ----
+app.route("/auth", authRoutes);
 
 // Derive the list of majors/regions actually present in the dataset.
 function buildMeta() {
@@ -189,11 +209,17 @@ app.get("/universities", (c) => {
 app.get("/majors", (c) => c.json({ majors: majorCatalog() }));
 
 app.get("/majors/:major", async (c) => {
+  // Ownership has to be checked by hand here: the student id arrives as a
+  // query parameter, so this route sits outside the /students/:id prefix
+  // requireOwner guards — but the insights it returns are derived from the
+  // profile (the student's percentile against each school's averages), so
+  // reading it for an id you do not own leaks exactly what that gate exists
+  // to protect. Without the profile the route still works, unpersonalized.
   const studentId = c.req.query("studentId");
-  const student = studentId ? await c.get("store").getStudent(studentId) : null;
-  if (studentId && !student) {
-    return c.json({ error: "Student not found" }, 404);
+  if (studentId && !(await ownsStudent(c, studentId))) {
+    return c.json({ error: "Forbidden" }, 403);
   }
+  const student = studentId ? await ownedStudent(c) : null;
 
   const major = c.req.param("major");
   const insights = majorInsights(major, student);
@@ -204,31 +230,60 @@ app.get("/majors/:major", async (c) => {
 });
 
 // ---- Students ----
+//
+// ORDER IS LOAD-BEARING, AND THIS IS THE PLACE IT MATTERS MOST. Hono applies
+// middleware only to routes registered *after* it, so every /students/:id
+// route in this file must be declared below these two lines. A route added
+// above them would serve any student's profile to any caller, silently and
+// with passing tests — the exact regression the implementation guide calls the
+// most common one in apps like this.
+app.use("/students/:id", requireOwner);
+app.use("/students/:id/*", requireOwner);
 
+/**
+ * Create the caller's profile.
+ *
+ * Not behind requireOwner: there is nothing to own yet. ensureSession() mints
+ * an anonymous account for a first-time visitor, so the row is owned from the
+ * moment it exists and the "no account needed" flow costs no security.
+ */
 app.post("/students", async (c) => {
   const { valid, errors, profile } = validateProfile(await readJson(c));
   if (!valid) return c.json({ errors }, 400);
-  const record = await c.get("store").createStudent(profile);
+
+  const store = c.get("store");
+  const session = await ensureSession(c);
+
+  // One profile per account, matching the UNIQUE index on students.user_id.
+  // Before Phase 2 the frontend re-POSTed on every profile edit and orphaned
+  // the previous row each time; the id comes back here so the client can PUT
+  // to the right place instead.
+  const existing = await store.getStudentByUserId(session.userId);
+  if (existing) {
+    return c.json(
+      { error: "You already have a profile — update it instead.", studentId: existing.id },
+      409
+    );
+  }
+
+  const record = await store.createStudent(profile, session.userId);
   return c.json(record, 201);
 });
 
-app.get("/students/:id", async (c) => {
-  const record = await c.get("store").getStudent(c.req.param("id"));
-  if (!record) return c.json({ error: "Student not found" }, 404);
-  return c.json(record);
-});
+// requireOwner has already loaded and authorized the profile, so these read it
+// off the context rather than re-querying. There is no 404 branch left: a
+// profile the session owns necessarily exists.
+app.get("/students/:id", (c) => c.json(c.get("student")));
 
 app.put("/students/:id", async (c) => {
   const { valid, errors, profile } = validateProfile(await readJson(c));
   if (!valid) return c.json({ errors }, 400);
   const record = await c.get("store").updateStudent(c.req.param("id"), profile);
-  if (!record) return c.json({ error: "Student not found" }, 404);
-  return c.json(record);
+  return c.json(record!);
 });
 
-app.get("/students/:id/recommendations", async (c) => {
-  const student = await c.get("store").getStudent(c.req.param("id"));
-  if (!student) return c.json({ error: "Student not found" }, 404);
+app.get("/students/:id/recommendations", (c) => {
+  const student = c.get("student");
   const recommendations = recommendUniversities(student);
   const counts = {
     reach: recommendations.reach.length,
@@ -240,10 +295,8 @@ app.get("/students/:id/recommendations", async (c) => {
 
 // ---- Scholarships ----
 
-app.get("/students/:id/scholarships", async (c) => {
-  const student = await c.get("store").getStudent(c.req.param("id"));
-  if (!student) return c.json({ error: "Student not found" }, 404);
-
+app.get("/students/:id/scholarships", (c) => {
+  const student = c.get("student");
   const scholarships = recommendScholarships(student);
   const counts = {
     reach: scholarships.reach.length,
@@ -304,30 +357,14 @@ function byDeadline(a: ApplicationRecord, b: ApplicationRecord): number {
   return a.deadline.localeCompare(b.deadline);
 }
 
-/**
- * 404 unless the student exists.
- *
- * On Express this wrote the response and returned null, and every caller had
- * to remember to `return` on a falsy result — a check that fails open if
- * forgotten. As Hono middleware the framework enforces it instead: not calling
- * `next()` ends the request, so a route cannot run without its student.
- */
-const requireStudent = createMiddleware<AppEnv>(async (c, next) => {
-  const student = await c.get("store").getStudent(c.req.param("id"));
-  if (!student) return c.json({ error: "Student not found" }, 404);
-  c.set("student", student);
-  await next();
-});
-
-// ORDER IS LOAD-BEARING. Hono applies middleware only to routes registered
-// *after* it, so a new /students/:id/applications or /students/:id/notes route
-// added above this block would silently skip the existence check — and, once
-// Phase 2 adds requireOwner here, silently skip the ownership check too. That
-// is the single most common regression in apps like this. Add routes below.
-app.use("/students/:id/applications", requireStudent);
-app.use("/students/:id/applications/*", requireStudent);
-app.use("/students/:id/notes", requireStudent);
-app.use("/students/:id/notes/*", requireStudent);
+// Phase 1's requireStudent middleware lived here. requireOwner replaced it:
+// an existence check is implied by an ownership check, so keeping both would
+// have meant two gates to remember on every new route instead of one.
+//
+// One contract change came with that, deliberately. An unknown student id used
+// to answer 404 and an unowned one would have answered 403 — which tells any
+// caller which ids exist. Both are 403 now: whether a profile you cannot see
+// exists is not information this API gives out.
 
 app.get("/students/:id/applications", async (c) => {
   const index = universityIndex();
@@ -517,6 +554,21 @@ app.use(
     limit: 30,
     windowMs: 15 * 60 * 1000,
     message: "Too many questions in a short time — please wait a few minutes and try again.",
+    // The follow-up PHASE-1.md left open, and the reason this limiter is in
+    // code rather than a WAF rule at all. A signed-in account is budgeted as
+    // itself; everyone else still falls back to IP.
+    //
+    // This matters for who actually uses Compass: a high school sits behind
+    // one NAT, so IP-keying gives an entire class 30 questions between them.
+    // Guests keep sharing that budget — a guest can mint a fresh session by
+    // clearing a cookie, so per-session keying would be no limit at all — and
+    // "sign in for your own quota" is the honest incentive that creates.
+    key: async (c) => {
+      const session = c.get("session");
+      if (!session) return null;
+      const user = await c.get("store").getUser(session.userId);
+      return user && !user.guest ? `user:${user.id}` : null;
+    },
   })
 );
 
@@ -531,8 +583,18 @@ app.post("/chat", async (c) => {
     return c.json({ error: "Please keep questions under 1000 characters." }, 400);
   }
 
-  const student = studentId ? await store.getStudent(studentId) : null;
-  const history = studentId ? await store.getConversation(studentId) : [];
+  // Same off-path ownership case as /majors/:major above, with more at stake:
+  // the chatbot is handed the profile as context and answers out of it, and
+  // the conversation history is returned to whoever asks. An unowned id is
+  // refused rather than quietly ignored — silently dropping the context would
+  // turn a client bug into answers that look personalized and are not.
+  const wantsProfile = typeof studentId === "string" && studentId !== "";
+  if (wantsProfile && !(await ownsStudent(c, studentId))) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  const student = wantsProfile ? await ownedStudent(c) : null;
+  const history = wantsProfile ? await store.getConversation(studentId) : [];
 
   try {
     const { answer, source } = await c
@@ -558,10 +620,7 @@ app.post("/chat", async (c) => {
 });
 
 app.get("/students/:id/chat", async (c) => {
-  const store = c.get("store");
-  const student = await store.getStudent(c.req.param("id"));
-  if (!student) return c.json({ error: "Student not found" }, 404);
-  return c.json({ messages: await store.getConversation(c.req.param("id")) });
+  return c.json({ messages: await c.get("store").getConversation(c.req.param("id")) });
 });
 
 // ---- Fallbacks ----

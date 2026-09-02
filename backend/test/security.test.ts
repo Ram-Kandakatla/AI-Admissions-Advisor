@@ -9,7 +9,7 @@
 // out where it lives: the global 300/15min limiter no longer exists in code.
 
 import { beforeEach, describe, expect, test } from "vitest";
-import { api, body, get, post, resetRateLimits, send } from "./helpers.js";
+import { api, body, get, newStudent, post, resetRateLimits, send } from "./helpers.js";
 import { inspectApiKey } from "../src/services/llmService.js";
 
 const ALLOWED_ORIGIN = "http://localhost:5173";
@@ -110,8 +110,12 @@ describe("student-scoped routes are gated", () => {
   // The middleware in app.ts only covers routes registered after it, so a route
   // added in the wrong place would silently skip the check. Enumerating every
   // student-scoped route here is what turns that from a comment into a failure.
-  // Phase 2 replaces `requireStudent` with an ownership check on these same
-  // paths, at which point this test is guarding authorization, not just a 404.
+  //
+  // Phase 2 did replace `requireStudent` with `requireOwner`, so this now
+  // guards authorization rather than existence — and the expected status moved
+  // from 404 to 403 with it. That is the point: a caller who does not own an
+  // id gets the same answer whether or not it exists, so the API cannot be
+  // walked to discover which student ids are real.
   const routes: [string, string][] = [
     ["GET", "/api/students/ghost"],
     ["PUT", "/api/students/ghost"],
@@ -127,19 +131,32 @@ describe("student-scoped routes are gated", () => {
     ["GET", "/api/students/ghost/chat"],
   ];
 
-  test.each(routes)("%s %s rejects an unknown student", async (method, path) => {
-    const res =
-      method === "GET" || method === "DELETE"
-        ? await api(path, { method })
-        : await send(method as "POST" | "PUT" | "PATCH", path, {
-            name: "Ghost",
-            gpa: 3.0,
-            interestedMajors: ["CS"],
-            universityId: 1,
-            note: "x",
-          });
-    expect(res.status, `${method} ${path}`).toBe(404);
+  const call = (method: string, path: string) =>
+    method === "GET" || method === "DELETE"
+      ? api(path, { method })
+      : send(method as "POST" | "PUT" | "PATCH", path, {
+          name: "Ghost",
+          gpa: 3.0,
+          interestedMajors: ["CS"],
+          universityId: 1,
+          note: "x",
+        });
+
+  test.each(routes)("%s %s refuses a caller with no session", async (method, path) => {
+    const res = await call(method, path);
+    expect(res.status, `${method} ${path}`).toBe(401);
   });
+
+  test.each(routes)("%s %s refuses a signed-in caller who owns a different profile",
+    async (method, path) => {
+      // The stronger half of the check. A 401 only proves the route wants a
+      // session; this proves it compares that session against the id in the
+      // path, which is the actual authorization bug this suite exists to catch.
+      await newStudent();
+      const res = await call(method, path);
+      expect(res.status, `${method} ${path}`).toBe(403);
+    }
+  );
 });
 
 describe("request body limits", () => {

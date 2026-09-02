@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { toggleCompare } from "./compare";
 import { useSchoolNotes } from "./useSchoolNotes";
-import type { Meta, StudentRecord } from "./types";
+import type { AuthUser, Meta, StudentRecord } from "./types";
 import Home from "./components/Home";
 import ProfileForm from "./components/ProfileForm";
 import Recommendations from "./components/Recommendations";
@@ -15,6 +15,7 @@ import ApplicationTracker from "./components/ApplicationTracker";
 import ApplicationTimeline from "./components/ApplicationTimeline";
 import MajorDeepDive from "./components/MajorDeepDive";
 import BrandMark from "./components/BrandMark";
+import Account, { type AccountMode } from "./components/Account";
 
 type View =
   | "home"
@@ -27,7 +28,8 @@ type View =
   | "timeline"
   | "majors"
   | "explore"
-  | "chat";
+  | "chat"
+  | "account";
 type Theme = "light" | "dark";
 
 interface NavItem {
@@ -102,6 +104,13 @@ export default function App() {
   const [view, setView] = useState<View>("home");
   const [student, setStudent] = useState<StudentRecord | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
+  // Who the session says we are. `undefined` means "not asked yet", which is
+  // distinct from "asked, nobody" — rendering a Sign in button during that gap
+  // would flash the wrong state at every returning visitor on every load.
+  const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
+  const [accountMode, setAccountMode] = useState<AccountMode>("signup");
+  const [savePrompt, setSavePrompt] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(initialTheme);
@@ -122,6 +131,33 @@ export default function App() {
 
   useEffect(() => {
     api.meta().then(setMeta).catch(() => setMeta(null));
+  }, []);
+
+  // Restore the session on load.
+  //
+  // This is also the first time Compass survives a refresh at all: before
+  // Phase 2 the student id lived only in this component's state, so reloading
+  // the page silently discarded a finished profile. The cookie now outlives
+  // the tab, and the profile comes back with it.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .me()
+      .then(async ({ user: current, studentId }) => {
+        if (cancelled) return;
+        setUser(current);
+        if (!studentId) return;
+        const record = await api.student(studentId).catch(() => null);
+        if (!cancelled && record) setStudent(record);
+      })
+      .catch(() => {
+        // An unreachable API is not a signed-out visitor, but there is nothing
+        // better to show than the logged-out shell until it answers.
+        if (!cancelled) setUser(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -160,8 +196,57 @@ export default function App() {
 
   const onProfileSaved = (record: StudentRecord) => {
     setStudent(record);
+    // A guest who just built a profile now has something to lose, so the
+    // prompt to save it becomes relevant again even if they dismissed it
+    // before there was anything behind it.
+    setSavePrompt(true);
+
+    // Who we are may have just changed. A first-time visitor has no session
+    // until POST /api/students mints the anonymous account that owns the
+    // profile — so without re-asking, `user` stays the null from page load and
+    // nothing ever knows this list belongs to a guest.
+    if (!user) {
+      api
+        .me()
+        .then(({ user: current }) => setUser(current))
+        .catch(() => {
+          /* the profile saved; knowing our own account name can wait */
+        });
+    }
+
     go("matches");
   };
+
+  const onSignedIn = async (
+    account: AuthUser,
+    studentId: string | null,
+    replacedDraft: boolean
+  ) => {
+    setUser(account);
+    const record = studentId ? await api.student(studentId).catch(() => null) : null;
+    setStudent(record);
+    setNotice(
+      replacedDraft
+        ? "Signed in. We loaded the list saved to this account — the unsaved one you were building is not part of it."
+        : null
+    );
+    go(record ? "matches" : "profile");
+  };
+
+  const signOut = async () => {
+    await api.logout().catch(() => {
+      /* the cookie is the session; a failed call leaves it in place */
+    });
+    setUser(null);
+    setStudent(null);
+    setCompareIds([]);
+    setNotice(null);
+    go("home");
+  };
+
+  // A guest with a profile has work that dies with this browser. Everyone else
+  // — signed in, or not started yet — has nothing to warn about.
+  const unsaved = user?.guest === true && student !== null;
 
   const renderItem = (item: NavItem) => (
     <button
@@ -259,12 +344,84 @@ export default function App() {
                 <span className="toggle-thumb" />
               </span>
             </button>
+
+            {/* Nothing until /auth/me answers: a Sign in button that turns
+                into an email a moment later is worse than a beat of nothing. */}
+            {user !== undefined &&
+              (user && !user.guest ? (
+                <div className="account-box">
+                  <span className="account-email" title={user.email ?? undefined}>
+                    {user.email}
+                  </span>
+                  <button className="nav-link account-out" onClick={signOut}>
+                    Sign out
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="btn account-in"
+                  aria-current={view === "account"}
+                  onClick={() => {
+                    setAccountMode(student ? "signup" : "login");
+                    go("account");
+                  }}
+                >
+                  {student ? "Save my list" : "Sign in"}
+                </button>
+              ))}
           </nav>
         </div>
       </header>
 
       <main className="view">
         <div className="container">
+          {/* One-off outcome of an action the user just took, dismissed by
+              taking any other action rather than sitting there forever. */}
+          {notice && view !== "account" && (
+            <p className="banner" role="status">
+              {notice}
+              <button className="banner-x" aria-label="Dismiss" onClick={() => setNotice(null)}>
+                ×
+              </button>
+            </p>
+          )}
+
+          {/* The guest nudge. Deliberately not a modal and not on every page
+              load: it appears once there is real work to lose, and stays gone
+              for the session once dismissed. */}
+          {unsaved && savePrompt && view !== "account" && (
+            <p className="banner save-prompt" role="status">
+              <span>
+                <strong>This list isn't saved yet.</strong> It lives in this browser only —
+                an account keeps it on every device.
+              </span>
+              <button
+                className="btn btn-sm save-prompt-go"
+                onClick={() => {
+                  setAccountMode("signup");
+                  go("account");
+                }}
+              >
+                Save it
+              </button>
+              <button
+                className="banner-x"
+                aria-label="Dismiss"
+                onClick={() => setSavePrompt(false)}
+              >
+                ×
+              </button>
+            </p>
+          )}
+
+          {view === "account" && (
+            <Account
+              mode={accountMode}
+              onMode={setAccountMode}
+              guestProfile={unsaved ? student : null}
+              onSignedIn={onSignedIn}
+            />
+          )}
           {view === "home" && <Home onStart={() => go(student ? "matches" : "profile")} hasProfile={!!student} />}
           {view === "profile" && (
             <ProfileForm meta={meta} existing={student} onSaved={onProfileSaved} />

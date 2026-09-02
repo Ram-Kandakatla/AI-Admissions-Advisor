@@ -1,5 +1,7 @@
 import type {
   Application,
+  AuthState,
+  AuthUser,
   ApplicationMeta,
   ApplicationsResponse,
   LlmProvider,
@@ -23,6 +25,12 @@ import type {
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     headers: { "Content-Type": "application/json" },
+    // Every route that touches a profile is now behind a session cookie.
+    // "include" rather than the default "same-origin" so this keeps working if
+    // Phase 7 puts the API on its own origin (Option B) — at which point the
+    // cookie also needs SameSite=None and the CORS middleware needs
+    // credentials:true, which it already has.
+    credentials: "include",
     ...options,
   });
   if (!res.ok) {
@@ -42,6 +50,24 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // ---- Accounts ----
+
+  me: () => request<AuthState>("/auth/me"),
+
+  signup: (email: string, password: string) =>
+    request<{ user: AuthUser; studentId: string | null }>("/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+
+  login: (email: string, password: string) =>
+    request<{ user: AuthUser; studentId: string | null; discardedGuestProfile: boolean }>(
+      "/auth/login",
+      { method: "POST", body: JSON.stringify({ email, password }) }
+    ),
+
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
+
   health: () => request<{ status: string; llm: LlmProvider }>("/health"),
 
   meta: () => request<Meta>("/meta"),
@@ -51,9 +77,20 @@ export const api = {
     return request<University[]>(`/universities${qs ? `?${qs}` : ""}`);
   },
 
+  student: (studentId: string) => request<StudentRecord>(`/students/${studentId}`),
+
   createStudent: (profile: ProfileInput) =>
     request<StudentRecord>("/students", {
       method: "POST",
+      body: JSON.stringify(profile),
+    }),
+
+  // An account holds one profile, so editing is a PUT to the existing row.
+  // Before Phase 2 the form re-POSTed every time and left the old row orphaned
+  // — invisible then, because nothing owned rows at all.
+  updateStudent: (studentId: string, profile: ProfileInput) =>
+    request<StudentRecord>(`/students/${studentId}`, {
+      method: "PUT",
       body: JSON.stringify(profile),
     }),
 

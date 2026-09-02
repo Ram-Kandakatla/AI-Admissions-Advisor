@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { env } from "cloudflare:test";
-import { body, del, get, newStudent, put } from "./helpers.js";
+import { body, currentCookie, del, get, newStudent, put, useSession } from "./helpers.js";
 import { createStore } from "../src/store/dataStore.js";
 
 const MIT = 1;
@@ -85,9 +85,12 @@ describe("school notes API", () => {
     expect((await put(`/api/students/${id}/notes/9999`, { note: "hi" })).status).toBe(404);
   });
 
-  test("404s for an unknown student", async () => {
-    expect((await get("/api/students/nope/notes")).status).toBe(404);
-    expect((await put("/api/students/nope/notes/1", { note: "x" })).status).toBe(404);
+  test("403s for a student the caller does not own", async () => {
+    // Sign in as somebody, so this asserts the ownership check rather than
+    // the signed-out check the security suite already covers.
+    await newStudent();
+    expect((await get("/api/students/nope/notes")).status).toBe(403);
+    expect((await put("/api/students/nope/notes/1", { note: "x" })).status).toBe(403);
   });
 
   test("deleting forgets the school, and deleting nothing is a 404", async () => {
@@ -97,12 +100,24 @@ describe("school notes API", () => {
     expect((await del(`/api/students/${id}/notes/${MIT}`)).status).toBe(404);
   });
 
-  test("notes are per student", async () => {
+  test("notes are per student, and one student cannot read another's", async () => {
+    // newStudent() resets the jar, so each of these is a separate guest
+    // session. Capturing A's cookie is what lets the test act as both.
     const a = await newStudent();
-    const b = await newStudent();
     await put(`/api/students/${a}/notes/${MIT}`, { note: "mine" });
+    const aCookie = currentCookie()!;
+
+    const b = await newStudent();
     const theirs = await body(await get(`/api/students/${b}/notes`));
     expect(theirs.notes).toEqual([]);
+
+    // The part that matters since Phase 2: B holding A's id is not enough.
+    expect((await get(`/api/students/${a}/notes`)).status).toBe(403);
+
+    // ...and A still sees their own, so the gate rejects the right side.
+    useSession(aCookie);
+    const mine = await body(await get(`/api/students/${a}/notes`), 200);
+    expect(mine.notes).toHaveLength(1);
   });
 });
 
@@ -111,6 +126,9 @@ describe("store layer", () => {
   // which is the whole point of running the suite inside workerd.
   test("saveSchoolNote returns null when it deletes, the record when it writes", async () => {
     const store = createStore(env.DB);
+    // createStudent now requires an owner — an unowned profile is exactly what
+    // Phase 2 removed, so the store has no way to make one.
+    const owner = await store.createAnonymousUser();
     const student = await store.createStudent({
       name: "Kit",
       gpa: 3.4,
@@ -121,7 +139,7 @@ describe("store layer", () => {
       careerGoals: "",
       financialNeed: "medium",
       preferredRegions: [],
-    });
+    }, owner.id);
     expect((await store.saveSchoolNote(student.id, MIT, { note: "hi" }))!.note).toBe("hi");
     expect(await store.saveSchoolNote(student.id, MIT, { note: "   " })).toBeNull();
     expect(await store.getSchoolNote(student.id, MIT)).toBeNull();

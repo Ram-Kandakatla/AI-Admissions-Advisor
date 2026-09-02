@@ -152,8 +152,11 @@ describe("major endpoints", () => {
     expect(b.major).toBe("Data Science");
   });
 
-  test("unknown major and unknown student both 404", async () => {
+  test("an unknown major 404s; a studentId the caller does not own 403s", async () => {
     expect((await get("/api/majors/Nonexistent")).status).toBe(404);
-    expect((await get("/api/majors/CS?studentId=nope")).status).toBe(404);
+    // The studentId arrives as a query parameter, outside the /students/:id
+    // prefix requireOwner guards, so this route checks ownership by hand — the
+    // insights it returns are derived from the profile.
+    expect((await get("/api/majors/CS?studentId=nope")).status).toBe(403);
   });
 });
