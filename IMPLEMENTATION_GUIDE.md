@@ -305,6 +305,10 @@ bolting more state branches onto `App.tsx`.
 
 ## Phase 3 — Testing & CI
 
+> **Built. See [PHASE-3.md](PHASE-3.md) for what shipped and why.** The plan
+> below is preserved as written; where the build deviated, a note says so
+> inline. §3.4 is the one item deliberately not done.
+
 ### 3.1 Backend tests need to run in the Workers runtime
 
 Jest runs in plain Node, which has no concept of a D1 binding or the
@@ -332,6 +336,14 @@ Priority order — test what's most likely to break silently, not everything:
 1. `compare.ts`, `dates.ts`, `exportList.ts` — pure functions, cheap to test.
 2. `useSchoolNotes.ts` — the shared hook five pages depend on.
 3. Component smoke tests for `ProfileForm` and `ApplicationTracker`.
+
+*(Built exactly in this order — 99 tests. `@testing-library/user-event` was added
+to the list above, since a form test that dispatches raw change events is not
+testing what a student does. Two things this sketch does not anticipate: the
+frontend suite needs its **own** Vitest config rather than one extending
+`vite.config.ts` (Vitest 4 carries Vite 8, the app builds on Vite 5), and it has
+to pin `TZ=America/New_York` — `dates.ts` guards a bug that is invisible in UTC,
+which is exactly what a CI runner defaults to. See PHASE-3.md.)*
 
 ### 3.3 GitHub Actions CI
 
@@ -369,11 +381,21 @@ gives every PR its own preview URL for free — simpler than wiring
 `wrangler deploy` into Actions. Use Actions purely to gate merges on tests
 passing (Phase 3.4); let Cloudflare's own integration handle the deploy.
 
+*(Built close to this, with four additions: `node-version-file: .nvmrc` instead
+of a literal `22`, so the Node version has one home; a `typecheck` step on the
+backend (the frontend gets one free, since its `build` runs `tsc -b` first);
+`concurrency` with `cancel-in-progress`; and `permissions: contents: read`.)*
+
 ### 3.4 Branch protection
 
 Once CI is green consistently, turn on "Require status checks to pass" for
 `main` in GitHub's branch protection settings — this is what makes a red
 check actually block a merge instead of being a suggestion.
+
+*(Deliberately not done. A rule has to name the checks it requires, and until
+CI has reported on `main` at least once those names do not exist yet — the rule
+would either block every merge or silently require nothing. The exact settings
+are in [PHASE-3.md](PHASE-3.md#left-for-later).)*
 
 ---
 
@@ -695,11 +717,25 @@ land rather than trusting memory.
 - [ ] *Not built:* password reset / email verification — both need an email
       provider, which arrives with Phase 6.1
 
-**Phase 3 — Testing & CI**
+**Phase 3 — Testing & CI** — **done** apart from §3.4, written up in [PHASE-3.md](PHASE-3.md)
 - [x] Backend tests migrated to Vitest + `@cloudflare/vitest-pool-workers` *(done in Phase 1)*
-- [ ] Frontend test suite (Vitest + Testing Library)
-- [ ] GitHub Actions CI (`.github/workflows/ci.yml`)
-- [ ] Branch protection requiring CI to pass
+- [x] Frontend test suite — Vitest + Testing Library + jsdom, 99 tests in 6 suites,
+      in the guide's priority order: `exportList` (22), `useSchoolNotes` (17),
+      `dates` (16), `ProfileForm` (16), `ApplicationTracker` (21), `compare` (7)
+- [x] Its own `frontend/vitest.config.ts` rather than a root config shared with the
+      backend — the two suites need genuinely different runtimes (jsdom vs. workerd),
+      and Vitest 4's bundled Vite 8 must not meet the app's Vite 5 build
+- [x] Suite pinned to `TZ=America/New_York` — `dates.ts` guards a UTC-parsing bug
+      that a UTC runner cannot observe, and UTC is the CI default
+- [x] GitHub Actions CI (`.github/workflows/ci.yml`) — both suites, both typechecks,
+      and the frontend build, on every PR and every push to `main`. No deploy step.
+- [x] Root `npm test` / `npm run typecheck` now cover both halves of the repo
+- [ ] **Deliberately not done:** branch protection requiring CI to pass. It is a
+      repo setting, and the rule cannot name check names that have never reported —
+      turn it on after CI's first green run on `main`. Settings in
+      [PHASE-3.md](PHASE-3.md#left-for-later).
+- [ ] *Not built:* coverage thresholds. A percentage gate rewards covering whatever
+      is cheapest; the priority order above is the policy instead.
 
 **Phase 4 — Observability**
 - [ ] Structured `console.log`/`console.error` logging

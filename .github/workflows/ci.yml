@@ -1,0 +1,75 @@
+# Gate merges on the tests passing. Nothing here deploys.
+#
+# That omission is deliberate: Cloudflare Pages' git integration (Phase 7.2)
+# builds and deploys on every push to main and gives every PR its own preview
+# URL, which is less to maintain than wiring `wrangler deploy` into Actions and
+# keeping an API token in repository secrets. Actions' job is to say whether the
+# code is safe to merge; Cloudflare's is to ship it.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A second push to the same branch makes the first run's answer irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Wrangler phones home and checks for updates otherwise, which is noise in a
+  # log that should only ever be about the tests.
+  WRANGLER_SEND_METRICS: false
+  DO_NOT_TRACK: 1
+
+jobs:
+  backend:
+    name: Backend (Workers runtime)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # .nvmrc, not a literal — one place to change the Node version, and
+          # it is already what the repo asks contributors to use locally.
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # `npm ci` rather than `npm install`: it installs exactly the lockfile and
+      # fails if package.json and the lock have drifted, which is the check you
+      # want in CI and the behaviour you don't want on a laptop.
+      - run: npm ci --prefix backend
+
+      - run: npm run typecheck --prefix backend
+
+      # Vitest runs these inside workerd with a real D1 database built from
+      # backend/migrations, so this is the deployed runtime, not a Node stand-in.
+      # No API keys are set, which pins the chat route to its offline fallback.
+      - run: npm run test --prefix backend
+
+  frontend:
+    name: Frontend (jsdom)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci --prefix frontend
+
+      - run: npm run test --prefix frontend
+
+      # Runs `tsc -b` before Vite, so a type error fails here rather than at
+      # deploy time. It covers the test files too — they live under src/.
+      - run: npm run build --prefix frontend
