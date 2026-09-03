@@ -98,21 +98,47 @@ forge it, so that whole class of misconfiguration disappeared with the platform 
 ## Tests
 
 ```bash
-npm test      # engines, data integrity, API endpoints, and hardening
+npm test                 # both suites
+npm run test:backend     # engines, data integrity, API endpoints, hardening
+npm run test:frontend    # exports, dates, the shared notes store, two screens
 ```
 
-99 tests across 7 suites, run by Vitest **inside the real Workers runtime**
-(`@cloudflare/vitest-pool-workers`), against a real D1 database built from the same
-`migrations/` files that get deployed. Plain Node has no D1 binding and no per-request
-`env`, so a mock would have meant tests that pass while the real Worker breaks.
+**242 tests.** Two suites, two runtimes, deliberately not shared:
 
-The suites share one test database and never touch `backend/.wrangler/state` or the old
+**Backend — 143 tests, 8 suites, inside the real Workers runtime.** Vitest via
+`@cloudflare/vitest-pool-workers`, against a real D1 database built from the same
+`migrations/` files that get deployed. Plain Node has no D1 binding and no per-request
+`env`, so a mock would have meant tests that pass while the real Worker breaks. The
+suites share one test database and never touch `backend/.wrangler/state` or the old
 `backend/data/compass.db`.
 
 [`test/security.test.ts`](backend/test/security.test.ts) covers the middleware rather
 than any feature — security headers, the CORS allowlist, the request-size cap, the chat
 rate limiter, that errors carry no stack traces, and API-key validation. None of that
 changes app behaviour when it regresses, which is precisely why it needs its own test.
+
+**Frontend — 99 tests, 6 suites, in jsdom.** Vitest + Testing Library, covering the
+pure functions that quietly produce wrong output rather than crashing
+([`exportList.ts`](frontend/src/exportList.ts), [`dates.ts`](frontend/src/dates.ts),
+[`compare.ts`](frontend/src/compare.ts)), the notes store five pages share
+([`useSchoolNotes.ts`](frontend/src/useSchoolNotes.ts)), and the two screens where a
+wrong answer costs a student real work — [`ProfileForm`](frontend/src/components/ProfileForm.tsx)
+and [`ApplicationTracker`](frontend/src/components/ApplicationTracker.tsx).
+
+The frontend suite runs pinned to `America/New_York`. That is not a preference:
+`dates.ts` exists because `new Date("2026-01-15")` parses as UTC midnight and renders as
+Jan 14 anywhere west of Greenwich, and a suite running in UTC — which is what a CI runner
+gives you by default — cannot observe that bug at all.
+
+## CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs both suites, both
+typechecks, and the frontend build on every pull request and every push to `main`.
+
+It deliberately does **not** deploy. Cloudflare Pages' git integration (Phase 7) builds
+and deploys on push and gives every PR its own preview URL, which is less to maintain
+than wiring `wrangler deploy` into Actions and keeping an API token in repository
+secrets. Actions says whether the code is safe to merge; Cloudflare ships it.
 
 ## Design
 
