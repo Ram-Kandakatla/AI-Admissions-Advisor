@@ -723,8 +723,12 @@ land rather than trusting memory.
       in the guide's priority order: `exportList` (22), `useSchoolNotes` (17),
       `dates` (16), `ProfileForm` (16), `ApplicationTracker` (21), `compare` (7)
 - [x] Its own `frontend/vitest.config.ts` rather than a root config shared with the
-      backend — the two suites need genuinely different runtimes (jsdom vs. workerd),
-      and Vitest 4's bundled Vite 8 must not meet the app's Vite 5 build
+      backend — the two suites need genuinely different runtimes (jsdom vs. workerd)
+- [x] Frontend pinned to **Vitest 3**, not 4: Vitest 4's bundled Vite 8 declares
+      `esbuild` as an optional peer, and npm writes its per-platform packages into
+      the lockfile unmarked, so `npm ci` hard-fails on Linux with `EBADPLATFORM`.
+      Vitest 3 shares the app's Vite 5 — one Vite, one esbuild, a portable lock.
+      Found by CI, not locally; `npm ci --dry-run --os=linux --cpu=x64` reproduces it.
 - [x] Suite pinned to `TZ=America/New_York` — `dates.ts` guards a UTC-parsing bug
       that a UTC runner cannot observe, and UTC is the CI default
 - [x] GitHub Actions CI (`.github/workflows/ci.yml`) — both suites, both typechecks,

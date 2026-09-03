@@ -1,17 +1,27 @@
 // Frontend tests run in jsdom, deliberately apart from the app's Vite build.
 //
-// This config does not extend vite.config.ts, and that separation is load-
-// bearing rather than tidiness: Vitest 4 brings its own Vite 8 for the test
-// transform, while the app still builds on Vite 5 with @vitejs/plugin-react.
-// Sharing one config would force those two Vites to agree about a plugin
-// neither test needs — JSX in a test file only has to compile, not hot-reload
-// — so the tests use esbuild's automatic runtime (from tsconfig's
-// "jsx": "react-jsx") and leave the build pipeline untouched.
+// This config does not extend vite.config.ts, and the frontend does not share
+// one with the backend. That separation is load-bearing rather than tidiness:
+// the backend suite runs inside workerd, because what it tests is D1 and the
+// per-request `env`. There is no configuration those two share beyond the word
+// "vitest", and a root config would have to special-case every option per
+// project — indirection with no deduplication to show for it.
 //
-// The backend's suite is a separate project entirely: it runs inside workerd,
-// because what it tests is D1 and the request `env`. There is no shared root
-// config, and there shouldn't be — the two suites need genuinely different
-// runtimes.
+// JSX here compiles through esbuild's automatic runtime (from tsconfig's
+// "jsx": "react-jsx") rather than @vitejs/plugin-react: a test file only has to
+// compile, not hot-reload.
+//
+// ---- Why the frontend is pinned to Vitest 3 while the backend is on 4 ----
+//
+// Vitest 4 brings its own Vite 8, which declares `esbuild` as an *optional
+// peer*. npm resolves that peer but writes its per-platform packages into the
+// lockfile without the `optional` marker the 0.21 set carries, so `npm ci` on
+// Linux tries to install @esbuild/netbsd-arm64 and hard-fails with
+// EBADPLATFORM. CI found this; `npm ci --dry-run --os=linux --cpu=x64`
+// reproduces it locally. Vitest 3's Vite peer range covers the app's Vite 5,
+// so build and test share one Vite, one esbuild, and a lockfile that installs
+// anywhere. Aligning both suites on Vitest 4 means moving the app to Vite 7 —
+// a real build upgrade that belongs with the Phase 5 frontend work.
 
 import { defineConfig } from "vitest/config";
 

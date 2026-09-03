@@ -24,19 +24,43 @@ file that is never actually shared — more indirection, no less duplication. So
 `backend/vitest.config.ts` and `frontend/vitest.config.ts` stand alone, and the
 root `package.json` runs them in sequence.
 
-### The Vite version the frontend tests do not use
+`frontend/vitest.config.ts` also does not extend `vite.config.ts`, and loads no
+React plugin: JSX in a test file only has to compile, not hot-reload, so
+esbuild's automatic runtime (from `tsconfig.json`'s `"jsx": "react-jsx"`) covers
+it. The build pipeline is untouched.
 
-Vitest 4 brings its own Vite 8 for the test transform; the app still builds on
-Vite 5 with `@vitejs/plugin-react` 4, which supports Vite 7 at the newest.
-`frontend/vitest.config.ts` therefore does **not** extend `vite.config.ts`, and
-loads no React plugin: JSX in a test file only has to compile, not hot-reload,
-so esbuild's automatic runtime (from `tsconfig.json`'s `"jsx": "react-jsx"`)
-covers it. The build pipeline is untouched, and neither Vite has to agree with
-the other about a plugin neither test needs.
+### Why the frontend is on Vitest 3 while the backend is on 4
 
-The alternative — upgrading the app to Vite 7 to align them — is a real
-upgrade with its own regression surface, and it belongs in Phase 5 next to the
-router and code-splitting work, not in a testing phase.
+This started as Vitest 4 on both sides and did not survive contact with CI.
+
+Vitest 4 brings its own **Vite 8**, which declares `esbuild` as an *optional
+peer*. npm resolves that peer, but writes its per-platform packages into the
+lockfile **without the `optional` marker** that the app's own esbuild 0.21 set
+carries:
+
+```jsonc
+"node_modules/@esbuild/linux-x64":                 // 0.21.5, from Vite 5
+  { "dev": true, "optional": true, "os": ["linux"] },
+"node_modules/@esbuild/netbsd-arm64":              // 0.28.2, via Vite 8's peer
+  { "os": ["netbsd"], "cpu": ["arm64"] },          // ← no `optional`
+```
+
+An unmarked platform package is a *required* one, so `npm ci` on a Linux runner
+tries to install the NetBSD build and dies with `EBADPLATFORM`. That is not
+something a config option fixes — npm could not produce a portable lockfile for
+this tree.
+
+Vitest 3's Vite peer range covers the app's Vite 5, so there is **no nested
+Vite at all**: one Vite, one esbuild, 23 platform packages all correctly marked
+optional, and a lockfile that installs anywhere. The tests themselves did not
+change — all 99 pass identically on both versions.
+
+The version skew with the backend is cosmetic. They are separate packages with
+separate configs running in separate runtimes, which is the premise of this
+phase. Aligning both on Vitest 4 means moving the app to **Vite 7 +
+`@vitejs/plugin-react` 5** — a real build upgrade with its own regression
+surface, which belongs with the Phase 5 frontend work (and would fix the
+esbuild advisory below at the same time).
 
 ## The timezone pin is the most load-bearing line in the config
 
@@ -110,32 +134,29 @@ anybody noticing.
 
 ### What CI caught on its first run, which was not a test
 
-`frontend/package-lock.json` was **platform-incomplete**, and the first CI run
-failed on it:
+Both of this branch's CI failures were in the lockfile, not the code, and
+neither was reproducible on this machine by default:
 
-```
-npm error Missing: @esbuild/linux-x64@0.28.2 from lock file
-```
+1. **`Missing: @esbuild/linux-x64@0.28.2 from lock file`** — installing the
+   test dependencies incrementally, on top of an existing tree, resolved Vite
+   8's optional `esbuild` peer without writing it or its 81 per-platform
+   packages into the lock.
+2. **`EBADPLATFORM … @esbuild/netbsd-arm64`** — regenerating the lock from
+   scratch wrote all 81, but unmarked, so `npm ci` treated NetBSD builds as
+   required on Linux. That is what sent the frontend to Vitest 3 (above).
 
-Vitest 4's bundled Vite 8 declares `esbuild` as an *optional peer*. Installing
-the test dependencies incrementally (`npm install -D vitest …` on top of an
-existing tree) resolved that peer on this machine but never wrote it — or any
-of its 81 per-platform packages — into the lockfile. Deleting `node_modules`
-and the lock and installing once from scratch records all of them.
-
-Two things about this are worth keeping:
+Three things worth keeping from that:
 
 - **`npm ci` is what found it, and `npm install` never would have.** `npm ci`
   fails when the lock and the resolved tree disagree; `npm install` would have
-  quietly fixed it up on the runner and left the lock broken for the next
-  machine.
+  quietly patched it on the runner and left the lock broken for everyone else.
+- **`npm ci --dry-run` passed locally against both broken locks**, because the
+  packages at issue are the ones macOS does not need. **`npm ci --dry-run
+  --os=linux --cpu=x64` reproduces the runner's answer without pushing** — the
+  single most useful thing to come out of this phase.
 - **It would have broken the Phase 7 deploy, not just CI.** Cloudflare Pages
   builds on Linux from this same lockfile. The first CI run of this repo's life
   paid for itself before a single test assertion ran.
-
-Locally, `npm ci --dry-run` **passed** against the broken lock, because the
-missing packages were the ones this machine does not need. `npm ci --dry-run
---os=linux --cpu=x64` reproduces the runner's answer without pushing.
 
 ## Small choices worth knowing about
 
