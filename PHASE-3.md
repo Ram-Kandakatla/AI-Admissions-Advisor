@@ -108,6 +108,35 @@ argument against writing them — Phase 5's router rewrite and code-splitting ar
 exactly the kind of change that breaks a debounce or a sort order without
 anybody noticing.
 
+### What CI caught on its first run, which was not a test
+
+`frontend/package-lock.json` was **platform-incomplete**, and the first CI run
+failed on it:
+
+```
+npm error Missing: @esbuild/linux-x64@0.28.2 from lock file
+```
+
+Vitest 4's bundled Vite 8 declares `esbuild` as an *optional peer*. Installing
+the test dependencies incrementally (`npm install -D vitest …` on top of an
+existing tree) resolved that peer on this machine but never wrote it — or any
+of its 81 per-platform packages — into the lockfile. Deleting `node_modules`
+and the lock and installing once from scratch records all of them.
+
+Two things about this are worth keeping:
+
+- **`npm ci` is what found it, and `npm install` never would have.** `npm ci`
+  fails when the lock and the resolved tree disagree; `npm install` would have
+  quietly fixed it up on the runner and left the lock broken for the next
+  machine.
+- **It would have broken the Phase 7 deploy, not just CI.** Cloudflare Pages
+  builds on Linux from this same lockfile. The first CI run of this repo's life
+  paid for itself before a single test assertion ran.
+
+Locally, `npm ci --dry-run` **passed** against the broken lock, because the
+missing packages were the ones this machine does not need. `npm ci --dry-run
+--os=linux --cpu=x64` reproduces the runner's answer without pushing.
+
 ## Small choices worth knowing about
 
 - **Globals are off** (`globals: false`), matching the backend. Test files
