@@ -20,6 +20,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
+import { createLogger, errorFields, type Logger } from "../log.js";
 import type { Env, ChatMessage, StudentRecord } from "../types.js";
 
 const DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-8";
@@ -81,17 +82,13 @@ export function inspectApiKey(name: string, raw: unknown): KeyStatus {
 // serves and then stays quiet, instead of once per request forever.
 const warnedIsolates = new Set<string>();
 
-function warnOnce(name: string, status: KeyStatus): void {
+function warnOnce(log: Logger, name: string, status: KeyStatus): void {
   if (!status.present || status.valid || warnedIsolates.has(name)) return;
   warnedIsolates.add(name);
-  console.warn(
-    JSON.stringify({
-      level: "warn",
-      message: `${name} is set but does not look like a valid key — ignoring it`,
-      problems: status.problems,
-      hint: "Fix it in backend/.dev.vars (local) or `wrangler secret put` (deployed), or remove it to run offline on purpose.",
-    })
-  );
+  log.warn(`${name} is set but does not look like a valid key — ignoring it`, {
+    problems: status.problems,
+    hint: "Fix it in backend/.dev.vars (local) or `wrangler secret put` (deployed), or remove it to run offline on purpose.",
+  });
 }
 
 const SYSTEM_PROMPT = `You are Compass, a warm, plain-spoken college admissions advisor for U.S. high school students.
@@ -139,12 +136,13 @@ export type LlmService = ReturnType<typeof createLlmService>;
  * opened until a question is actually asked.
  */
 export function createLlmService(env: Env) {
+  const log = createLogger(env);
   const keyStatus = {
     ANTHROPIC_API_KEY: inspectApiKey("ANTHROPIC_API_KEY", env.ANTHROPIC_API_KEY),
     OPENAI_API_KEY: inspectApiKey("OPENAI_API_KEY", env.OPENAI_API_KEY),
   };
 
-  for (const [name, status] of Object.entries(keyStatus)) warnOnce(name, status);
+  for (const [name, status] of Object.entries(keyStatus)) warnOnce(log, name, status);
 
   // Only a key that passed the shape check gets to select a provider — a
   // malformed one degrades to the offline fallback rather than to a runtime 401.
@@ -185,13 +183,7 @@ export function createLlmService(env: Env) {
         ? { answer, source: provider }
         : { answer: fallbackAnswer(question), source: "fallback" };
     } catch (err) {
-      console.error(
-        JSON.stringify({
-          level: "error",
-          message: `${provider} API error`,
-          detail: err instanceof Error ? err.message : String(err),
-        })
-      );
+      log.error(`${provider} API error`, errorFields(err));
       return {
         answer:
           "I'm having trouble reaching my knowledge service right now. Here's a general pointer:\n\n" +

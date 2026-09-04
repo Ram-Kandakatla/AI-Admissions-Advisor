@@ -25,6 +25,10 @@ export async function readJson<T>(c: Context<AppEnv>): Promise<T> {
   // multi-byte character costs more than one byte on the wire.
   if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
     throw new HTTPException(413, {
+      // The message never reaches the client — `res` below is what is sent —
+      // but it is what onError writes to the log, and an HTTPException raised
+      // without one logs `detail: ""`, which says nothing.
+      message: "request body exceeded the size cap",
       res: Response.json({ error: "Request body is too large." }, { status: 413 }),
     });
   }
@@ -35,6 +39,7 @@ export async function readJson<T>(c: Context<AppEnv>): Promise<T> {
     return JSON.parse(text) as T;
   } catch {
     throw new HTTPException(400, {
+      message: "request body is not valid JSON",
       res: Response.json({ error: "Malformed request." }, { status: 400 }),
     });
   }

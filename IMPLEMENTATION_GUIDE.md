@@ -401,6 +401,11 @@ are in [PHASE-3.md](PHASE-3.md#left-for-later).)*
 
 ## Phase 4 — Observability
 
+> **Built. See [PHASE-4.md](PHASE-4.md) for what shipped and why.** The plan
+> below is preserved as written; where the build deviated, a note says so
+> inline. §4.2 is the one item deliberately not done, on this section's own
+> advice.
+
 ### 4.1 Structured logging
 
 Skip `pino` — its default transports lean on Node's filesystem
@@ -415,6 +420,16 @@ Cloudflare's dashboard Logs view and `wrangler tail` (real-time local
 tailing) both pick up `console.log`/`console.error` output automatically —
 no log shipper to configure for basic visibility.
 
+*(Built as `src/log.ts` plus a `requestLog` middleware. Three things this sketch
+does not anticipate. The starting point was not zero — it was six hand-rolled
+`console.*(JSON.stringify(...))` calls using three different names for "what
+happened," so the work was consolidation rather than introduction. The `route`
+field is the matched **pattern** (`/api/students/:id`), never `c.req.path`: a
+student id in a retained log is a real identifier, and `onError` was already
+leaking one on every 500. And the level mapping is `< 500 → info`, `>= 500 →
+error` rather than the usual 4xx → warn — a 401 here is just an expired session,
+and routine traffic at warn costs warn its meaning.)*
+
 ### 4.2 Error tracking
 
 `@sentry/node` won't load in a Worker (same Node-API problem as everything
@@ -423,12 +438,24 @@ Cloudflare's official Sentry SDK for Workers, on the backend; the frontend
 keeps plain `@sentry/react` since that runs in the browser, not the Worker.
 Skip this until there are actual outside users — it's noise before that.
 
+*(Deliberately not done, on exactly that advice. Every user of this app today is
+the person who wrote it, and `wrangler tail` is a better tool for that in real
+time with no DSN and no vendor. The trigger to revisit is Phase 7 putting this on
+a public URL. See [PHASE-4.md](PHASE-4.md#42-sentry-deliberately-not-built) for
+the one non-obvious prerequisite — the frontend's Vitest 3 / Vite 5 pin means any
+new frontend dependency needs a Linux `npm ci` check first.)*
+
 ### 4.3 A real health check
 
 `GET /api/health` already reports LLM provider status — extend it to run a
 trivial `SELECT 1` against D1 (`c.env.DB.prepare("SELECT 1").first()`) so
 uptime monitoring (Phase 8) can tell "the Worker is up" apart from "the
 Worker is up but D1 is unreachable."
+
+*(Done in Phase 1 — it was one query, and doing it early meant the health route
+was never the odd one out. Phase 4 added one thing on top: the request logger
+drops health checks to `debug`, since a monitor hitting this every few minutes
+forever would otherwise become most of the log by volume.)*
 
 ---
 
@@ -741,10 +768,29 @@ land rather than trusting memory.
 - [ ] *Not built:* coverage thresholds. A percentage gate rewards covering whatever
       is cheapest; the priority order above is the policy instead.
 
-**Phase 4 — Observability**
-- [ ] Structured `console.log`/`console.error` logging
-- [ ] `@sentry/cloudflare` (backend) + `@sentry/react` (frontend)
-- [x] `/api/health` extended to check D1 (`SELECT 1`) *(done in Phase 1)*
+**Phase 4 — Observability** — **done** apart from §4.2, written up in [PHASE-4.md](PHASE-4.md)
+- [x] Structured logging — `src/log.ts` is now the only file in `src/` that touches
+      `console`, replacing six hand-rolled JSON lines that used three different
+      names for "what happened"
+- [x] One line per request (`middleware/requestLog.ts`), registered first so it can
+      see and time everything below it — including the 413s `bodyLimit` returns
+- [x] `route` is the matched **pattern**, never the raw path. This also closed a
+      pre-existing leak: `onError` was logging `c.req.path`, so every 500 on a
+      `/students/:id` route already wrote a student id into the log
+- [x] `LOG_LEVEL` var (`debug|info|warn|error|silent`, default `info`) — a var and
+      not a secret, so it can be turned up in the dashboard mid-incident without a
+      redeploy; the suite runs at `silent`
+- [x] 22 new tests, 165 total (was 143). The load-bearing ones assert what is *not*
+      in a log line — student id, email, password, session cookie — against the raw
+      text, so a leak in a nested field or a stack trace cannot slip past
+- [x] `/api/health` extended to check D1 (`SELECT 1`) *(done in Phase 1)*; Phase 4
+      drops health checks to `debug` so Phase 8's monitor cannot flood the log
+- [ ] **Deliberately not done:** `@sentry/cloudflare` + `@sentry/react`. This
+      section's own advice is to wait for outside users, and there are none yet —
+      `wrangler tail` is the better tool until Phase 7 makes the app public.
+- [ ] *Not built:* a frontend error boundary. A component throw still blanks the
+      page. It is a real gap and a **Phase 5** one — it needs a designed error
+      state, not a bare `<div>`.
 
 **Phase 5 — Frontend polish**
 - [ ] `react-router-dom` routing *(§2.7 suggested pulling this into Phase 2;

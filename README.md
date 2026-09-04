@@ -8,8 +8,10 @@ internship recommendation engines.
 
 Built to the [step-by-step guide](ClaudeAIAdmissionsSteps.md) and the
 [web-design standards](ClaudeWebDesign.md) in this repo. The hosting roadmap is
-[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md); the Workers/D1 migration that
-Phase 1 performed is written up in [PHASE-1.md](PHASE-1.md).
+[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md); each completed phase has its own
+write-up — [PHASE-1.md](PHASE-1.md) (Workers/D1 migration),
+[PHASE-2.md](PHASE-2.md) (accounts), [PHASE-3.md](PHASE-3.md) (testing & CI), and
+[PHASE-4.md](PHASE-4.md) (observability).
 
 ## What's inside
 
@@ -89,6 +91,7 @@ Secrets go in `backend/.dev.vars` (gitignored; see
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | `.dev.vars` | unset | Enables the live chatbot. |
 | `ANTHROPIC_MODEL` / `OPENAI_MODEL` | `.dev.vars` | per-provider default | Override the model. |
 | `CORS_ORIGIN` | `wrangler.toml` | `http://localhost:5173` | Comma-separated origins allowed to call the API from a browser. |
+| `LOG_LEVEL` | `wrangler.toml` | `info` | `debug`, `info`, `warn`, `error` or `silent`. A var rather than a secret so it can be turned up mid-incident without a redeploy. |
 
 `PORT`, `COMPASS_DB`, and `TRUST_PROXY` are gone. The first two were Node concepts with
 no Worker equivalent. `TRUST_PROXY` existed so the rate limiter could find the real
@@ -103,9 +106,9 @@ npm run test:backend     # engines, data integrity, API endpoints, hardening
 npm run test:frontend    # exports, dates, the shared notes store, two screens
 ```
 
-**242 tests.** Two suites, two runtimes, deliberately not shared:
+**264 tests.** Two suites, two runtimes, deliberately not shared:
 
-**Backend — 143 tests, 8 suites, inside the real Workers runtime.** Vitest via
+**Backend — 165 tests, 10 suites, inside the real Workers runtime.** Vitest via
 `@cloudflare/vitest-pool-workers`, against a real D1 database built from the same
 `migrations/` files that get deployed. Plain Node has no D1 binding and no per-request
 `env`, so a mock would have meant tests that pass while the real Worker breaks. The
@@ -116,6 +119,11 @@ suites share one test database and never touch `backend/.wrangler/state` or the 
 than any feature — security headers, the CORS allowlist, the request-size cap, the chat
 rate limiter, that errors carry no stack traces, and API-key validation. None of that
 changes app behaviour when it regresses, which is precisely why it needs its own test.
+
+[`test/logging.test.ts`](backend/test/logging.test.ts) is the same idea applied to the
+log: its load-bearing assertions are about what a log line does *not* contain — no
+student id, no email, no password, no session cookie — checked against the raw text, so
+a leak inside a nested field or a stack trace cannot slip past.
 
 **Frontend — 99 tests, 6 suites, in jsdom.** Vitest + Testing Library, covering the
 pure functions that quietly produce wrong output rather than crashing
@@ -139,6 +147,26 @@ It deliberately does **not** deploy. Cloudflare Pages' git integration (Phase 7)
 and deploys on push and gives every PR its own preview URL, which is less to maintain
 than wiring `wrangler deploy` into Actions and keeping an API token in repository
 secrets. Actions says whether the code is safe to merge; Cloudflare ships it.
+
+## Observability
+
+The API writes one structured JSON line per request, plus a line for anything that
+fails. `console` output is picked up automatically by `wrangler tail` locally and by
+Workers Logs once deployed, so there is no log shipper to configure.
+
+```
+{"level":"info","msg":"request","method":"GET","route":"/api/students/:id","status":200,"ms":4}
+```
+
+`route` is the matched **pattern**, never the concrete path. A student id identifies a
+real teenager and logs are retained; the pattern carries the whole operational signal —
+which endpoint, how often, what status, how slow — and none of the identifier. Health
+checks log at `debug` so Phase 8's uptime monitor cannot flood the log, and 4xx stays at
+`info` because a 401 here is an expired session rather than a fault.
+
+[`GET /api/health`](backend/src/app.ts) probes D1 with a `SELECT 1` and answers 503 when
+it fails, so monitoring can tell "the Worker is down" apart from "the Worker is up but
+D1 is unreachable." Details and the reasoning are in [PHASE-4.md](PHASE-4.md).
 
 ## Design
 
