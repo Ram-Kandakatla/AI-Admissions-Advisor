@@ -32,6 +32,13 @@ export default defineConfig({
         bindings: {
           TEST_MIGRATIONS: migrations,
           CORS_ORIGIN: "http://localhost:5173",
+          // Silent by default, because the request logger emits a line for
+          // every request and the suite makes several hundred — enough to bury
+          // the test results and turn the CI log into scrollback. The logging
+          // tests raise it per-test with a bindings override rather than
+          // reading it from here, so this suppresses noise without suppressing
+          // the thing under test.
+          LOG_LEVEL: "silent",
           // Both keys forced empty, which pins the chatbot to its offline
           // fallback. Not just tidiness: wrangler loads .env into the test
           // environment too, so without this override a developer who has a

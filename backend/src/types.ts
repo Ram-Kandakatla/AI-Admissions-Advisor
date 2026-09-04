@@ -18,6 +18,13 @@ export interface Env {
   DB: D1Database;
   /** Comma-separated browser origins allowed to call this API. */
   CORS_ORIGIN?: string;
+  /**
+   * Lowest level that reaches the log: debug | info | warn | error | silent.
+   * Unset or unrecognised means "info". Typed as a plain string because that
+   * is what a wrangler var is — see resolveLevel() in src/log.ts, which is
+   * where the value is actually validated.
+   */
+  LOG_LEVEL?: string;
   /** Set as a secret. Absent = the chatbot runs its offline fallback. */
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;

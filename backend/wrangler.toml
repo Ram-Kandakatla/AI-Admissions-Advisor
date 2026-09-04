@@ -32,6 +32,13 @@ migrations_dir = "migrations"
 # Express build, just read from a Worker var instead of process.env.
 CORS_ORIGIN = "http://localhost:5173"
 
+# Lowest level that reaches the log: debug | info | warn | error | silent.
+# "info" gives one line per request plus every warning and error; "debug" adds
+# the health-check traffic the request logger otherwise keeps out of the way.
+# It is a var rather than a secret precisely so it can be changed in the
+# dashboard mid-incident without a redeploy.
+LOG_LEVEL = "info"
+
 # ANTHROPIC_API_KEY / OPENAI_API_KEY are secrets, never vars — set them in
 # .dev.vars locally (gitignored) and with `wrangler secret put` in production.
 # With neither set the chatbot runs its offline fallback, same as before.

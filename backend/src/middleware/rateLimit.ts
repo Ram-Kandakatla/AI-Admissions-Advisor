@@ -18,6 +18,7 @@
 
 import { createMiddleware } from "hono/factory";
 import type { Context } from "hono";
+import { createLogger, errorFields } from "../log.js";
 import type { AppEnv } from "../types.js";
 
 export interface RateLimitOptions {
@@ -80,14 +81,10 @@ export function rateLimit({ bucket, limit, windowMs, message, key }: RateLimitOp
       // Fail open, loudly. Every route behind this limiter needs D1 for its
       // own work, so a D1 failure here means the request is about to fail
       // anyway — refusing it *as a rate limit* would report the wrong cause.
-      console.error(
-        JSON.stringify({
-          level: "error",
-          message: "rate limiter could not reach D1 — allowing the request",
-          bucket,
-          detail: err instanceof Error ? err.message : String(err),
-        })
-      );
+      createLogger(c.env).error("rate limiter could not reach D1 — allowing the request", {
+        bucket,
+        ...errorFields(err),
+      });
       return next();
     }
 

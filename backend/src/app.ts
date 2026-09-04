@@ -54,6 +54,8 @@ import { majorCatalog, majorInsights } from "./services/majorInsights.js";
 import { createLlmService } from "./services/llmService.js";
 import { bodyLimit } from "./middleware/bodyLimit.js";
 import { rateLimit } from "./middleware/rateLimit.js";
+import { matchedRoute, requestLog } from "./middleware/requestLog.js";
+import { createLogger, errorFields } from "./log.js";
 import {
   ensureSession,
   ownedStudent,
@@ -74,6 +76,16 @@ import type {
 } from "./types.js";
 
 const app = new Hono<AppEnv>().basePath("/api");
+
+// ---- Observability ----
+//
+// FIRST, AND THAT IS LOAD-BEARING. This middleware reports on whatever
+// happens beneath it, so anything registered above it is a request it cannot
+// see and time — including the 413s bodyLimit returns and the preflights CORS
+// rejects. Same ordering hazard as the requireOwner block below, in the
+// opposite direction: there, a route above the guard is unprotected; here, a
+// middleware above the logger is unobserved.
+app.use("*", requestLog);
 
 // ---- Security middleware ----
 //
@@ -608,13 +620,10 @@ app.post("/chat", async (c) => {
     }
     return c.json({ answer, source });
   } catch (err) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        route: "/api/chat",
-        detail: err instanceof Error ? err.message : String(err),
-      })
-    );
+    createLogger(c.env).error("chat request failed", {
+      route: "/api/chat",
+      ...errorFields(err),
+    });
     return c.json({ error: "Something went wrong answering that. Please try again." }, 500);
   }
 });
@@ -635,29 +644,37 @@ app.notFound((c) => c.json({ error: "Not found" }, 404));
 // oversized body and 400 for malformed JSON, and answering either with a
 // blanket 500 would tell an honest caller to retry a request that can never
 // succeed.
+//
+// These lines carry method and route even though the request logger already
+// reports both, so an error is legible on its own rather than only after being
+// joined to another line by its ray id — which is not a join you can make
+// locally, where there is no ray id at all. The route is the *pattern*, for the
+// same reason it is in the request log: c.req.path here would put a student's
+// id into the log on every 500.
 app.onError((err, c) => {
+  const log = createLogger(c.env);
+
   if (err instanceof HTTPException) {
-    console.warn(
-      JSON.stringify({
-        level: "warn",
-        method: c.req.method,
-        path: c.req.path,
-        status: err.status,
-        detail: err.message,
-      })
-    );
+    // Not a server fault — readJson raises these for a malformed or oversized
+    // body. Warn rather than error: something is wrong with the request, and
+    // nothing is wrong with the Worker.
+    log.warn("client error", {
+      method: c.req.method,
+      route: matchedRoute(c),
+      status: err.status,
+      // Undefined rather than "" for an exception raised without a message, so
+      // JSON.stringify drops the field instead of logging an empty one.
+      detail: err.message || undefined,
+    });
     return err.getResponse();
   }
 
-  console.error(
-    JSON.stringify({
-      level: "error",
-      method: c.req.method,
-      path: c.req.path,
-      status: 500,
-      detail: err instanceof Error ? (err.stack ?? err.message) : String(err),
-    })
-  );
+  log.error("unhandled error", {
+    method: c.req.method,
+    route: matchedRoute(c),
+    status: 500,
+    ...errorFields(err),
+  });
   return c.json({ error: "Internal server error" }, 500);
 });
 
