@@ -54,3 +54,10 @@ npm-debug.log*
 # of the app; launch.json (dev-server config) is deliberately NOT ignored
 # here since it's meant to be shared with anyone who clones the repo.
 .claude/settings.local.json
+
+# Local design-standards brief, kept on this machine and deliberately out of
+# the repo. It steers how the UI gets built but is not part of the app, and
+# until now it was untracked-but-not-ignored — which is one `git add -A` away
+# from being committed by accident. This line is what makes that impossible
+# rather than merely careful.
+ClaudeWebDesign.md
