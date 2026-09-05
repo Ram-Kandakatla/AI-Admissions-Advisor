@@ -8,6 +8,53 @@
       content="Compass — a guidance-counselor-in-your-pocket that helps high school students build a balanced, personalized college list and answers admissions and financial-aid questions."
     />
     <title>Compass — College Admissions Advisor</title>
+
+    <!-- Icons. The SVG is what current browsers pick; the .ico is the fallback
+         for the ones that don't, and Safari on iOS uses the touch icon when a
+         student adds Compass to a home screen. All three come from
+         scripts/build-icons.mjs — see that file before editing any of them. -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="alternate icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- Tints the browser chrome on Android and on iOS Safari. Two values,
+         matching --bg in each theme, so the address bar joins the sky rather
+         than sitting on top of it. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#c3dce2" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1830" />
+
+    <!-- ── Sharing ──
+         Every absolute URL below points at a placeholder host. Open Graph
+         requires absolute URLs — a relative og:image is ignored by most
+         scrapers — so these cannot be filled in properly until Phase 7.5
+         attaches the real domain. Replace compass.example.com in the four
+         places it appears then, and nothing else here needs to change.
+
+         Worth knowing what this can and cannot do: these tags live in one
+         static index.html that every route is served from, so a link to
+         /matches or /majors/nursing shares the same card as the homepage.
+         Per-route cards need the HTML to differ per URL, which means
+         prerendering — a Pages concern, not a frontend one, and not worth it
+         for an app whose pages are all behind a login anyway. -->
+    <link rel="canonical" href="https://compass.example.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Compass" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://compass.example.com/" />
+    <meta property="og:title" content="Compass — College Admissions Advisor" />
+    <meta
+      property="og:description"
+      content="Turn your grades, coursework, and ambitions into a balanced list of reach, target, and safety schools — and get plain answers on deadlines, essays, and financial aid."
+    />
+    <meta property="og:image" content="https://compass.example.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="The Compass mark beside a stack of three college-list cards marked reach, target, and safety."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

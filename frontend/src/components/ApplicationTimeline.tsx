@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { CYCLE_MONTHS, KIND_LABEL, MILESTONES } from "../data/milestones";
@@ -26,10 +27,8 @@ type Row =
 
 export default function ApplicationTimeline({
   student,
-  onGoTracker,
 }: {
   student: StudentRecord | null;
-  onGoTracker: () => void;
 }) {
   const [cycleYear, setCycleYear] = useState<number>(localCycleYear);
   const [apps, setApps] = useState<Application[]>([]);
@@ -123,7 +122,7 @@ export default function ApplicationTimeline({
     <div>
       <div className="view-head">
         <span className="eyebrow">Cycle {cycleYear}–{String(cycleYear + 1).slice(2)}</span>
-        <h2 className="section-title">The application year, September to May.</h2>
+        <h1 className="section-title">The application year, September to May.</h1>
         <p className="lead">
           What happens when, in the order it happens. These are the conventions of a US cycle — the
           dates most schools cluster around — so treat them as a rhythm to plan against, then
@@ -153,9 +152,9 @@ export default function ApplicationTimeline({
               <strong>Nothing on your tracker yet.</strong> Add the schools you&apos;re applying to
               and their deadlines will drop onto these rails alongside the common ones.
             </div>
-            <button className="btn btn-sm btn-primary" onClick={onGoTracker}>
+            <Link className="btn btn-sm btn-primary" to={student ? "/tracker" : "/profile"}>
               Open the tracker <span className="btn-arrow">→</span>
-            </button>
+            </Link>
           </div>
         ) : (
           <div className="rm-callout">
@@ -169,9 +168,9 @@ export default function ApplicationTimeline({
                   rolling.length === 1 ? "" : "s"
                 } ${rolling.length === 1 ? "has" : "have"} no fixed date — earlier is genuinely better there.`}
             </div>
-            <button className="btn btn-sm btn-ghost" onClick={onGoTracker}>
+            <Link className="btn btn-sm btn-ghost" to={student ? "/tracker" : "/profile"}>
               Edit deadlines
-            </button>
+            </Link>
           </div>
         )
       ) : (
@@ -187,7 +186,7 @@ export default function ApplicationTimeline({
         {months.map((m) => (
           <section className="rm-month" key={m.key} data-past={m.past || undefined}>
             <div className="rm-month-head">
-              <h3>{m.label}</h3>
+              <h2>{m.label}</h2>
               {m.current && <span className="rm-now">You are here</span>}
             </div>
 
@@ -206,7 +205,7 @@ export default function ApplicationTimeline({
 
       {rolling.length > 0 && (
         <section className="rm-rolling">
-          <h3>No fixed date</h3>
+          <h2>No fixed date</h2>
           <p className="md-lede">
             Rolling applications are read as they arrive, so they never land on a month — but the
             seats and the aid do run out.

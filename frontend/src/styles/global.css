@@ -250,6 +250,50 @@ code {
   border-radius: 4px;
 }
 
+/* The tracker puts forty-odd controls between the top of the page and its
+   content. This is the way past them, and it is off-screen rather than
+   display:none because a hidden element takes no focus and this one has to be
+   the first thing Tab reaches. */
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--surface);
+  color: var(--tx);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.skip-link:focus-visible {
+  top: 12px;
+}
+
+/* The main region takes focus programmatically when the skip link is used, so
+   it must not draw the ring it would if a person had tabbed to it. */
+#main:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Present to a screen reader, absent to everyone else. Clipped rather than
+   display:none or visibility:hidden, both of which remove it from the
+   accessibility tree along with the layout. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 img {
   max-width: 100%;
   display: block;
@@ -340,6 +384,7 @@ img {
   padding: 0;
   cursor: pointer;
   color: var(--tx);
+  text-decoration: none;
 }
 
 .brand-mark {
@@ -365,13 +410,21 @@ img {
   gap: 2px;
 }
 
+/* Both an <a> and a <button> wear this: every nav destination is a real link
+   since the router landed, except the ones gated behind a profile, which stay
+   buttons because an anchor has no disabled state. inline-flex rather than the
+   button default so the 44px min-height at the bottom of this file applies to
+   the anchors too. */
 .nav-link {
+  display: inline-flex;
+  align-items: center;
   background: none;
   border: 0;
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
   color: var(--txm);
+  text-decoration: none;
   padding: 7px 12px;
   border-radius: var(--r);
   transition: color 0.1s, background 0.1s;
@@ -380,7 +433,8 @@ img {
   color: var(--tx);
   background: var(--s2);
 }
-.nav-link[aria-current="true"] {
+.nav-link[aria-current="page"],
+.nav-link[data-current="true"] {
   color: var(--blue);
   background: var(--bbg);
   font-weight: 600;
@@ -514,6 +568,7 @@ img {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  text-decoration: none;
   gap: 7px;
   height: 34px;
   padding: 0 14px;
@@ -974,7 +1029,7 @@ img {
   margin-bottom: 16px;
   border-bottom: 0.5px solid var(--border);
 }
-.tier-head h3 {
+.tier-head h2 {
   font-size: 19px;
 }
 .tier-dot {
@@ -1017,7 +1072,7 @@ img {
   align-items: flex-start;
   gap: 12px;
 }
-.uni-card h4 {
+.uni-card h3 {
   font-size: 16px;
   line-height: 1.2;
 }
@@ -1049,8 +1104,10 @@ img {
   font-size: 8px;
   font-weight: 600;
   letter-spacing: 0.06em;
+  /* No opacity here. The tier colour is already the darkened, AA-clearing
+     version of its hue; fading it to 0.75 on the tinted badge dropped this
+     label to 3.5:1 at 8px. The 19px number above it carries the hierarchy. */
   color: var(--tier);
-  opacity: 0.75;
   text-transform: uppercase;
 }
 .uni-card.reach {
@@ -1338,7 +1395,7 @@ table.uni-table {
   flex-direction: column;
   gap: 8px;
 }
-.suggestions h4 {
+.suggestions h2 {
   font-family: var(--font-body);
   font-size: 10px;
   letter-spacing: 0.06em;
@@ -1388,7 +1445,8 @@ table.uni-table {
   margin-left: 7px;
   font-size: 10px;
   font-weight: 700;
-  opacity: 0.62;
+  /* No opacity: at 0.62 this 10px count measured 2.77:1 on the chip. The
+     size difference carries the hierarchy on its own. */
   font-variant-numeric: tabular-nums;
 }
 .chip-star {
@@ -1462,7 +1520,7 @@ table.uni-table {
   border-radius: var(--rl);
   padding: 14px 16px;
 }
-.md-bargroup h4 {
+.md-bargroup h3 {
   font-family: var(--font-body);
   font-size: 11px;
   font-weight: 700;
@@ -1692,6 +1750,12 @@ table.uni-table {
    ========================================================================= */
 
 .sec-hd {
+  /* A real <h2> since the accessibility pass — it was a styled <div>, which
+     looked like a section label and was invisible to a screen reader's
+     heading list. These two lines undo what the h1-h4 base rule would
+     otherwise impose on it, so it looks exactly as it did as a div. */
+  font-family: var(--font-body);
+  line-height: 1.4;
   font-size: 11px;
   font-weight: 700;
   color: var(--txm);
@@ -1878,7 +1942,7 @@ table.uni-table {
   align-items: flex-start;
   gap: 14px;
 }
-.track-head h4 {
+.track-head h3 {
   font-size: 16px;
   line-height: 1.2;
 }
@@ -2070,7 +2134,12 @@ table.uni-table {
   border-radius: var(--rl);
   background: var(--surface);
 }
-.empty h3 {
+/* An empty state is sometimes the entire page — a 404, a failed fetch, the
+   wall in front of a profile-gated route — in which case its heading is the
+   page's h1. Where it sits inside a page that already has one, it stays an
+   h3. Both look the same; only the outline differs. */
+.empty h1,
+.empty h2 {
   font-size: 18px;
   margin-bottom: 8px;
 }
@@ -2079,6 +2148,70 @@ table.uni-table {
   font-size: 13px;
   max-width: 48ch;
   margin: 0 auto 18px;
+}
+/* Two ways out of a dead end wrap rather than overflow on a phone. */
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+/* ── Crash state (ErrorBoundary) ──
+   Left-aligned, not centred: this is a short piece of prose to be read, and
+   the app centres a heading and a button only where there is nothing to read
+   (.empty). The red is spent entirely on the mark — an error nobody caused
+   and nobody can fix does not need the page to shout. */
+.crash {
+  max-width: 56ch;
+  margin: 40px auto;
+}
+.crash-mark {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 16px;
+}
+.crash-title {
+  font-family: var(--display);
+  font-size: 21px;
+  line-height: 1.25;
+  letter-spacing: -0.3px;
+  margin-bottom: 10px;
+}
+.crash-body {
+  color: var(--txm);
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+.crash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.crash-details {
+  margin-top: 22px;
+  border-top: 0.5px solid var(--border);
+  padding-top: 14px;
+  font-size: 12px;
+  color: var(--txm);
+}
+.crash-details summary {
+  cursor: pointer;
+  /* The marker is the only affordance saying this opens, so it stays. */
+  list-style: revert;
+}
+.crash-details pre {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--s2);
+  border-radius: var(--r);
+  font-size: 11.5px;
+  line-height: 1.5;
+  /* A message can be one long unbroken string; it wraps rather than pushing
+     the card wider than the viewport. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .banner {
@@ -2134,6 +2267,24 @@ table.uni-table {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* The route-chunk spinner. Identical to the one above except that it is
+   invisible for its first quarter-second, so a chunk that arrives off a warm
+   cache shows nothing at all and only a genuinely slow one explains itself.
+   Under prefers-reduced-motion the rule above collapses both animations to
+   0.001ms; the delay survives that, so the ring still appears — it just
+   appears rather than fades, and does not spin. */
+.spinner-delayed {
+  opacity: 0;
+  animation:
+    spin 0.7s linear infinite,
+    spinner-appear 0.2s ease 0.25s forwards;
+}
+@keyframes spinner-appear {
+  to {
+    opacity: 1;
   }
 }
 
@@ -2591,7 +2742,7 @@ table.cmp-table {
   gap: 10px;
   margin-bottom: 8px;
 }
-.rm-month-head h3 {
+.rm-month-head h2 {
   font-size: 15px;
   letter-spacing: -0.2px;
 }
@@ -2667,7 +2818,9 @@ table.cmp-table {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--k);
-  background: color-mix(in srgb, var(--k) 12%, transparent);
+  /* Into --surface, not transparent: over the sky this pill's ground came
+     out at #aeccd9 and the label missed AA at 4.38:1. */
+  background: color-mix(in srgb, var(--k) 12%, var(--surface));
   border-radius: 20px;
   padding: 2px 8px;
 }
@@ -2710,7 +2863,7 @@ table.cmp-table {
 .rm-rolling {
   margin-bottom: 30px;
 }
-.rm-rolling h3 {
+.rm-rolling h2 {
   font-size: 15px;
   margin-bottom: 4px;
 }
@@ -2888,9 +3041,23 @@ table.cmp-table {
   line-height: 1;
   cursor: pointer;
   opacity: 0.6;
-  /* 44px of tappable area from a 16px glyph, without a 44px-tall banner. */
+  /* A 44px hit area from a 16px glyph, without a 44px-tall banner.
+     The padding alone got this to 34x40 — the glyph is narrower than its
+     font-size, so the horizontal padding had less to build on. Measured at
+     375px during the Phase 5 accessibility pass. The pseudo-element carries
+     the rest and costs no layout, the same trick .tag button uses. */
   padding: 12px;
   margin-block: -12px;
+  position: relative;
+}
+.banner-x::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
 }
 .banner-x:hover {
   opacity: 1;
@@ -2959,7 +3126,7 @@ table.cmp-table {
     flex-direction: row;
     flex-wrap: wrap;
   }
-  .chat-layout .suggestions h4 {
+  .chat-layout .suggestions h2 {
     width: 100%;
   }
   .suggestion {
@@ -3404,7 +3571,9 @@ table.cmp-table {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  color: var(--txf);
+  /* The student's own words. --txf measures 2.21:1 here; --txm is the
+     secondary token that clears AA on every ground the app uses. */
+  color: var(--txm);
   font-style: italic;
   margin-top: 2px;
 }
@@ -3462,7 +3631,7 @@ table.cmp-table {
   justify-content: space-between;
   gap: 12px;
 }
-.saved-top h4 {
+.saved-top h2 {
   font-family: var(--display, inherit);
   font-size: 15px;
   margin: 0 0 2px;
@@ -3476,7 +3645,8 @@ table.cmp-table {
 }
 .saved-when {
   font-size: 10.5px;
-  color: var(--txf);
+  /* Was --txf, at 2.21:1. See .uni-note. */
+  color: var(--txm);
 }
 
 /* =========================================================================
@@ -3568,7 +3738,7 @@ table.cmp-table {
 
 .sch-tag {
   text-transform: capitalize;
-  opacity: 0.75;
+  /* Same as .score-badge .l: the fade cost this 4.5:1 on every tag. */
 }
 
 .sch-confirm {
@@ -3614,7 +3784,12 @@ table.cmp-table {
 .sch-note {
   font-size: 11.5px;
   line-height: 1.5;
-  color: var(--txf);
+  /* --txm, not --txf. This line carries the one thing a student most needs
+     off this card — when the scholarship actually opens and closes — and
+     --txf is the faint token, meant for marks and dividers rather than prose:
+     at 11.5px on --surface it measures 2.21:1. --txm is the secondary text
+     token, picked to clear 4.5:1 on every ground the app puts it on. */
+  color: var(--txm);
 }
 
 .sch-link {
@@ -3780,7 +3955,7 @@ table.cmp-table {
   .uni-card-top {
     gap: 6px;
   }
-  .uni-card h4 {
+  .uni-card h3 {
     font-size: 11px;
     letter-spacing: -0.2px;
   }
@@ -3837,7 +4012,7 @@ table.cmp-table {
     break-inside: avoid;
     break-after: avoid;
   }
-  .tier-head h3 {
+  .tier-head h2 {
     font-size: 13px;
   }
   .tier-head .count {
@@ -3861,7 +4036,7 @@ table.cmp-table {
     break-inside: avoid;
     padding: 8px 10px;
   }
-  .saved-top h4 {
+  .saved-top h2 {
     font-size: 11px;
   }
   .saved-when {

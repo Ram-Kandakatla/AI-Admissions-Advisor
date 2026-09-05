@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ApplicationTracker from "./ApplicationTracker";
 import { api } from "../api";
@@ -28,16 +29,23 @@ function setup() {
   return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 }
 
-function renderTracker(apps: Application[], onGoMatches = vi.fn()) {
+/**
+ * The tracker links to /matches from its empty state, so it needs a router
+ * around it. MemoryRouter rather than BrowserRouter: no jsdom history to
+ * reset between tests, and the location is inspectable if a test ever needs
+ * to assert where a click went.
+ */
+function renderTracker(apps: Application[]) {
   mockApi.applications.mockResolvedValue({
     studentId: "stu_1",
     cycleYear: 2026,
     applications: apps,
   });
   render(
-    <ApplicationTracker student={student()} onGoMatches={onGoMatches} notes={EMPTY_NOTES} />
+    <MemoryRouter>
+      <ApplicationTracker student={student()} notes={EMPTY_NOTES} />
+    </MemoryRouter>
   );
-  return { onGoMatches };
 }
 
 beforeEach(() => {
@@ -63,7 +71,9 @@ afterEach(() => {
 describe("loading", () => {
   it("shows a labelled spinner before the three requests land", () => {
     render(
-      <ApplicationTracker student={student()} onGoMatches={vi.fn()} notes={EMPTY_NOTES} />
+      <MemoryRouter>
+        <ApplicationTracker student={student()} notes={EMPTY_NOTES} />
+      </MemoryRouter>
     );
     expect(screen.getByLabelText("Loading your tracker")).toBeInTheDocument();
   });
@@ -71,7 +81,9 @@ describe("loading", () => {
   it("says so when the tracker can't load at all", async () => {
     mockApi.applications.mockRejectedValue(new Error("Not signed in"));
     render(
-      <ApplicationTracker student={student()} onGoMatches={vi.fn()} notes={EMPTY_NOTES} />
+      <MemoryRouter>
+        <ApplicationTracker student={student()} notes={EMPTY_NOTES} />
+      </MemoryRouter>
     );
     expect(await screen.findByText("Couldn't load your tracker")).toBeInTheDocument();
     expect(screen.getByText("Not signed in")).toBeInTheDocument();
@@ -80,12 +92,16 @@ describe("loading", () => {
 
 describe("the empty tracker", () => {
   it("points at the matches rather than a blank page", async () => {
-    const user = setup();
-    const { onGoMatches } = renderTracker([]);
+    renderTracker([]);
 
     expect(await screen.findByText("Nothing tracked yet")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /See my matches/ }));
-    expect(onGoMatches).toHaveBeenCalledOnce();
+    // Asserting the destination rather than that a callback fired: since the
+    // router landed this is a real anchor, and where it points is the thing
+    // that can silently break.
+    expect(screen.getByRole("link", { name: /See my matches/ })).toHaveAttribute(
+      "href",
+      "/matches"
+    );
   });
 });
 
@@ -105,7 +121,7 @@ describe("the list", () => {
     ]);
 
     await screen.findByText("Your applications");
-    const names = screen.getAllByRole("article").map((card) => within(card).getByRole("heading", { level: 4 }).textContent);
+    const names = screen.getAllByRole("article").map((card) => within(card).getByRole("heading", { level: 3 }).textContent);
     expect(names).toEqual([
       "Coastal State University", // Nov 1
       "Northfield College", // Jan 5
@@ -141,7 +157,7 @@ describe("the list", () => {
 
     const timeline = await screen.findByRole("region", { name: "Deadline timeline" });
     const months = within(timeline)
-      .getAllByRole("heading", { level: 4 })
+      .getAllByRole("heading", { level: 3 })
       .map((h) => h.textContent);
     expect(months).toEqual(["November 2026", "January 2027", "Rolling — no fixed date"]);
   });
@@ -233,7 +249,7 @@ describe("adding a school", () => {
       })
     );
     const card = await screen.findByRole("article");
-    expect(within(card).getByRole("heading", { level: 4 })).toHaveTextContent(
+    expect(within(card).getByRole("heading", { level: 3 })).toHaveTextContent(
       "Northfield College"
     );
   });

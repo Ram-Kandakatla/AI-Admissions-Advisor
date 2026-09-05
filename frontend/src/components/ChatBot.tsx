@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { ChatMessage, LlmProvider, StudentRecord } from "../types";
@@ -19,12 +20,10 @@ const SUGGESTIONS = [
 
 export default function ChatBot({
   student,
-  onBuildProfile,
   initialQuestion = null,
   onQuestionSent,
 }: {
   student: StudentRecord | null;
-  onBuildProfile: () => void;
   /** A question handed over from another page, sent once on arrival. */
   initialQuestion?: string | null;
   onQuestionSent?: () => void;
@@ -78,7 +77,7 @@ export default function ChatBot({
     <div>
       <div className="view-head">
         <span className="eyebrow">Ask Compass</span>
-        <h2 className="section-title">The counselor who&apos;s always in.</h2>
+        <h1 className="section-title">The counselor who&apos;s always in.</h1>
         <p className="lead">
           Ask about deadlines, essays, tests, or financial aid.
           {student
@@ -135,16 +134,16 @@ export default function ChatBot({
         </div>
 
         <aside className="suggestions">
-          <h4>Try asking</h4>
+          <h2>Try asking</h2>
           {SUGGESTIONS.map((s) => (
             <button key={s} className="suggestion" onClick={() => send(s)} disabled={busy}>
               {s}
             </button>
           ))}
           {!student && (
-            <button className="btn btn-ghost" style={{ marginTop: 6 }} onClick={onBuildProfile}>
+            <Link className="btn btn-ghost" style={{ marginTop: 6 }} to="/profile">
               Build a profile
-            </button>
+            </Link>
           )}
         </aside>
       </div>

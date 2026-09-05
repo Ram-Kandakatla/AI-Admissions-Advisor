@@ -1,79 +1,48 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, useCallback, useEffect, useState } from "react";
+import {
+  Link,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import { api } from "./api";
 import { toggleCompare } from "./compare";
+import { slugifyMajor } from "./slug";
 import { useSchoolNotes } from "./useSchoolNotes";
 import type { AuthUser, Meta, StudentRecord } from "./types";
+import Layout from "./components/Layout";
 import Home from "./components/Home";
 import ProfileForm from "./components/ProfileForm";
-import Recommendations from "./components/Recommendations";
-import Scholarships from "./components/Scholarships";
-import SavedSchools from "./components/SavedSchools";
-import SchoolCompare from "./components/SchoolCompare";
-import UniversityExplorer from "./components/UniversityExplorer";
-import ChatBot from "./components/ChatBot";
-import ApplicationTracker from "./components/ApplicationTracker";
-import ApplicationTimeline from "./components/ApplicationTimeline";
-import MajorDeepDive from "./components/MajorDeepDive";
-import BrandMark from "./components/BrandMark";
-import Account, { type AccountMode } from "./components/Account";
+import NotFound from "./components/NotFound";
 
-type View =
-  | "home"
-  | "profile"
-  | "matches"
-  | "scholarships"
-  | "saved"
-  | "compare"
-  | "tracker"
-  | "timeline"
-  | "majors"
-  | "explore"
-  | "chat"
-  | "account";
+// ---- What ships in the first bundle, and what doesn't ----
+//
+// Eager: the chrome, Home, ProfileForm, and the 404. That is the whole of the
+// path a first-time visitor walks — land, read the pitch, fill in the form —
+// so splitting any of it would trade a smaller download for a spinner in the
+// one place there is nothing yet to wait for.
+//
+// Lazy: everything else. Each of these pages is behind at least one click and
+// starts by fetching something anyway, so the chunk arrives inside a wait the
+// page was going to have regardless. The three the guide singles out —
+// ChatBot, SchoolCompare, ApplicationTracker — are the heaviest, but the rest
+// are split too: leaving a 6 kB page in the initial bundle to save it a
+// request costs every visitor those 6 kB, including the ones who never open
+// it.
+const Recommendations = lazy(() => import("./components/Recommendations"));
+const Scholarships = lazy(() => import("./components/Scholarships"));
+const SavedSchools = lazy(() => import("./components/SavedSchools"));
+const SchoolCompare = lazy(() => import("./components/SchoolCompare"));
+const UniversityExplorer = lazy(() => import("./components/UniversityExplorer"));
+const ChatBot = lazy(() => import("./components/ChatBot"));
+const ApplicationTracker = lazy(() => import("./components/ApplicationTracker"));
+const ApplicationTimeline = lazy(() => import("./components/ApplicationTimeline"));
+const MajorDeepDive = lazy(() => import("./components/MajorDeepDive"));
+const Account = lazy(() => import("./components/Account"));
+
 type Theme = "light" | "dark";
-
-interface NavItem {
-  key: View;
-  label: string;
-  needsProfile?: boolean;
-}
-
-type NavEntry =
-  | { kind: "link"; item: NavItem }
-  | { kind: "group"; id: string; label: string; items: NavItem[] };
-
-// Eleven destinations is too many for one flat row, so the two that form a
-// natural pair of jobs — building the list versus working it — collapse into
-// menus. Home, Profile, and Ask stay at the top level: they're the entry, the
-// prerequisite, and the escape hatch, and burying any of them would cost more
-// than the row width it saves.
-const NAV: NavEntry[] = [
-  { kind: "link", item: { key: "home", label: "Home" } },
-  { kind: "link", item: { key: "profile", label: "Your Profile" } },
-  {
-    kind: "group",
-    id: "plan",
-    label: "Plan",
-    items: [
-      { key: "matches", label: "Matches", needsProfile: true },
-      { key: "scholarships", label: "Scholarships", needsProfile: true },
-      { key: "saved", label: "Saved", needsProfile: true },
-      { key: "tracker", label: "Tracker", needsProfile: true },
-      { key: "timeline", label: "Timeline" },
-    ],
-  },
-  {
-    kind: "group",
-    id: "research",
-    label: "Research",
-    items: [
-      { key: "compare", label: "Compare" },
-      { key: "majors", label: "Majors" },
-      { key: "explore", label: "Explore" },
-    ],
-  },
-  { kind: "link", item: { key: "chat", label: "Ask Compass" } },
-];
 
 // The pre-paint script in index.html has already put the right theme on
 // <html>; read it back rather than guessing, so the two never disagree.
@@ -81,53 +50,38 @@ const initialTheme = (): Theme =>
   (document.documentElement.getAttribute("data-theme") as Theme) ?? "light";
 
 /**
- * Below this width the nav is a full-height panel with room to spare, so the
- * groups drop their dropdowns and render as labelled sections — no nested
- * menu to tap through on a phone. Keep in sync with the matching breakpoint
- * in global.css.
+ * Everything the pages share, plus the route map.
+ *
+ * The chrome moved to Layout when the router landed; what's left here is the
+ * state that outlives any one page — the profile, the session, the notes
+ * store, the compare selection — and the table of which URL shows what.
  */
-const COMPACT_NAV = "(max-width: 980px)";
-
-function useCompactNav(): boolean {
-  const [compact, setCompact] = useState(() => window.matchMedia(COMPACT_NAV).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(COMPACT_NAV);
-    const onChange = (e: MediaQueryListEvent) => setCompact(e.matches);
-    setCompact(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return compact;
-}
-
 export default function App() {
-  const [view, setView] = useState<View>("home");
   const [student, setStudent] = useState<StudentRecord | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   // Who the session says we are. `undefined` means "not asked yet", which is
   // distinct from "asked, nobody" — rendering a Sign in button during that gap
   // would flash the wrong state at every returning visitor on every load.
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
-  const [accountMode, setAccountMode] = useState<AccountMode>("signup");
+  // True until the session and any profile behind it have finished loading.
+  // Before the router this could not happen: you always arrived at Home and
+  // clicked your way in, so by the time a profile page rendered the fetch was
+  // long done. A bookmarked /matches renders immediately, and without this it
+  // would show "Build your profile first" to someone who has one.
+  const [restoring, setRestoring] = useState(true);
   const [savePrompt, setSavePrompt] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   // Schools picked for side-by-side. Lifted here so ticking "Compare" on a
   // match card survives the trip to the comparison page.
   const [compareIds, setCompareIds] = useState<number[]>([]);
-  // A question handed to the chatbot from another page (the major deep dive
-  // sends "tell me about X at Y"). Cleared once the chatbot has sent it.
-  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+
+  const navigate = useNavigate();
 
   // Notes and stars are shared by five pages, so they live here rather than
   // in any one of them — a star tapped on a match card has to be lit when the
   // explorer renders the same school a second later.
   const notes = useSchoolNotes(student?.id ?? null);
-
-  const compact = useCompactNav();
-  const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     api.meta().then(setMeta).catch(() => setMeta(null));
@@ -154,6 +108,9 @@ export default function App() {
         // An unreachable API is not a signed-out visitor, but there is nothing
         // better to show than the logged-out shell until it answers.
         if (!cancelled) setUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setRestoring(false);
       });
     return () => {
       cancelled = true;
@@ -168,31 +125,6 @@ export default function App() {
       /* private mode — the theme just won't persist */
     }
   }, [theme]);
-
-  // An open dropdown closes on a click anywhere else and on Escape — the two
-  // things anyone tries first when a menu is in the way.
-  useEffect(() => {
-    if (!openGroup) return;
-    const away = (e: PointerEvent) => {
-      if (navRef.current && !navRef.current.contains(e.target as Node)) setOpenGroup(null);
-    };
-    const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenGroup(null);
-    };
-    document.addEventListener("pointerdown", away);
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("pointerdown", away);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [openGroup]);
-
-  const go = (v: View) => {
-    setView(v);
-    setMenuOpen(false);
-    setOpenGroup(null);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
 
   const onProfileSaved = (record: StudentRecord) => {
     setStudent(record);
@@ -214,7 +146,7 @@ export default function App() {
         });
     }
 
-    go("matches");
+    navigate("/matches");
   };
 
   const onSignedIn = async (
@@ -230,7 +162,7 @@ export default function App() {
         ? "Signed in. We loaded the list saved to this account — the unsaved one you were building is not part of it."
         : null
     );
-    go(record ? "matches" : "profile");
+    navigate(record ? "/matches" : "/profile");
   };
 
   const signOut = async () => {
@@ -241,282 +173,230 @@ export default function App() {
     setStudent(null);
     setCompareIds([]);
     setNotice(null);
-    go("home");
+    navigate("/");
   };
 
-  // A guest with a profile has work that dies with this browser. Everyone else
-  // — signed in, or not started yet — has nothing to warn about.
+  // A guest with a profile has work that dies with this browser.
   const unsaved = user?.guest === true && student !== null;
 
-  const renderItem = (item: NavItem) => (
-    <button
-      key={item.key}
-      className="nav-link"
-      aria-current={view === item.key}
-      disabled={item.needsProfile && !student}
-      title={item.needsProfile && !student ? "Build your profile first" : undefined}
-      onClick={() => go(item.key)}
-    >
-      {item.label}
-    </button>
-  );
+  /** A page that needs a profile, once we know whether there is one. */
+  const gated = (page: (s: StudentRecord) => JSX.Element) => {
+    if (student) return page(student);
+    return restoring ? <RestoringProfile /> : <NeedsProfile />;
+  };
 
   return (
-    <div className="app">
-      <header className="header no-print">
-        <div className="container header-inner">
-          <button className="brand" onClick={() => go("home")} aria-label="Compass home">
-            <BrandMark className="brand-mark" />
-            <span className="brand-name">
-              Comp<b>ass</b>
-            </span>
-          </button>
+    <Routes>
+      <Route
+        element={
+          <Layout
+            theme={theme}
+            onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            user={user}
+            student={student}
+            notice={notice}
+            onDismissNotice={() => setNotice(null)}
+            savePrompt={savePrompt}
+            onDismissSavePrompt={() => setSavePrompt(false)}
+            onSignOut={signOut}
+          />
+        }
+      >
+        <Route path="/" element={<Home hasProfile={!!student} />} />
 
-          <button
-            className="nav-toggle"
-            aria-label="Toggle menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((o) => !o)}
-          >
-            <span />
-            <span />
-            <span />
-          </button>
+        <Route
+          path="/profile"
+          element={<ProfileForm meta={meta} existing={student} onSaved={onProfileSaved} />}
+        />
 
-          <nav className="nav" data-open={menuOpen} ref={navRef}>
-            {NAV.map((entry) => {
-              if (entry.kind === "link") return renderItem(entry.item);
+        <Route
+          path="/matches"
+          element={gated((s) => (
+            <Recommendations
+              student={s}
+              compareIds={compareIds}
+              onToggleCompare={(id) => setCompareIds((ids) => toggleCompare(ids, id))}
+              notes={notes}
+            />
+          ))}
+        />
 
-              const active = entry.items.some((i) => i.key === view);
+        <Route
+          path="/scholarships"
+          element={gated((s) => <Scholarships student={s} />)}
+        />
 
-              // In the mobile panel the group is a heading over its links —
-              // there's vertical room, and a menu inside a menu is a tap tax.
-              if (compact) {
-                return (
-                  <div className="nav-section" key={entry.id}>
-                    <span className="nav-section-label">{entry.label}</span>
-                    {entry.items.map(renderItem)}
-                  </div>
-                );
-              }
+        <Route path="/saved" element={gated((s) => <SavedSchools student={s} notes={notes} />)} />
 
-              return (
-                <div className="nav-group" key={entry.id}>
-                  <button
-                    className="nav-link nav-group-btn"
-                    aria-haspopup="true"
-                    aria-expanded={openGroup === entry.id}
-                    aria-current={active}
-                    onClick={() => setOpenGroup((g) => (g === entry.id ? null : entry.id))}
-                  >
-                    {entry.label}
-                    <svg className="nav-caret" viewBox="0 0 12 12" aria-hidden="true">
-                      <path d="M3 4.5 6 7.5 9 4.5" />
-                    </svg>
-                  </button>
-                  {openGroup === entry.id && (
-                    <div className="nav-menu">{entry.items.map(renderItem)}</div>
-                  )}
-                </div>
-              );
-            })}
+        <Route
+          path="/tracker"
+          element={gated((s) => <ApplicationTracker student={s} notes={notes} />)}
+        />
 
-            <button
-              className="theme-toggle"
-              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-              aria-pressed={theme === "dark"}
-              aria-label="Dark mode"
-            >
-              <span className="tt-icon" aria-hidden="true">
-                {theme === "dark" ? (
-                  <svg viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="4.2" />
-                    <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 24 24">
-                    <path d="M20.5 14.6A8.6 8.6 0 1 1 9.4 3.5a6.9 6.9 0 0 0 11.1 11.1z" />
-                  </svg>
-                )}
-              </span>
-              <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-              <span className="toggle-track">
-                <span className="toggle-thumb" />
-              </span>
-            </button>
+        <Route path="/timeline" element={<ApplicationTimeline student={student} />} />
 
-            {/* Nothing until /auth/me answers: a Sign in button that turns
-                into an email a moment later is worse than a beat of nothing. */}
-            {user !== undefined &&
-              (user && !user.guest ? (
-                <div className="account-box">
-                  <span className="account-email" title={user.email ?? undefined}>
-                    {user.email}
-                  </span>
-                  <button className="nav-link account-out" onClick={signOut}>
-                    Sign out
-                  </button>
-                </div>
-              ) : (
-                <button
-                  className="btn account-in"
-                  aria-current={view === "account"}
-                  onClick={() => {
-                    setAccountMode(student ? "signup" : "login");
-                    go("account");
-                  }}
-                >
-                  {student ? "Save my list" : "Sign in"}
-                </button>
-              ))}
-          </nav>
-        </div>
-      </header>
+        <Route
+          path="/compare"
+          element={
+            <CompareRoute student={student} selected={compareIds} onChange={setCompareIds} notes={notes} />
+          }
+        />
 
-      <main className="view">
-        <div className="container">
-          {/* One-off outcome of an action the user just took, dismissed by
-              taking any other action rather than sitting there forever. */}
-          {notice && view !== "account" && (
-            <p className="banner" role="status">
-              {notice}
-              <button className="banner-x" aria-label="Dismiss" onClick={() => setNotice(null)}>
-                ×
-              </button>
-            </p>
-          )}
+        {/* Both paths render the same page; the bare one redirects itself to
+            the resolved major so every visit ends on a linkable URL. */}
+        <Route path="/majors" element={<MajorsRoute student={student} />} />
+        <Route path="/majors/:major" element={<MajorsRoute student={student} />} />
 
-          {/* The guest nudge. Deliberately not a modal and not on every page
-              load: it appears once there is real work to lose, and stays gone
-              for the session once dismissed. */}
-          {unsaved && savePrompt && view !== "account" && (
-            <p className="banner save-prompt" role="status">
-              <span>
-                <strong>This list isn't saved yet.</strong> It lives in this browser only —
-                an account keeps it on every device.
-              </span>
-              <button
-                className="btn btn-sm save-prompt-go"
-                onClick={() => {
-                  setAccountMode("signup");
-                  go("account");
-                }}
-              >
-                Save it
-              </button>
-              <button
-                className="banner-x"
-                aria-label="Dismiss"
-                onClick={() => setSavePrompt(false)}
-              >
-                ×
-              </button>
-            </p>
-          )}
+        <Route
+          path="/explore"
+          element={<UniversityExplorer meta={meta} notes={student ? notes : null} />}
+        />
 
-          {view === "account" && (
+        <Route path="/chat" element={<ChatRoute student={student} />} />
+
+        <Route
+          path="/signin"
+          element={
             <Account
-              mode={accountMode}
-              onMode={setAccountMode}
+              mode="login"
               guestProfile={unsaved ? student : null}
               onSignedIn={onSignedIn}
             />
-          )}
-          {view === "home" && <Home onStart={() => go(student ? "matches" : "profile")} hasProfile={!!student} />}
-          {view === "profile" && (
-            <ProfileForm meta={meta} existing={student} onSaved={onProfileSaved} />
-          )}
-          {view === "matches" && student && (
-            <Recommendations
-              student={student}
-              onEdit={() => go("profile")}
-              onAsk={() => go("chat")}
-              compareIds={compareIds}
-              onToggleCompare={(id) => setCompareIds((ids) => toggleCompare(ids, id))}
-              onGoCompare={() => go("compare")}
-              notes={notes}
+          }
+        />
+        <Route
+          path="/signup"
+          element={
+            <Account
+              mode="signup"
+              guestProfile={unsaved ? student : null}
+              onSignedIn={onSignedIn}
             />
-          )}
-          {view === "matches" && !student && (
-            <NeedsProfile onGo={() => go("profile")} />
-          )}
-          {view === "scholarships" && student && (
-            <Scholarships
-              student={student}
-              onEdit={() => go("profile")}
-              onAsk={() => go("chat")}
-            />
-          )}
-          {view === "scholarships" && !student && <NeedsProfile onGo={() => go("profile")} />}
-          {view === "compare" && (
-            <SchoolCompare
-              student={student}
-              selected={compareIds}
-              onChange={setCompareIds}
-              onGoMatches={() => go("matches")}
-              notes={notes}
-            />
-          )}
-          {view === "saved" && student && (
-            <SavedSchools
-              student={student}
-              notes={notes}
-              onGoMatches={() => go("matches")}
-              onGoExplore={() => go("explore")}
-            />
-          )}
-          {view === "saved" && !student && <NeedsProfile onGo={() => go("profile")} />}
-          {view === "tracker" && student && (
-            <ApplicationTracker student={student} onGoMatches={() => go("matches")} notes={notes} />
-          )}
-          {view === "tracker" && !student && <NeedsProfile onGo={() => go("profile")} />}
-          {view === "timeline" && (
-            <ApplicationTimeline
-              student={student}
-              onGoTracker={() => go(student ? "tracker" : "profile")}
-            />
-          )}
-          {view === "majors" && (
-            <MajorDeepDive
-              student={student}
-              onAsk={(question) => {
-                setPendingQuestion(question);
-                go("chat");
-              }}
-            />
-          )}
-          {view === "explore" && <UniversityExplorer meta={meta} notes={student ? notes : null} />}
-          {view === "chat" && (
-            <ChatBot
-              student={student}
-              onBuildProfile={() => go("profile")}
-              initialQuestion={pendingQuestion}
-              onQuestionSent={() => setPendingQuestion(null)}
-            />
-          )}
-        </div>
-      </main>
+          }
+        />
 
-      <footer className="footer no-print">
-        <div className="container footer-inner">
-          <span>
-            <strong>Compass</strong> — a college-planning companion, not a substitute for your school counselor.
-          </span>
-          <span>Deadlines &amp; aid rules change — always confirm on official college sites.</span>
-        </div>
-      </footer>
+        <Route path="*" element={<NotFound />} />
+      </Route>
+    </Routes>
+  );
+}
+
+/* ------------------------------------------------------- Route adapters */
+
+/**
+ * The comparison set, in the URL.
+ *
+ * `compareIds` stays App state because the ticks that build it happen on
+ * /matches, where they have nowhere else to live. This bridges that state to
+ * `?ids=` while the comparison page is open, in one direction each way: the
+ * URL seeds the state once on arrival (so a shared link works), and after
+ * that the state writes the URL (so the link stays current as you add and
+ * remove schools). Writes are `replace` — twelve tick-throughs should not be
+ * twelve presses of the back button.
+ */
+function CompareRoute({
+  student,
+  selected,
+  onChange,
+  notes,
+}: {
+  student: StudentRecord | null;
+  selected: number[];
+  onChange: (ids: number[]) => void;
+  notes: ReturnType<typeof useSchoolNotes>;
+}) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [seeded, setSeeded] = useState(false);
+
+  useEffect(() => {
+    if (seeded) return;
+    setSeeded(true);
+    const fromUrl = (new URLSearchParams(location.search).get("ids") ?? "")
+      .split(",")
+      .map((n) => Number(n))
+      .filter((n) => Number.isInteger(n) && n > 0);
+    if (fromUrl.length > 0) onChange(fromUrl);
+    // Runs once, on arrival. The search string is deliberately not a
+    // dependency: it changes on every write below, and reacting to our own
+    // writes would put the URL back in charge and fight the user's next click.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seeded]);
+
+  useEffect(() => {
+    if (!seeded) return;
+    // Built by hand rather than through URLSearchParams, which percent-encodes
+    // the separator — "?ids=1%2C3" round-trips perfectly and looks like an
+    // error to the person being sent it. A comma is legal in a query string.
+    const search = selected.length > 0 ? `?ids=${selected.join(",")}` : "";
+    if (search !== location.search) {
+      navigate({ pathname: location.pathname, search }, { replace: true });
+    }
+  }, [selected, seeded, navigate, location.pathname, location.search]);
+
+  return <SchoolCompare student={student} selected={selected} onChange={onChange} notes={notes} />;
+}
+
+/** `/majors/:major` — the slug in, a navigation out. */
+function MajorsRoute({ student }: { student: StudentRecord | null }) {
+  const { major } = useParams();
+  const navigate = useNavigate();
+
+  const onSelectMajor = useCallback(
+    (name: string, replace = false) => navigate(`/majors/${slugifyMajor(name)}`, { replace }),
+    [navigate]
+  );
+
+  return (
+    <MajorDeepDive
+      student={student}
+      majorSlug={major}
+      onSelectMajor={onSelectMajor}
+      onAsk={(question) => navigate("/chat", { state: { question } })}
+    />
+  );
+}
+
+/**
+ * `/chat`, optionally carrying a question from the major deep dive.
+ *
+ * The handoff rides in history state rather than a query parameter. A question
+ * is free text a student typed the app into asking on their behalf; putting it
+ * in the address bar makes it something to share by accident and something a
+ * proxy log keeps. History state is scoped to this tab's history entry and
+ * never leaves the browser.
+ */
+function ChatRoute({ student }: { student: StudentRecord | null }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const question = (location.state as { question?: string } | null)?.question ?? null;
+
+  return (
+    <ChatBot
+      student={student}
+      initialQuestion={question}
+      // Drop it from the history entry once asked, or a refresh or a trip
+      // back to this page would ask it again.
+      onQuestionSent={() => navigate(location.pathname, { replace: true, state: null })}
+    />
+  );
+}
+
+/* --------------------------------------------------------- Gate states */
+
+function NeedsProfile() {
+  return (
+    <div className="empty">
+      <h1>Build your profile first</h1>
+      <p>Your matches are personalized to your GPA, coursework, interests, and budget. Tell us about yourself to see them.</p>
+      <Link className="btn btn-primary" to="/profile">
+        Build my profile <span className="btn-arrow">→</span>
+      </Link>
     </div>
   );
 }
 
-function NeedsProfile({ onGo }: { onGo: () => void }) {
-  return (
-    <div className="empty">
-      <h3>Build your profile first</h3>
-      <p>Your matches are personalized to your GPA, coursework, interests, and budget. Tell us about yourself to see them.</p>
-      <button className="btn btn-primary" onClick={onGo}>
-        Build my profile <span className="btn-arrow">→</span>
-      </button>
-    </div>
-  );
+/** The beat between a bookmarked URL rendering and the session answering. */
+function RestoringProfile() {
+  return <div className="spinner" aria-label="Loading your profile" />;
 }

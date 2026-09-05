@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { countdown, dayMonth, daysUntil, monthYear, parseLocalDate, urgencyOf } from "../dates";
@@ -38,11 +39,9 @@ const CLOSED: ApplicationStatus[] = ["submitted", "accepted", "waitlisted", "den
 
 export default function ApplicationTracker({
   student,
-  onGoMatches,
   notes,
 }: {
   student: StudentRecord;
-  onGoMatches: () => void;
   notes: NotesStore;
 }) {
   const [meta, setMeta] = useState<ApplicationMeta | null>(null);
@@ -132,7 +131,7 @@ export default function ApplicationTracker({
   if (error && !apps) {
     return (
       <div className="empty">
-        <h3>Couldn&apos;t load your tracker</h3>
+        <h1>Couldn&apos;t load your tracker</h1>
         <p>{error}</p>
       </div>
     );
@@ -149,13 +148,13 @@ export default function ApplicationTracker({
     <div>
       <div className="view-head">
         <span className="eyebrow">Application tracker</span>
-        <h2 className="section-title">
+        <h1 className="section-title">
           {apps.length === 0
             ? "Every deadline, in one place."
             : `${apps.length} application${apps.length === 1 ? "" : "s"} in the ${meta.cycleYear}–${
                 meta.cycleYear + 1
               } cycle.`}
-        </h2>
+        </h1>
         <p className="lead">
           Track what you owe each school and when it&apos;s due. Dates start as the usual
           convention for each plan — replace them with the real date from the school&apos;s
@@ -234,14 +233,14 @@ export default function ApplicationTracker({
 
       {apps.length === 0 ? (
         <div className="empty">
-          <h3>Nothing tracked yet</h3>
+          <h2>Nothing tracked yet</h2>
           <p>
             Add a school above, or start from the list Compass built for you — your reach, target,
             and safety matches are the natural place to begin.
           </p>
-          <button className="btn btn-primary" onClick={onGoMatches}>
+          <Link className="btn btn-primary" to="/matches">
             See my matches <span className="btn-arrow">→</span>
-          </button>
+          </Link>
         </div>
       ) : (
         <>
@@ -269,7 +268,7 @@ export default function ApplicationTracker({
 
           <Timeline applications={ordered} />
 
-          <div className="sec-hd">Your applications</div>
+          <h2 className="sec-hd">Your applications</h2>
           <div className="track-list">
             {ordered.map((app) => (
               <ApplicationCard
@@ -312,11 +311,11 @@ function Timeline({ applications }: { applications: Application[] }) {
 
   return (
     <section className="timeline" aria-label="Deadline timeline">
-      <div className="sec-hd">Timeline</div>
+      <h2 className="sec-hd">Timeline</h2>
 
       {months.map((month) => (
         <div className="tl-month" key={month.key}>
-          <h4 className="tl-month-label">{month.label}</h4>
+          <h3 className="tl-month-label">{month.label}</h3>
           <ol className="tl-items">
             {month.items.map((app) => {
               const urgency = urgencyOf(app.deadline);
@@ -341,7 +340,7 @@ function Timeline({ applications }: { applications: Application[] }) {
 
       {rolling.length > 0 && (
         <div className="tl-month">
-          <h4 className="tl-month-label">Rolling — no fixed date</h4>
+          <h3 className="tl-month-label">Rolling — no fixed date</h3>
           <ol className="tl-items">
             {rolling.map((app) => (
               <li key={app.id} className="tl-item" data-urgency="rolling">
@@ -392,7 +391,7 @@ function ApplicationCard({
     <article className="track-card" data-urgency={closed ? "done" : urgency}>
       <div className="track-card-top">
         <div className="track-head">
-          <h4>{app.university?.name ?? "Unknown school"}</h4>
+          <h3>{app.university?.name ?? "Unknown school"}</h3>
           <div className="loc">
             {app.university ? `${app.university.city}, ${app.university.state}` : ""}
             {app.university ? ` · ${app.university.acceptanceRate}% admit rate` : ""}

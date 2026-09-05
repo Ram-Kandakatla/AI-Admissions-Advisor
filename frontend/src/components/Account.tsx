@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import type { AuthUser, StudentRecord } from "../types";
 
@@ -14,12 +15,10 @@ export type AccountMode = "signup" | "login";
  */
 export default function Account({
   mode,
-  onMode,
   guestProfile,
   onSignedIn,
 }: {
   mode: AccountMode;
-  onMode: (mode: AccountMode) => void;
   /** The unsaved profile this visitor built, if any. */
   guestProfile: StudentRecord | null;
   onSignedIn: (user: AuthUser, studentId: string | null, replacedDraft: boolean) => void;
@@ -29,6 +28,7 @@ export default function Account({
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   // Switching tabs should land the cursor in the first field, not leave focus
   // on the tab the pointer just used — a keyboard user would otherwise have to
@@ -92,10 +92,22 @@ export default function Account({
 
         <div className="panel acct-panel">
           <div className="segmented acct-tabs" role="group" aria-label="Account">
-            <button type="button" aria-pressed={signingUp} onClick={() => onMode("signup")}>
+            {/* A two-state control styled as a segmented switch, so it stays
+                a pair of buttons rather than links — but each state is a real
+                URL now, so switching navigates. `replace`, because flipping
+                tabs four times should not be four presses of back. */}
+            <button
+              type="button"
+              aria-pressed={signingUp}
+              onClick={() => navigate("/signup", { replace: true })}
+            >
               Create account
             </button>
-            <button type="button" aria-pressed={!signingUp} onClick={() => onMode("login")}>
+            <button
+              type="button"
+              aria-pressed={!signingUp}
+              onClick={() => navigate("/signin", { replace: true })}
+            >
               Sign in
             </button>
           </div>

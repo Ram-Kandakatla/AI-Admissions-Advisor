@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { api } from "../api";
@@ -39,13 +40,11 @@ export default function SchoolCompare({
   student,
   selected,
   onChange,
-  onGoMatches,
   notes,
 }: {
   student: StudentRecord | null;
   selected: number[];
   onChange: (ids: number[]) => void;
-  onGoMatches: () => void;
   notes: NotesStore;
 }) {
   const [all, setAll] = useState<University[] | null>(null);
@@ -213,7 +212,7 @@ export default function SchoolCompare({
     <div>
       <div className="view-head">
         <span className="eyebrow">Side by side</span>
-        <h2 className="section-title">Weigh two or three schools against each other.</h2>
+        <h1 className="section-title">Weigh two or three schools against each other.</h1>
         <p className="lead">
           Pick from any school in the set — the same numbers, aligned on the same rows, so the
           trade-off between a reach and a safety is a thing you can actually see.
@@ -231,7 +230,7 @@ export default function SchoolCompare({
 
       {error && (
         <div className="empty">
-          <h3>Couldn&apos;t load the schools</h3>
+          <h2>Couldn&apos;t load the schools</h2>
           <p>{error}</p>
         </div>
       )}
@@ -270,15 +269,15 @@ export default function SchoolCompare({
 
           {columns.length < 2 ? (
             <div className="empty">
-              <h3>{columns.length === 0 ? "Pick two schools to start" : "Add one more"}</h3>
+              <h2>{columns.length === 0 ? "Pick two schools to start" : "Add one more"}</h2>
               <p>
                 A comparison needs at least two columns. Search above for any school in the set, or
                 tick <b>Compare</b> on a card over in your matches and they&apos;ll be waiting here.
               </p>
               {student && (
-                <button className="btn btn-primary" onClick={onGoMatches}>
+                <Link className="btn btn-primary" to="/matches">
                   Go to my matches <span className="btn-arrow">→</span>
-                </button>
+                </Link>
               )}
             </div>
           ) : (
