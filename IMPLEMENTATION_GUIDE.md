@@ -392,10 +392,14 @@ Once CI is green consistently, turn on "Require status checks to pass" for
 `main` in GitHub's branch protection settings — this is what makes a red
 check actually block a merge instead of being a suggestion.
 
-*(Deliberately not done. A rule has to name the checks it requires, and until
-CI has reported on `main` at least once those names do not exist yet — the rule
-would either block every merge or silently require nothing. The exact settings
-are in [PHASE-3.md](PHASE-3.md#left-for-later).)*
+*(Not done, and the reason changed. The original one — a rule cannot name check
+names that have never reported — has resolved: CI has run green on `main`
+several times. The actual blocker is that this repository is **private on a free
+plan**, and GitHub gates rulesets and classic branch protection alike behind
+Pro; both endpoints answer `403 Upgrade to GitHub Pro or make this repository
+public`. So this is a billing or visibility decision, not a sequencing one. The
+options and the exact settings are in
+[PHASE-3.md](PHASE-3.md#left-for-later).)*
 
 ---
 
@@ -817,9 +821,12 @@ land rather than trusting memory.
 - [x] GitHub Actions CI (`.github/workflows/ci.yml`) — both suites, both typechecks,
       and the frontend build, on every PR and every push to `main`. No deploy step.
 - [x] Root `npm test` / `npm run typecheck` now cover both halves of the repo
-- [ ] **Deliberately not done:** branch protection requiring CI to pass. It is a
-      repo setting, and the rule cannot name check names that have never reported —
-      turn it on after CI's first green run on `main`. Settings in
+- [ ] **Blocked, not deferred:** branch protection requiring CI to pass. The
+      original reason (no check names to point a rule at) has cleared — CI has
+      reported green on `main` several times. The real blocker is that the repo
+      is **private on a free plan**, and GitHub gates rulesets and classic
+      branch protection behind Pro (`403 Upgrade to GitHub Pro or make this
+      repository public`). Needs Pro or a public repo; options and settings in
       [PHASE-3.md](PHASE-3.md#left-for-later).
 - [ ] *Not built:* coverage thresholds. A percentage gate rewards covering whatever
       is cheapest; the priority order above is the policy instead.

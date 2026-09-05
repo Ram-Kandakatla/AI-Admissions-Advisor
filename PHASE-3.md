@@ -211,12 +211,44 @@ Details that are choices rather than boilerplate:
 
 ## Left for later
 
-- **Branch protection (§3.4) is deliberately not on.** It is a repository
-  setting, not code, and turning it on before CI has run green on `main` at
-  least once means a rule pointing at check names that have never reported.
-  When you want it: GitHub → Settings → Rules → Rulesets → New branch ruleset,
-  target `main`, enable **Require status checks to pass**, and add
-  `Backend (Workers runtime)` and `Frontend (jsdom)`.
+- **Branch protection (§3.4) is not on, and the reason has changed.**
+
+  What this section originally said: a rule has to name the checks it
+  requires, and until CI had reported on `main` at least once those names did
+  not exist, so the rule would either block every merge or silently require
+  nothing. That was true as a sequencing concern, and it has since resolved —
+  CI has run green on `main` several times, and both check names exist.
+
+  It was not the binding constraint. **This repository is private on a free
+  plan, and GitHub gates the entire feature area behind Pro.** Both APIs
+  answer identically:
+
+  ```
+  GET /repos/kandakatla-ram/AI-Admissions-Advisor/rulesets               403
+  GET /repos/kandakatla-ram/AI-Admissions-Advisor/branches/main/protection  403
+  {"message": "Upgrade to GitHub Pro or make this repository public
+               to enable this feature."}
+  ```
+
+  That is the feature gate, not a token problem: the same credentials push
+  branches, open pull requests, and merge them. Three ways forward —
+
+  1. **GitHub Pro** (~$4/month). The repo stays private, nothing else changes.
+  2. **Make the repository public.** Free, and rulesets work immediately.
+     Worth an audit of the full history for keys and for the local D1 database
+     before doing it; `.gitignore` covers `.dev.vars` and `backend/.wrangler/`,
+     but "expected clean" and "verified clean" are different claims when the
+     action cannot really be undone.
+  3. **Leave it off.** With one committer this mostly protects you from
+     yourself, which is real but not urgent.
+
+  The settings, for whenever it is unblocked: GitHub → Settings → Rules →
+  Rulesets → New branch ruleset, target `main`, enable **Require status checks
+  to pass**, and add `Backend (Workers runtime)` and `Frontend (jsdom)`. Note
+  that required checks alone still let a direct push to `main` through in the
+  awkward case where the pushed commit has no checks yet — pairing it with
+  **Require a pull request before merging** is what actually closes that, and
+  it matches how every phase has landed so far anyway.
 - **`npm audit` reports a moderate advisory** in esbuild via Vite 5
   (dev-server-only: a website can make the local dev server return responses).
   The fix is a Vite major upgrade, which belongs with the Phase 5 frontend
