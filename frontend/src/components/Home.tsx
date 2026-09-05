@@ -1,4 +1,6 @@
-export default function Home({ onStart, hasProfile }: { onStart: () => void; hasProfile: boolean }) {
+import { Link } from "react-router-dom";
+
+export default function Home({ hasProfile }: { hasProfile: boolean }) {
   return (
     <div>
       <section className="hero">
@@ -14,9 +16,9 @@ export default function Home({ onStart, hasProfile }: { onStart: () => void; has
               you were afraid to ask.
             </p>
             <div className="hero-actions">
-              <button className="btn btn-primary" onClick={onStart}>
+              <Link className="btn btn-primary" to={hasProfile ? "/matches" : "/profile"}>
                 {hasProfile ? "See my matches" : "Build my college list"} <span className="btn-arrow">→</span>
-              </button>
+              </Link>
               <span className="hero-note">Free · No account · 2 minutes</span>
             </div>
           </div>

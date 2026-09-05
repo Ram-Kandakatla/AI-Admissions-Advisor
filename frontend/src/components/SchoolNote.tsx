@@ -54,7 +54,7 @@ export function StarButton({
       type="button"
       className="note-star"
       aria-pressed={starred}
-      aria-label={starred ? `Unsave ${name}` : `Save ${name}`}
+      aria-label={`Save ${name}`}
       title={starred ? "Saved — click to unsave" : "Save this school"}
       onClick={() => notes.toggleStar(universityId)}
     >
@@ -81,6 +81,21 @@ export default function SchoolNote({
   const saved = record?.note ?? "";
   const [open, setOpen] = useState(alwaysOpen || saved !== "");
   const box = useRef<HTMLTextAreaElement>(null);
+
+  // Whether a save has completed since this note was opened.
+  //
+  // The status line below is a live region, so it is the only thing telling a
+  // screen reader user what happened to what they just typed. It used to
+  // announce "Saving…" and then fall silent, on the reasoning that silence
+  // means saved — which works when you can see the word disappear, and is
+  // indistinguishable from a failed save when you cannot. Now the end of a
+  // save is announced too.
+  const [justSaved, setJustSaved] = useState(false);
+  const wasSaving = useRef(notes.saving);
+  useEffect(() => {
+    if (wasSaving.current && !notes.saving) setJustSaved(true);
+    wasSaving.current = notes.saving;
+  }, [notes.saving]);
 
   // Opening the notepad should land the cursor in it. Only on a deliberate
   // open, never on first render, or the page would scroll itself on load.
@@ -112,12 +127,17 @@ export default function SchoolNote({
             maxLength={1000}
             placeholder={placeholder}
             aria-label={`Your notes on ${name}`}
-            onChange={(e) => notes.setNote(universityId, e.target.value)}
+            onChange={(e) => {
+              // A new keystroke starts a new save cycle, so the previous
+              // "Saved" stops being true before it stops being displayed.
+              setJustSaved(false);
+              notes.setNote(universityId, e.target.value);
+            }}
           />
-          {/* Saving is automatic, so the only thing worth saying is when it
-              has not happened yet. Silence means saved. */}
+          {/* Saving is automatic and has no button, so this line is the
+              whole of the feedback. */}
           <span className="note-status no-print" role="status">
-            {notes.saving ? "Saving…" : ""}
+            {notes.saving ? "Saving…" : justSaved ? "Saved" : ""}
           </span>
         </>
       )}

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { majorFromSlug, slugifyMajor } from "../slug";
 import type { MajorInsights, MajorSchool, StudentRecord, Tier } from "../types";
 
 // Everything on this page is computed from the university dataset. There is
@@ -23,12 +24,22 @@ const TIER_LABEL: Record<Tier, string> = {
 export default function MajorDeepDive({
   student,
   onAsk,
+  /** The `:major` segment of the URL, if there is one. */
+  majorSlug,
+  onSelectMajor,
 }: {
   student: StudentRecord | null;
   onAsk: (question: string) => void;
+  majorSlug?: string;
+  /**
+   * Ask to be shown a different major. The caller turns this into a URL —
+   * `replace` when the component is correcting the address bar rather than
+   * following a click, so canonicalising /majors doesn't leave a history
+   * entry that the back button bounces off.
+   */
+  onSelectMajor: (major: string, replace?: boolean) => void;
 }) {
   const [catalog, setCatalog] = useState<{ major: string; schoolCount: number }[]>([]);
-  const [major, setMajor] = useState<string | null>(null);
   const [data, setData] = useState<MajorInsights | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,15 +47,31 @@ export default function MajorDeepDive({
   useEffect(() => {
     api
       .majors()
-      .then((res) => {
-        setCatalog(res.majors);
-        // Open on the student's first intended major when there is one.
-        const preferred = student?.interestedMajors?.[0];
-        const known = res.majors.some((m) => m.major === preferred);
-        setMajor(known && preferred ? preferred : res.majors[0]?.major ?? null);
-      })
+      .then((res) => setCatalog(res.majors))
       .catch((e) => setError((e as Error).message));
-  }, [student?.interestedMajors]);
+  }, []);
+
+  // Which major is on screen is derived from the URL, not stored — otherwise
+  // the back button and the chip row would each hold their own opinion and
+  // drift apart. The slug is resolved against the catalog because slugifying
+  // is lossy; an unknown one falls through to the same default as no slug at
+  // all, since a mistyped URL deserves the page, not an error.
+  const major = useMemo(() => {
+    if (catalog.length === 0) return null;
+    const names = catalog.map((c) => c.major);
+    const fromUrl = majorSlug ? majorFromSlug(majorSlug, names) : null;
+    if (fromUrl) return fromUrl;
+    // Open on the student's first intended major when there is one.
+    const preferred = student?.interestedMajors?.[0];
+    return (preferred && names.includes(preferred) ? preferred : names[0]) ?? null;
+  }, [catalog, majorSlug, student?.interestedMajors]);
+
+  // Put the resolved major in the address bar: /majors becomes
+  // /majors/computer-science, and /majors/nonsense becomes whatever we fell
+  // back to. Both are corrections, so neither is worth a history entry.
+  useEffect(() => {
+    if (major && slugifyMajor(major) !== majorSlug) onSelectMajor(major, true);
+  }, [major, majorSlug, onSelectMajor]);
 
   useEffect(() => {
     if (!major) return;
@@ -73,7 +100,7 @@ export default function MajorDeepDive({
     <div>
       <div className="view-head">
         <span className="eyebrow">Major deep dive</span>
-        <h2 className="section-title">What does this field actually look like?</h2>
+        <h1 className="section-title">What does this field actually look like?</h1>
         <p className="lead">
           How selective the schools offering a major are, what they cost, where they are, and how
           your numbers sit against them — plus the questions worth answering on each school&apos;s
@@ -87,7 +114,7 @@ export default function MajorDeepDive({
             key={m.major}
             className="chip"
             aria-pressed={m.major === major}
-            onClick={() => setMajor(m.major)}
+            onClick={() => onSelectMajor(m.major)}
           >
             {m.major}
             {mine.has(m.major) && <span className="chip-star" aria-label="one of yours"> ★</span>}
@@ -111,7 +138,7 @@ export default function MajorDeepDive({
           {data.combinations && data.combinations.length > 0 && (
             <Combinations data={data} />
           )}
-          <Adjacent data={data} onPick={setMajor} catalog={catalog} />
+          <Adjacent data={data} onPick={onSelectMajor} catalog={catalog} />
           <SchoolTable data={data} />
           <Research data={data} student={student} onAsk={onAsk} />
         </>
@@ -125,7 +152,7 @@ export default function MajorDeepDive({
 function Landscape({ data }: { data: MajorInsights }) {
   return (
     <section className="md-section">
-      <div className="sec-hd">The landscape</div>
+      <h2 className="sec-hd">The landscape</h2>
       <div className="md-grid">
         <Stat
           label="Schools offering it"
@@ -179,7 +206,7 @@ function BarGroup({
 }) {
   return (
     <div className="md-bargroup">
-      <h4>{title}</h4>
+      <h3>{title}</h3>
       {items.map((item) => (
         <div className="md-bar" key={item.key}>
           <span className="md-bar-lbl">{item.key}</span>
@@ -201,7 +228,7 @@ function Position({ data }: { data: MajorInsights }) {
 
   return (
     <section className="md-section">
-      <div className="sec-hd">Where you stand</div>
+      <h2 className="sec-hd">Where you stand</h2>
       <div className="rec-summary">
         {(["reach", "target", "safety"] as Tier[]).map((t) => (
           <div className={`rec-stat ${t}`} key={t}>
@@ -246,7 +273,7 @@ function Position({ data }: { data: MajorInsights }) {
 function Combinations({ data }: { data: MajorInsights }) {
   return (
     <section className="md-section">
-      <div className="sec-hd">If you change your mind</div>
+      <h2 className="sec-hd">If you change your mind</h2>
       <div className="panel">
         <p className="md-lede">
           Plenty of people switch majors after freshman year. These counts show how many of the{" "}
@@ -288,7 +315,7 @@ function Adjacent({
   const known = new Set(catalog.map((c) => c.major));
   return (
     <section className="md-section">
-      <div className="sec-hd">Commonly offered alongside</div>
+      <h2 className="sec-hd">Commonly offered alongside</h2>
       <p className="md-lede">
         Of the schools that teach {data.major}, this is how many also teach each of these. A high
         share means the two fields usually live under one roof.
@@ -316,9 +343,9 @@ function Adjacent({
 function SchoolTable({ data }: { data: MajorInsights }) {
   return (
     <section className="md-section">
-      <div className="sec-hd">
+      <h2 className="sec-hd">
         Every school offering {data.major} · most selective first
-      </div>
+      </h2>
       <div className="uni-table-wrap">
         <table className="uni-table">
           <thead>
@@ -396,7 +423,7 @@ function Research({
 
   return (
     <section className="md-section">
-      <div className="sec-hd">Do your own digging</div>
+      <h2 className="sec-hd">Do your own digging</h2>
       <div className="panel">
         <p className="md-lede">
           Compass won&apos;t invent details about a specific department — a made-up lab name in an

@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useMemo, useState } from "react";
 import SchoolNote, { StarButton } from "./SchoolNote";
 import { downloadCsv, notesToCsv, savedCsvFilename } from "../exportList";
@@ -12,13 +13,9 @@ const noted = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 export default function SavedSchools({
   student,
   notes,
-  onGoMatches,
-  onGoExplore,
 }: {
   student: StudentRecord;
   notes: NotesStore;
-  onGoMatches: () => void;
-  onGoExplore: () => void;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -53,11 +50,11 @@ export default function SavedSchools({
 
       <div className="view-head">
         <span className="eyebrow">Saved by {student.name}</span>
-        <h2 className="section-title">
+        <h1 className="section-title">
           {all.length === 0
             ? "Nothing saved yet."
             : `${all.length} school${all.length === 1 ? "" : "s"} you've written about.`}
-        </h2>
+        </h1>
         <p className="lead">
           Star a school anywhere in Compass and it lands here. The note you write is the same one
           everywhere — on a match card, in the explorer, in a comparison, on a tracked application —
@@ -74,19 +71,19 @@ export default function SavedSchools({
 
       {all.length === 0 ? (
         <div className="empty">
-          <h3>Start with the schools you already like</h3>
+          <h2>Start with the schools you already like</h2>
           <p>
             Tap the ☆ on any school to save it, and write down what you thought while it&apos;s
             fresh — &ldquo;great CS program&rdquo;, &ldquo;too expensive&rdquo;, &ldquo;emailed
             their admissions officer&rdquo;. Future you will not remember otherwise.
           </p>
           <div className="form-footer" style={{ justifyContent: "center" }}>
-            <button className="btn btn-ghost" onClick={onGoExplore}>
+            <Link className="btn btn-ghost" to="/explore">
               Browse every school
-            </button>
-            <button className="btn btn-primary" onClick={onGoMatches}>
+            </Link>
+            <Link className="btn btn-primary" to="/matches">
               See my matches <span className="btn-arrow">→</span>
-            </button>
+            </Link>
           </div>
         </div>
       ) : (
@@ -129,7 +126,7 @@ export default function SavedSchools({
 
           {rows.length === 0 ? (
             <div className="empty">
-              <h3>No starred schools yet</h3>
+              <h2>No starred schools yet</h2>
               <p>
                 You&apos;ve written notes, but haven&apos;t starred anything. Stars are for the
                 shortlist — the schools you actually want to come back to.
@@ -157,7 +154,7 @@ function SavedCard({ row, notes }: { row: SchoolNoteRecord; notes: NotesStore })
     <article className="saved-card" data-starred={row.starred || undefined}>
       <div className="saved-top">
         <div>
-          <h4>{name}</h4>
+          <h2>{name}</h2>
           {uni && (
             <div className="loc">
               {uni.city}, {uni.state} · {uni.acceptanceRate}% admit · $

@@ -16,3 +16,27 @@ import "@testing-library/jest-dom/vitest";
 afterEach(() => {
   cleanup();
 });
+
+// jsdom does not implement matchMedia at all — it is a layout question, and
+// jsdom has no layout. The nav asks it which shape to be (dropdowns on a wide
+// header, flat labelled sections in the mobile panel), so without this every
+// test that renders the app chrome dies on `window.matchMedia is not a
+// function` before it reaches its first assertion.
+//
+// It answers `false` to everything, which means the wide-header nav. That is
+// the desktop shape, and it is deliberate rather than incidental: it is the
+// one with dropdowns, so it is the harder of the two to get right. A test that
+// needs the mobile shape should override this itself.
+if (!window.matchMedia) {
+  window.matchMedia = (query: string): MediaQueryList => ({
+    media: query,
+    matches: false,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    // Deprecated, but React and other libraries still feature-detect them.
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  });
+}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { MAX_COMPARE } from "../compare";
 import { csvFilename, downloadCsv, recommendationsToCsv } from "../exportList";
@@ -18,23 +19,18 @@ const printedOn = new Intl.DateTimeFormat(undefined, {
 
 export default function Recommendations({
   student,
-  onEdit,
-  onAsk,
   compareIds,
   onToggleCompare,
-  onGoCompare,
   notes,
 }: {
   student: StudentRecord;
-  onEdit: () => void;
-  onAsk: () => void;
   compareIds: number[];
   onToggleCompare: (id: number) => void;
-  onGoCompare: () => void;
   notes: NotesStore;
 }) {
   const [data, setData] = useState<RecommendationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     setData(null);
@@ -48,11 +44,11 @@ export default function Recommendations({
   if (error) {
     return (
       <div className="empty">
-        <h3>Couldn&apos;t load your matches</h3>
+        <h1>Couldn&apos;t load your matches</h1>
         <p>{error}</p>
-        <button className="btn btn-ghost" onClick={onEdit}>
+        <Link className="btn btn-ghost" to="/profile">
           Back to profile
-        </button>
+        </Link>
       </div>
     );
   }
@@ -77,9 +73,9 @@ export default function Recommendations({
 
       <div className="view-head">
         <span className="eyebrow">Matches for {student.name}</span>
-        <h2 className="section-title">
+        <h1 className="section-title">
           {total > 0 ? `${total} schools that fit your story.` : "No matches with these filters yet."}
-        </h2>
+        </h1>
         <p className="lead">
           Sorted by how you stack up on GPA, tests, major fit, region, and budget. Match scores are a
           guide, not a verdict — admissions weigh essays and context too.
@@ -89,25 +85,25 @@ export default function Recommendations({
           down what you thought. Both follow the school to every other page.
         </NoteHint>
         <div className="form-footer no-print" style={{ marginTop: 20 }}>
-          <button className="btn btn-ghost" onClick={onEdit}>
+          <Link className="btn btn-ghost" to="/profile">
             Edit profile
-          </button>
-          <button className="btn btn-primary" onClick={onAsk}>
+          </Link>
+          <Link className="btn btn-primary" to="/chat">
             Ask Compass about these <span className="btn-arrow">→</span>
-          </button>
+          </Link>
         </div>
       </div>
 
       {total === 0 ? (
         <div className="empty">
-          <h3>Let&apos;s widen the net</h3>
+          <h2>Let&apos;s widen the net</h2>
           <p>
             No schools in our set matched your intended majors and filters. Try adding another major,
             loosening your preferred regions, or adjusting financial need.
           </p>
-          <button className="btn btn-primary" onClick={onEdit}>
+          <Link className="btn btn-primary" to="/profile">
             Adjust my profile
-          </button>
+          </Link>
         </div>
       ) : (
         <>
@@ -144,7 +140,7 @@ export default function Recommendations({
               <section className={`tier-block ${t}`} key={t}>
                 <div className="tier-head" style={tierVar(t)}>
                   <span className="tier-dot" />
-                  <h3>{TIER_META[t].title} schools</h3>
+                  <h2>{TIER_META[t].title} schools</h2>
                   <span className="count">
                     {data.recommendations[t].length} · {TIER_META[t].blurb}
                   </span>
@@ -171,10 +167,13 @@ export default function Recommendations({
                 {compareIds.length} school{compareIds.length === 1 ? "" : "s"} picked to compare
                 {compareIds.length === 1 ? " — add one more" : ""}
               </span>
+              {/* The one nav control on this page that stays a button:
+                  it is unavailable until two schools are ticked, and an
+                  anchor has no disabled state to express that. */}
               <button
                 className="btn btn-primary btn-sm"
                 disabled={compareIds.length < 2}
-                onClick={onGoCompare}
+                onClick={() => navigate("/compare")}
               >
                 Compare side by side <span className="btn-arrow">→</span>
               </button>
@@ -216,7 +215,7 @@ function UniCard({
     <article className={`uni-card ${uni.tier}`}>
       <div className="uni-card-top">
         <div>
-          <h4>{uni.name}</h4>
+          <h3>{uni.name}</h3>
           <div className="loc">
             {uni.city}, {uni.state} · {uni.region} · {uni.type}
           </div>

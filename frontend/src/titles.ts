@@ -1,0 +1,61 @@
+// What the browser tab says.
+//
+// Before the router there was one title for the whole app, and it was correct:
+// there was one URL. Now there are thirteen, and every one of them can be
+// bookmarked, reopened from history, or sat in a row of tabs during an
+// afternoon of applications — none of which works if they all read "Compass".
+//
+// The suffix is " — Compass" rather than a prefix so the distinguishing word
+// survives a narrow tab, where a browser truncates from the right.
+
+const SUFFIX = " — Compass";
+
+const TITLES: Record<string, string> = {
+  // The homepage keeps the full name: it is the one page where the tab is
+  // doing introductions rather than telling you which of five tabs is which.
+  "/": "Compass — College Admissions Advisor",
+  "/profile": `Your profile${SUFFIX}`,
+  "/matches": `Your matches${SUFFIX}`,
+  "/scholarships": `Scholarships${SUFFIX}`,
+  "/saved": `Saved schools${SUFFIX}`,
+  "/tracker": `Application tracker${SUFFIX}`,
+  "/timeline": `Deadline timeline${SUFFIX}`,
+  "/compare": `Compare schools${SUFFIX}`,
+  "/majors": `Majors${SUFFIX}`,
+  "/explore": `Explore schools${SUFFIX}`,
+  "/chat": "Ask Compass",
+  "/signin": `Sign in${SUFFIX}`,
+  "/signup": `Create an account${SUFFIX}`,
+};
+
+/**
+ * "computer-science" → "Computer Science".
+ *
+ * Deliberately not routed through the catalog, even though `majorFromSlug`
+ * could give the exact name: that would make the title wait on a fetch, so the
+ * tab would read "Majors" for a beat and then change under someone who is
+ * already scanning their tab bar. This is lossy where a name carries
+ * punctuation — "Business / Economics" comes back as "Business Economics" —
+ * which is the right trade for a tab label, and would not be for anything the
+ * app displayed on the page.
+ */
+function unslug(slug: string): string {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/** The document title for a path. Unknown paths get the 404's title. */
+export function titleFor(pathname: string): string {
+  const exact = TITLES[pathname];
+  if (exact) return exact;
+
+  if (pathname.startsWith("/majors/")) {
+    const major = unslug(pathname.slice("/majors/".length));
+    if (major) return `${major}${SUFFIX}`;
+  }
+
+  return `Page not found${SUFFIX}`;
+}

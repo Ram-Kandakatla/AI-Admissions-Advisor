@@ -96,7 +96,7 @@ export default function ProfileForm({
     <div>
       <div className="view-head">
         <span className="eyebrow">Your profile</span>
-        <h2 className="section-title">Tell us who you are as an applicant.</h2>
+        <h1 className="section-title">Tell us who you are as an applicant.</h1>
         <p className="lead">
           The more honest and specific you are, the sharper your matches. This stays private to
           your account — it is never shown to other students and never sold.
@@ -171,10 +171,10 @@ export default function ProfileForm({
           </div>
 
           <div className="field full">
-            <label>
+            <label id="majors-label">
               Intended majors <span className="hint">— pick all that interest you</span>
             </label>
-            <div className="chips">
+            <div className="chips" role="group" aria-labelledby="majors-label">
               {majors.map((m) => (
                 <button
                   type="button"
@@ -245,8 +245,8 @@ export default function ProfileForm({
           </div>
 
           <div className="field">
-            <label>Financial need</label>
-            <div className="segmented" role="group" aria-label="Financial need">
+            <label id="need-label">Financial need</label>
+            <div className="segmented" role="group" aria-labelledby="need-label">
               {(["high", "medium", "low"] as FinancialNeed[]).map((n) => (
                 <button
                   type="button"
@@ -261,8 +261,8 @@ export default function ProfileForm({
           </div>
 
           <div className="field">
-            <label>Preferred regions <span className="hint">optional</span></label>
-            <div className="chips">
+            <label id="regions-label">Preferred regions <span className="hint">optional</span></label>
+            <div className="chips" role="group" aria-labelledby="regions-label">
               {regions.map((r) => (
                 <button
                   type="button"

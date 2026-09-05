@@ -46,7 +46,7 @@ export default function UniversityExplorer({
     <div>
       <div className="view-head">
         <span className="eyebrow">The database</span>
-        <h2 className="section-title">Browse every school in the set.</h2>
+        <h1 className="section-title">Browse every school in the set.</h1>
         <p className="lead">
           {all ? `${all.length} universities` : "Loading"} with the numbers that actually matter —
           selectivity, typical stats, and sticker price. Filter and sort to explore.
@@ -93,7 +93,7 @@ export default function UniversityExplorer({
         <div className="spinner" aria-label="Loading universities" />
       ) : rows.length === 0 ? (
         <div className="empty">
-          <h3>Nothing matches those filters</h3>
+          <h2>Nothing matches those filters</h2>
           <p>Try clearing the search box or picking a different region or major.</p>
         </div>
       ) : (
@@ -101,7 +101,11 @@ export default function UniversityExplorer({
           <table className="uni-table">
             <thead>
               <tr>
-                {notes && <th className="uni-th-star" aria-label="Saved" />}
+                {notes && (
+                  <th className="uni-th-star">
+                    <span className="sr-only">Saved</span>
+                  </th>
+                )}
                 <th>University</th>
                 <th>Location</th>
                 <th>Avg GPA</th>
@@ -109,7 +113,11 @@ export default function UniversityExplorer({
                 <th>Admit rate</th>
                 <th>Tuition</th>
                 <th>Majors</th>
-                {notes && <th className="uni-th-note" aria-label="Your note" />}
+                {notes && (
+                  <th className="uni-th-note">
+                    <span className="sr-only">Your note</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>

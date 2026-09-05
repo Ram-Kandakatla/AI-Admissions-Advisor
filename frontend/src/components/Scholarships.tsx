@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { downloadCsv, scholarshipCsvFilename, scholarshipsToCsv } from "../exportList";
@@ -21,12 +22,8 @@ const printedOn = new Intl.DateTimeFormat(undefined, { dateStyle: "long" });
 
 export default function Scholarships({
   student,
-  onEdit,
-  onAsk,
 }: {
   student: StudentRecord;
-  onEdit: () => void;
-  onAsk: () => void;
 }) {
   const [data, setData] = useState<ScholarshipResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,11 +58,11 @@ export default function Scholarships({
   if (error) {
     return (
       <div className="empty">
-        <h3>Couldn&apos;t load your scholarships</h3>
+        <h1>Couldn&apos;t load your scholarships</h1>
         <p>{error}</p>
-        <button className="btn btn-ghost" onClick={onEdit}>
+        <Link className="btn btn-ghost" to="/profile">
           Back to profile
-        </button>
+        </Link>
       </div>
     );
   }
@@ -93,11 +90,11 @@ export default function Scholarships({
 
       <div className="view-head">
         <span className="eyebrow">Scholarships for {student.name}</span>
-        <h2 className="section-title">
+        <h1 className="section-title">
           {total > 0
             ? `${total} awards you're eligible to apply for.`
             : "No awards match this profile yet."}
-        </h2>
+        </h1>
         <p className="lead">
           Filtered against your GPA, intended majors, and reported financial need — anything with a
           bar you don&apos;t clear has already been removed, so every card here is one you can
@@ -105,26 +102,26 @@ export default function Scholarships({
           is always the authority.
         </p>
         <div className="form-footer no-print" style={{ marginTop: 20 }}>
-          <button className="btn btn-ghost" onClick={onEdit}>
+          <Link className="btn btn-ghost" to="/profile">
             Edit profile
-          </button>
-          <button className="btn btn-primary" onClick={onAsk}>
+          </Link>
+          <Link className="btn btn-primary" to="/chat">
             Ask Compass about these <span className="btn-arrow">→</span>
-          </button>
+          </Link>
         </div>
       </div>
 
       {total === 0 ? (
         <div className="empty">
-          <h3>Nothing matched — check your profile</h3>
+          <h2>Nothing matched — check your profile</h2>
           <p>
             Most national awards set a GPA floor or restrict themselves to certain majors. Adding
             another intended major, or correcting your financial need if you left it at the default,
             usually opens the list up.
           </p>
-          <button className="btn btn-primary" onClick={onEdit}>
+          <Link className="btn btn-primary" to="/profile">
             Adjust my profile
-          </button>
+          </Link>
         </div>
       ) : (
         <>
@@ -192,7 +189,7 @@ export default function Scholarships({
 
           {shown === 0 ? (
             <div className="empty">
-              <h3>Everything is hidden</h3>
+              <h2>Everything is hidden</h2>
               <p>
                 Every award matching your profile is limited to a particular group. Untick the
                 filter to see them and decide for yourself which apply to you.
@@ -216,7 +213,7 @@ export default function Scholarships({
                   <section className={`tier-block ${t}`} key={t}>
                     <div className="tier-head" style={tierVar(t)}>
                       <span className="tier-dot" />
-                      <h3>{TIER_META[t].title}</h3>
+                      <h2>{TIER_META[t].title}</h2>
                       <span className="count">
                         {view[t].length} · {TIER_META[t].blurb}
                       </span>
@@ -274,7 +271,7 @@ function ScholarshipCard({ s }: { s: Scholarship }) {
     <article className={`uni-card sch-card ${s.tier}`}>
       <div className="uni-card-top">
         <div>
-          <h4>{s.name}</h4>
+          <h3>{s.name}</h3>
           <div className="loc">{s.sponsor}</div>
         </div>
         <div className="score-badge">

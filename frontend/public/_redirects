@@ -1,0 +1,11 @@
+# Single-page app fallback.
+#
+# Every route below is rendered by React Router in the browser, so there is no
+# file on disk at /matches or /majors/computer-science. Without this, a cold
+# load of any of them — a bookmark, a shared link, a refresh — is a 404 from
+# Cloudflare Pages before the app ever boots. The 200 (rather than a redirect)
+# is what keeps the original URL in the address bar for the router to read.
+#
+# /api is deliberately absent: Phase 7 puts the Worker on the same origin, and
+# Pages Functions are matched before this file, so API requests never reach it.
+/*    /index.html   200
