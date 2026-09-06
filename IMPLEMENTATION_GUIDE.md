@@ -647,6 +647,92 @@ before it.)*
 
 ---
 
+## Before Phase 7: what's still open
+
+Phase 7's own opening line asks whether everything above is "done — or done
+enough to demo." This section is that check, answered — every deferred,
+not-built, or blocked item from Phases 1–6, pulled out of five separate
+checklists into one place. Nothing here is a reason to *delay starting* Phase
+7 — none of it is a Hono/D1/Cloudflare-compatibility problem, the kind of
+thing this roadmap orders around — but several items only become real once
+there's a live domain, real traffic, or a paid tier, so they're worth
+resolving on the way through Phase 7 rather than discovering after.
+
+### Triggered by Phase 7's own steps
+
+- [ ] **Global 300/15min rate limit** is still a decision, not a rule. Create
+      the Cloudflare Rate Limiting Rule (or a `RateLimit` binding) once the
+      Worker has a real hostname to attach it to. *(Phase 1.3 —
+      [PHASE-1.md](PHASE-1.md#left-for-deploy-day-the-global-rate-limit))*
+- [ ] **PBKDF2's cost vs. the Workers free-plan CPU cap.** 100k iterations
+      costs ~40–60ms; the free plan allows 10ms. Fine on Workers Paid — on
+      free, lower `ITERATIONS` in
+      [`backend/src/auth/password.ts`](backend/src/auth/password.ts) before
+      going live. *(Phase 2.3 —
+      [PHASE-2.md](PHASE-2.md#left-for-deploy-day-the-free-plan-cpu-limit))*
+- [ ] **Placeholder Open Graph URLs.** Four absolute URLs in
+      [`frontend/index.html`](frontend/index.html) still point at
+      `https://compass.example.com` — swap them for the real domain the
+      moment §7.5 attaches one. *(Phase 5.3)*
+- [ ] **`public/_headers` `Referrer-Policy` for the shared plan page.**
+      Flagged when §6.7's share link shipped; `public/_headers` is a
+      Cloudflare Pages feature, so there was nothing to attach it to before
+      now. *(Phase 6.7 follow-up)*
+- [ ] **Sentry error tracking** (`@sentry/cloudflare` + `@sentry/react`) —
+      skipped while every user of the app was its author. The trigger named
+      at the time was exactly this: Phase 7 putting Compass on a public URL.
+      *(Phase 4.2 —
+      [PHASE-4.md](PHASE-4.md#42-sentry-deliberately-not-built))*
+
+### Blocked on a decision outside the codebase
+
+- [ ] **Branch protection on `main`.** The repo is private on a free GitHub
+      plan, and GitHub gates rulesets and classic branch protection behind
+      Pro. Needs a Pro subscription or a public repo — CI itself has been
+      green for a while. *(Phase 3.4 —
+      [PHASE-3.md](PHASE-3.md#left-for-later))*
+- [ ] **Deadline reminder emails (6.1).** Needs a paid email-sending provider
+      (MailChannels' free Workers integration is gone; Cloudflare's own
+      `send_email` binding only reaches addresses verified in your own
+      account), a verified sending domain, and email verification at signup.
+      Worth reconsidering before spending on any of that — §6.2's calendar
+      export already delivers the reminder itself, from the student's own
+      device, needing none of it. *(Phase 6.1 —
+      [PHASE-6.md](PHASE-6.md#61--deadline-reminder-emails))*
+- [ ] **Net price estimator (6.4).** Blocked on data, not code:
+      `universities.json` carries sticker tuition and nothing else
+      financial. Needs real IPEDS/College Scorecard aid figures per school
+      before this can be built honestly. *(Phase 6.4)*
+
+### Real open work, not blocked on anything
+
+- [ ] **Password reset / email verification.** Not built. Needs the same
+      email provider as 6.1 above, so it's worth deciding once rather than
+      twice. *(Phase 2)*
+- [ ] **A `manualChunks` vendor split.** ~182 kB of React/Router is
+      re-downloaded by returning visitors on every deploy. A few lines, not
+      yet done. *(Phase 5.2 follow-up)*
+- [ ] **Growing the scholarship dataset (6.6).** Still 45 entries — ongoing
+      curation on `scholarships.json`, not an engineering task.
+- [ ] **A `webcal://` subscription feed.** A natural extension of §6.2's
+      calendar export, reusing most of §6.7's token machinery, that would
+      make the calendar live instead of a snapshot. Not started. *(Phase 6
+      follow-up)*
+- [ ] **Flaky test:** `App.test.tsx > /majors > falls back to the default
+      for a slug nothing matches`. A pre-existing race, not something Phase
+      6 introduced, but still unfixed. *(Phase 6 follow-up)*
+
+### Considered and declined — listed for completeness, not a to-do
+
+- **PWA / offline shell (§5.5).** A service worker's caching interacts with
+  how Pages serves the app; easier to reason about once Phase 7's hosting
+  shape actually exists than before it.
+- **A coverage-threshold gate (§3.2).** A percentage gate rewards covering
+  whatever is cheapest to test; the priority order in §3.2 is the policy
+  instead, deliberately.
+
+---
+
 ## Phase 7 — Hosting on Cloudflare Pages + Workers, step by step
 
 > **Code half built; account half is a runbook. See [PHASE-7.md](PHASE-7.md)
@@ -949,9 +1035,8 @@ land rather than trusting memory.
 - [ ] **Deliberately not done:** `@sentry/cloudflare` + `@sentry/react`. This
       section's own advice is to wait for outside users, and there are none yet —
       `wrangler tail` is the better tool until Phase 7 makes the app public.
-- [ ] *Not built:* a frontend error boundary. A component throw still blanks the
-      page. It is a real gap and a **Phase 5** one — it needs a designed error
-      state, not a bare `<div>`.
+- [x] Frontend error boundary — flagged here as a Phase 5 concern; built there.
+      See Phase 5's checklist below.
 
 **Phase 5 — Frontend polish** — **done** apart from §5.5, written up in [PHASE-5.md](PHASE-5.md)
 - [x] `react-router-dom` routing — 14 routes, chrome split into `Layout.tsx`,
