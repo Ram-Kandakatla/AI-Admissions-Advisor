@@ -1,0 +1,24 @@
+-- When you last spoke to them (Phase 6.5, second pass).
+--
+-- Migration 0005 gave a school a contact's name and job title, which records
+-- *who* but not *when* — an address book rather than the tracker the roadmap
+-- item is named after. This is the field that makes the difference: a student
+-- can see that they have not spoken to their second-choice school since
+-- August, which is the whole reason to track a contact at all.
+--
+-- A date, not a timestamp. "I emailed them on the 12th" is the granularity a
+-- student actually remembers, and a time of day would be invented precision on
+-- a field they type in by hand. Stored as a YYYY-MM-DD string, the same shape
+-- and for the same reason as applications.deadline — see frontend/src/dates.ts
+-- for why a date-only value must never go through `new Date(iso)`.
+--
+-- Empty string, not NULL, for "never" — matching contact_name and
+-- contact_role, so the whole contact has one absent value rather than two
+-- kinds of nothing to check for.
+--
+-- Note for whoever adds the next contact field: school_notes rows are deleted
+-- when they hold nothing, and the definition of "nothing" lives in
+-- saveSchoolNote(). It has to learn about this column too, or a student whose
+-- only record for a school is a contact date loses it the moment they unstar.
+
+ALTER TABLE school_notes ADD COLUMN contact_last_at TEXT NOT NULL DEFAULT '';

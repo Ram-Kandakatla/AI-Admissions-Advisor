@@ -146,6 +146,21 @@ export interface SessionRecord {
   expiresAt: string;
 }
 
+/**
+ * A read-only link to one student's plan.
+ *
+ * The token is a bearer credential: whoever holds the URL can read the shared
+ * view, with no account and no sign-in. There is no expiry and no revoked
+ * flag — revoking deletes the row, so "revoked" and "never existed" are one
+ * state the server could not tell apart even if a future handler wanted to.
+ * See migrations/0006_share_links.sql.
+ */
+export interface ShareLinkRecord {
+  token: string;
+  studentId: string;
+  createdAt: string;
+}
+
 export interface ChatMessage {
   role: string;
   content: string;
@@ -175,6 +190,24 @@ export interface SchoolNoteRecord {
   universityId: number;
   starred: boolean;
   note: string;
+  /**
+   * The admissions officer handling this school, if the student knows who.
+   *
+   * Empty string rather than null for "not recorded", so there is one absent
+   * value rather than two. Deliberately only a name and a job title — see
+   * migrations/0005_school_contacts.sql for why there is no email or phone.
+   */
+  contactName: string;
+  contactRole: string;
+  /**
+   * When the student last spoke to them: YYYY-MM-DD, or "" for never.
+   *
+   * The field that makes this a tracker rather than an address book — "you
+   * have not contacted this school since August" is the thing worth knowing.
+   * Date-only because that is the granularity a student remembers; see
+   * frontend/src/dates.ts for why it must never meet `new Date(iso)`.
+   */
+  contactLastAt: string;
   createdAt: string;
   updatedAt?: string;
 }

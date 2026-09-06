@@ -145,3 +145,196 @@ describe("store layer", () => {
     expect(await store.getSchoolNote(student.id, MIT)).toBeNull();
   });
 });
+
+describe("the admissions contact (Phase 6.5)", () => {
+  test("records a name and a role alongside the note", async () => {
+    const id = await newStudent();
+    const b = await body(
+      await put(`/api/students/${id}/notes/${MIT}`, {
+        contactName: "Dana Ruiz",
+        contactRole: "Regional counselor",
+      }),
+      200
+    );
+    expect(b.contactName).toBe("Dana Ruiz");
+    expect(b.contactRole).toBe("Regional counselor");
+    expect(b.university.shortName).toBe("MIT");
+  });
+
+  // The whole reason a contact is not just another optional column: the row is
+  // deleted when it "holds nothing", and before this the definition of nothing
+  // did not know contacts existed. A student who recorded an officer and then
+  // unstarred the school would have lost the name with no warning.
+  test("a contact alone keeps the row alive, unstarred and with no note", async () => {
+    const id = await newStudent();
+    await put(`/api/students/${id}/notes/${MIT}`, { starred: true, note: "Visited." });
+    await put(`/api/students/${id}/notes/${MIT}`, { contactName: "Dana Ruiz" });
+
+    const b = await body(
+      await put(`/api/students/${id}/notes/${MIT}`, { starred: false, note: "" }),
+      200
+    );
+    expect(b.removed).toBeUndefined();
+    expect(b.contactName).toBe("Dana Ruiz");
+
+    const list = await body(await get(`/api/students/${id}/notes`), 200);
+    expect(list.notes).toHaveLength(1);
+    expect(list.notes[0].contactName).toBe("Dana Ruiz");
+  });
+
+  test("clearing every field, contact included, does remove the row", async () => {
+    const id = await newStudent();
+    await put(`/api/students/${id}/notes/${MIT}`, {
+      starred: true,
+      note: "Visited.",
+      contactName: "Dana Ruiz",
+      contactRole: "Regional counselor",
+    });
+
+    const b = await body(
+      await put(`/api/students/${id}/notes/${MIT}`, {
+        starred: false,
+        note: "",
+        contactName: "",
+        contactRole: "",
+      }),
+      200
+    );
+    expect(b.removed).toBe(true);
+    const list = await body(await get(`/api/students/${id}/notes`), 200);
+    expect(list.notes).toEqual([]);
+  });
+
+  test("a partial write leaves the contact alone", async () => {
+    const id = await newStudent();
+    await put(`/api/students/${id}/notes/${MIT}`, {
+      contactName: "Dana Ruiz",
+      contactRole: "Regional counselor",
+    });
+
+    const b = await body(await put(`/api/students/${id}/notes/${MIT}`, { starred: true }), 200);
+    expect(b.contactName).toBe("Dana Ruiz");
+    expect(b.contactRole).toBe("Regional counselor");
+    expect(b.starred).toBe(true);
+  });
+
+  test("and writing a contact leaves the note and the star alone", async () => {
+    const id = await newStudent();
+    await put(`/api/students/${id}/notes/${MIT}`, { starred: true, note: "Visited." });
+
+    const b = await body(
+      await put(`/api/students/${id}/notes/${MIT}`, { contactRole: "Regional counselor" }),
+      200
+    );
+    expect(b.note).toBe("Visited.");
+    expect(b.starred).toBe(true);
+  });
+
+  // Whitespace has to normalize to empty, or " " is a contact that every
+  // emptiness check treats as present and every reader sees as blank.
+  test("a whitespace-only contact is no contact", async () => {
+    const id = await newStudent();
+    const b = await body(
+      await put(`/api/students/${id}/notes/${MIT}`, { starred: false, note: "", contactName: "   " }),
+      200
+    );
+    expect(b.removed).toBe(true);
+  });
+
+  test("caps a long name and role instead of rejecting them", async () => {
+    const id = await newStudent();
+    const b = await body(
+      await put(`/api/students/${id}/notes/${MIT}`, {
+        contactName: "N".repeat(400),
+        contactRole: "R".repeat(400),
+      }),
+      200
+    );
+    expect(b.contactName).toHaveLength(120);
+    expect(b.contactRole).toHaveLength(120);
+  });
+
+  test("rejects a non-string contact field", async () => {
+    const id = await newStudent();
+    const b = await body(await put(`/api/students/${id}/notes/${MIT}`, { contactName: 42 }), 400);
+    expect(b.error).toContain("contactName");
+  });
+
+  test("existing notes read back with empty contacts, not missing ones", async () => {
+    const id = await newStudent();
+    await put(`/api/students/${id}/notes/${MIT}`, { note: "Visited." });
+    const list = await body(await get(`/api/students/${id}/notes`), 200);
+    expect(list.notes[0].contactName).toBe("");
+    expect(list.notes[0].contactRole).toBe("");
+  });
+});
+
+describe("last contacted (Phase 6.5, second pass)", () => {
+  test("records a date alongside the name", async () => {
+    const id = await newStudent();
+    const b = await body(
+      await put(`/api/students/${id}/notes/${MIT}`, {
+        contactName: "Dana Ruiz",
+        contactLastAt: "2026-08-14",
+      }),
+      200
+    );
+    expect(b.contactLastAt).toBe("2026-08-14");
+  });
+
+  // Same hazard the name and role had, and the reason 0007's comment spells it
+  // out: "holds nothing" has to learn about every new column or the row is
+  // deleted out from under it.
+  test("a date alone keeps the row alive", async () => {
+    const id = await newStudent();
+    await put(`/api/students/${id}/notes/${MIT}`, { starred: true, contactLastAt: "2026-08-14" });
+
+    const b = await body(
+      await put(`/api/students/${id}/notes/${MIT}`, { starred: false, note: "" }),
+      200
+    );
+    expect(b.removed).toBeUndefined();
+    expect(b.contactLastAt).toBe("2026-08-14");
+  });
+
+  // Validated, not capped. A truncated name is still a name; a truncated date
+  // is a different day.
+  test("rejects anything that is not a YYYY-MM-DD date", async () => {
+    const id = await newStudent();
+    for (const bad of ["14/08/2026", "2026-8-14", "yesterday", "2026-08-14T10:00:00Z", 20260814]) {
+      const b = await body(
+        await put(`/api/students/${id}/notes/${MIT}`, { contactLastAt: bad }),
+        400
+      );
+      expect(b.error).toContain("contactLastAt");
+    }
+  });
+
+  test("an empty string clears it", async () => {
+    const id = await newStudent();
+    await put(`/api/students/${id}/notes/${MIT}`, {
+      starred: true,
+      contactLastAt: "2026-08-14",
+    });
+    const b = await body(
+      await put(`/api/students/${id}/notes/${MIT}`, { contactLastAt: "" }),
+      200
+    );
+    expect(b.contactLastAt).toBe("");
+    expect(b.starred).toBe(true);
+  });
+
+  test("a partial write leaves it alone", async () => {
+    const id = await newStudent();
+    await put(`/api/students/${id}/notes/${MIT}`, { contactLastAt: "2026-08-14" });
+    const b = await body(await put(`/api/students/${id}/notes/${MIT}`, { note: "Visited." }), 200);
+    expect(b.contactLastAt).toBe("2026-08-14");
+  });
+
+  test("older notes read back with an empty date, not a missing one", async () => {
+    const id = await newStudent();
+    await put(`/api/students/${id}/notes/${MIT}`, { note: "Visited." });
+    const list = await body(await get(`/api/students/${id}/notes`), 200);
+    expect(list.notes[0].contactLastAt).toBe("");
+  });
+});

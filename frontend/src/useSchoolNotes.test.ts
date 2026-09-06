@@ -288,3 +288,80 @@ describe("EMPTY_NOTES", () => {
     }).not.toThrow();
   });
 });
+
+describe("setContact", () => {
+  it("debounces like the note and sends only the field that changed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { result } = renderHook(() => useSchoolNotes("stu_1"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setContact(5, { contactName: "Dana Ruiz" }));
+    expect(result.current.byId.get(5)?.contactName).toBe("Dana Ruiz");
+    expect(mockApi.saveNote).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(SAVE_DELAY);
+    });
+    expect(mockApi.saveNote).toHaveBeenCalledWith("stu_1", 5, { contactName: "Dana Ruiz" });
+  });
+
+  // The bug adding contacts created, and the reason the debounce accumulates a
+  // patch instead of carrying one field. Both edits share a school, so they
+  // share its timer — a timer holding only the last field's value would cancel
+  // the note's save and send the contact alone, leaving the note on screen and
+  // not on the server.
+  it("does not let a contact edit cancel a pending note save", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { result } = renderHook(() => useSchoolNotes("stu_1"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setNote(5, "Visited in October"));
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    act(() => result.current.setContact(5, { contactName: "Dana Ruiz" }));
+
+    await act(async () => {
+      vi.advanceTimersByTime(SAVE_DELAY);
+    });
+
+    expect(mockApi.saveNote).toHaveBeenCalledOnce();
+    expect(mockApi.saveNote).toHaveBeenCalledWith("stu_1", 5, {
+      note: "Visited in October",
+      contactName: "Dana Ruiz",
+    });
+  });
+
+  it("merges both contact fields into one write", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { result } = renderHook(() => useSchoolNotes("stu_1"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setContact(5, { contactName: "Dana Ruiz" }));
+    act(() => result.current.setContact(5, { contactRole: "Regional counselor" }));
+
+    await act(async () => {
+      vi.advanceTimersByTime(SAVE_DELAY);
+    });
+    expect(mockApi.saveNote).toHaveBeenCalledOnce();
+    expect(mockApi.saveNote).toHaveBeenCalledWith("stu_1", 5, {
+      contactName: "Dana Ruiz",
+      contactRole: "Regional counselor",
+    });
+  });
+
+  it("drops a forgotten school's queued patch instead of carrying it forward", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { result } = renderHook(() => useSchoolNotes("stu_1"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setContact(5, { contactName: "Dana Ruiz" }));
+    act(() => result.current.forget(5));
+    act(() => result.current.setNote(5, "Starting over"));
+
+    await act(async () => {
+      vi.advanceTimersByTime(SAVE_DELAY);
+    });
+    expect(mockApi.saveNote).toHaveBeenCalledWith("stu_1", 5, { note: "Starting over" });
+  });
+});

@@ -134,6 +134,11 @@ export function schoolNote(over: Partial<SchoolNote> = {}): SchoolNote {
     universityId: u.id,
     starred: true,
     note: "Visited in October — liked the labs.",
+    // Empty by default: most notes never record a contact, so a test that
+    // cares about one says so.
+    contactName: "",
+    contactRole: "",
+    contactLastAt: "",
     createdAt: "2026-10-02T14:20:00.000Z",
     updatedAt: "2026-10-09T18:05:00.000Z",
     university: {

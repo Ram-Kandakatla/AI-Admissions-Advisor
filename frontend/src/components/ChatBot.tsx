@@ -1,61 +1,177 @@
 import { Link } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { ChatMessage, LlmProvider, StudentRecord } from "../types";
+import type { ChatMessage, ChatMode, LlmProvider, StudentRecord } from "../types";
 
-const MODE_LABEL: Record<LlmProvider, string> = {
+// Which service answered. Renamed from `mode` in Phase 6.3, when `mode` came
+// to mean the assistant you are talking to — the two are independent, and one
+// name for both was going to cause exactly one confusing bug.
+const PROVIDER_LABEL: Record<LlmProvider, string> = {
   claude: "Claude",
   openai: "OpenAI",
   fallback: "Offline guide",
 };
 
-const SUGGESTIONS = [
-  "When are Early Action deadlines?",
-  "How do I start my personal statement?",
-  "How does the FAFSA work?",
-  "Should I submit my SAT if it's below average?",
-  "How many schools should I apply to?",
-  "How do I find scholarships?",
-];
+/**
+ * The two assistants.
+ *
+ * Everything that differs between them lives in this one table: the switch
+ * label, what the panel calls itself, the greeting, the placeholder, and the
+ * starter questions. Adding a third mode is an entry here plus an entry in the
+ * backend's chatMode.ts — which is the point of building it this way rather
+ * than branching on `mode` in eight places down the file.
+ */
+const MODES: Record<
+  ChatMode,
+  {
+    switchLabel: string;
+    panelLabel: string;
+    lead: (student: StudentRecord | null) => string;
+    greeting: (student: StudentRecord | null) => string;
+    placeholder: string;
+    suggestions: string[];
+  }
+> = {
+  advising: {
+    switchLabel: "Admissions",
+    panelLabel: "Compass advisor",
+    lead: (student) =>
+      student
+        ? `Ask about deadlines, tests, or financial aid. Answers are tuned to ${student.name}'s profile.`
+        : "Ask about deadlines, tests, or financial aid. Build a profile for answers tuned to you.",
+    greeting: (student) =>
+      `Hi${student ? `, ${student.name}` : ""}! Ask me anything about applying to college — deadlines, tests, or paying for it.`,
+    placeholder: "Ask a question…  (Enter to send, Shift+Enter for a new line)",
+    suggestions: [
+      "When are Early Action deadlines?",
+      "How does the FAFSA work?",
+      "Should I submit my SAT if it's below average?",
+      "How many schools should I apply to?",
+      "How do I find scholarships?",
+      "How do I ask for a recommendation letter?",
+    ],
+  },
+  essay: {
+    switchLabel: "Essays",
+    panelLabel: "Essay brainstorm",
+    lead: () =>
+      "Work out what to write about and how to say it. This one asks more than it answers — and it won't write the essay for you.",
+    greeting: (student) =>
+      `Hi${student ? `, ${student.name}` : ""}! Let's find your essay. Tell me a moment you keep coming back to, or ask me where to start — I'll ask questions rather than hand you paragraphs.`,
+    placeholder: "Describe a moment, or paste a draft…  (Enter to send, Shift+Enter for a new line)",
+    suggestions: [
+      "How do I pick a topic?",
+      "I'm staring at a blank page.",
+      "How do I make this less generic?",
+      "My draft is 300 words too long.",
+      "How do I write a 'why us' supplement?",
+      "How should I end it?",
+    ],
+  },
+};
+
+const MODE_ORDER: ChatMode[] = ["advising", "essay"];
+
+/** An empty thread per mode, so a switch never lands on `undefined`. */
+const emptyThreads = (): Record<ChatMode, ChatMessage[]> => ({ advising: [], essay: [] });
 
 export default function ChatBot({
   student,
+  mode = "advising",
+  onModeChange,
   initialQuestion = null,
   onQuestionSent,
 }: {
   student: StudentRecord | null;
+  /** Which assistant is open. Carried in the URL by ChatRoute. */
+  mode?: ChatMode;
+  onModeChange?: (mode: ChatMode) => void;
   /** A question handed over from another page, sent once on arrival. */
   initialQuestion?: string | null;
   onQuestionSent?: () => void;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // One thread per mode rather than one list, because the switch has to be
+  // free: flipping to essays and back mid-question should return you to the
+  // conversation you left, not to an empty panel.
+  const [threads, setThreads] = useState<Record<ChatMode, ChatMessage[]>>(emptyThreads);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<LlmProvider | null>(null);
+  const [provider, setProvider] = useState<LlmProvider | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const spec = MODES[mode];
+  const messages = threads[mode];
+
   useEffect(() => {
-    api.health().then((h) => setMode(h.llm)).catch(() => setMode(null));
+    api.health().then((h) => setProvider(h.llm)).catch(() => setProvider(null));
   }, []);
+
+  const studentId = student?.id ?? null;
+
+  // Whose conversation this is has changed — signing in, signing out, or
+  // signing in as someone else. Both threads go.
+  //
+  // Deliberately keyed on the id alone and NOT on `mode`: a guest's threads
+  // live only in this state, so clearing on every switch would delete the
+  // conversation they just flipped away from. That was the first version of
+  // this effect, and it made the switch destructive for exactly the visitors
+  // who have nowhere else to keep their work.
+  useEffect(() => {
+    setThreads(emptyThreads);
+  }, [studentId]);
+
+  // Restore this mode's saved thread.
+  //
+  // The endpoint has existed since Phase 1 and nothing called it, which left a
+  // real oddity: the server feeds prior turns to the model as context, so
+  // after a refresh the assistant remembered a conversation the student could
+  // no longer see. Harmless while there was one hidden thread; actively
+  // confusing once a visible switch implies two.
+  useEffect(() => {
+    if (!studentId) return;
+    let live = true;
+    api
+      .chatHistory(studentId, mode)
+      .then((data) => {
+        // Only seed an untouched thread. A reply that landed while this was in
+        // flight is newer than what the server just described, and so is
+        // anything typed since.
+        if (live) {
+          setThreads((t) => (t[mode].length > 0 ? t : { ...t, [mode]: data.messages }));
+        }
+      })
+      .catch(() => {
+        /* an unreachable history is an empty panel, not an error worth showing */
+      });
+    return () => {
+      live = false;
+    };
+  }, [studentId, mode]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
+  const append = (m: ChatMode, message: ChatMessage) =>
+    setThreads((t) => ({ ...t, [m]: [...t[m], message] }));
+
   const send = async (text: string) => {
     const question = text.trim();
     if (!question || busy) return;
-    setMessages((m) => [...m, { role: "user", content: question }]);
+    // Captured before the await: switching modes mid-request must not file the
+    // answer under whichever thread happens to be open when it lands.
+    const asked = mode;
+    append(asked, { role: "user", content: question });
     setInput("");
     setBusy(true);
     try {
-      const res = await api.chat(question, student?.id);
-      setMessages((m) => [...m, { role: "assistant", content: res.answer, source: res.source }]);
+      const res = await api.chat(question, student?.id, asked);
+      append(asked, { role: "assistant", content: res.answer, source: res.source });
     } catch (err) {
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: `Sorry — ${(err as Error).message}. Please try again.` },
-      ]);
+      append(asked, {
+        role: "assistant",
+        content: `Sorry — ${(err as Error).message}. Please try again.`,
+      });
     } finally {
       setBusy(false);
     }
@@ -77,28 +193,54 @@ export default function ChatBot({
     <div>
       <div className="view-head">
         <span className="eyebrow">Ask Compass</span>
-        <h1 className="section-title">The counselor who&apos;s always in.</h1>
-        <p className="lead">
-          Ask about deadlines, essays, tests, or financial aid.
-          {student
-            ? ` Answers are tuned to ${student.name}'s profile.`
-            : " Build a profile for answers tuned to you."}
-        </p>
+        <h1 className="section-title">
+          {mode === "essay" ? "Your essay, in your voice." : "The counselor who's always in."}
+        </h1>
+        <p className="lead">{spec.lead(student)}</p>
+
+        <div className="segmented chat-modes" role="group" aria-label="Choose an assistant">
+          {MODE_ORDER.map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={mode === m}
+              onClick={() => onModeChange?.(m)}
+            >
+              {MODES[m].switchLabel}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="chat-layout">
         <div className="chat-panel">
           <div className="chat-bar">
-            <span className="dot" /> Compass advisor
-            {mode && <span className="mode">{MODE_LABEL[mode]}</span>}
+            <span className="dot" /> {spec.panelLabel}
+            {provider && <span className="mode">{PROVIDER_LABEL[provider]}</span>}
           </div>
 
-          <div className="chat-scroll" ref={scrollRef}>
+          {/* The thread is a live region so a screen reader hears the answer
+              arrive. "polite" rather than "assertive": a reply should wait its
+              turn behind whatever the user is currently reading. */}
+          {/* tabIndex 0 because this scrolls. A keyboard user with no mouse
+              cannot reach a scrollable box that isn't focusable, and the
+              messages inside it are text, not controls — so there is nothing
+              else here to tab to and scroll it with. axe's
+              scrollable-region-focusable, which the Phase 5 audit could not
+              see: an empty thread does not overflow, so there was nothing to
+              scroll on a freshly loaded page. */}
+          <div
+            className="chat-scroll"
+            ref={scrollRef}
+            tabIndex={0}
+            role="log"
+            aria-live="polite"
+            aria-label={`${spec.panelLabel} conversation`}
+          >
             {messages.length === 0 && (
               <div className="msg assistant">
-                Hi{student ? `, ${student.name}` : ""}! I&apos;m Compass. Ask me anything about applying to
-                college — deadlines, essays, tests, or paying for it. Not sure where to start? Try one
-                of the questions on the {window.innerWidth > 900 ? "right" : "top"}.
+                {spec.greeting(student)} Not sure where to start? Try one of the questions on the{" "}
+                {window.innerWidth > 900 ? "right" : "top"}.
               </div>
             )}
             {messages.map((m, i) => (
@@ -123,11 +265,15 @@ export default function ChatBot({
                   send(input);
                 }
               }}
-              placeholder="Ask a question…  (Enter to send, Shift+Enter for a new line)"
+              placeholder={spec.placeholder}
               rows={2}
               aria-label="Your question"
             />
-            <button className="btn btn-primary chat-send" onClick={() => send(input)} disabled={busy || !input.trim()}>
+            <button
+              className="btn btn-primary chat-send"
+              onClick={() => send(input)}
+              disabled={busy || !input.trim()}
+            >
               Send
             </button>
           </div>
@@ -135,7 +281,7 @@ export default function ChatBot({
 
         <aside className="suggestions">
           <h2>Try asking</h2>
-          {SUGGESTIONS.map((s) => (
+          {spec.suggestions.map((s) => (
             <button key={s} className="suggestion" onClick={() => send(s)} disabled={busy}>
               {s}
             </button>

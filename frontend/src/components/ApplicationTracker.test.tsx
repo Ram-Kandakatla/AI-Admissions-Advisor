@@ -370,3 +370,44 @@ describe("removing an application", () => {
     expect(screen.getByRole("article")).toBeInTheDocument();
   });
 });
+
+describe("calendar export", () => {
+  it("offers the export once there is a dated application", async () => {
+    renderTracker([application({ deadline: "2027-01-05" })]);
+    await screen.findByText("Your applications");
+
+    expect(screen.getByRole("button", { name: "Export calendar" })).toBeEnabled();
+    expect(screen.getByText(/A calendar file for Google Calendar/)).toBeInTheDocument();
+  });
+
+  // A tracker can hold applications and still have nothing to put on a
+  // calendar: rolling admission has no date, and inventing one is the mistake
+  // deadlineIsTypical exists to prevent.
+  it("disables it and says why when every application is rolling", async () => {
+    renderTracker([application({ plan: "ROLLING", deadline: null })]);
+    await screen.findByText("Your applications");
+
+    expect(screen.getByRole("button", { name: "Export calendar" })).toBeDisabled();
+    expect(screen.getByText(/Nothing here has a fixed date yet/)).toBeInTheDocument();
+  });
+
+  it("hands the browser a .ics named for the student", async () => {
+    const user = setup();
+    const createObjectURL = vi.fn(() => "blob:fake");
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+    let clicked: HTMLAnchorElement | null = null;
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement
+    ) {
+      clicked = this;
+    });
+
+    renderTracker([application({ deadline: "2027-01-05" })]);
+    await screen.findByText("Your applications");
+    await user.click(screen.getByRole("button", { name: "Export calendar" }));
+
+    // The clock is pinned to 2026-10-15 by the suite's beforeEach.
+    expect(clicked!.download).toBe("compass-deadlines-jordan-rivera-2026-10-15.ics");
+    vi.unstubAllGlobals();
+  });
+});

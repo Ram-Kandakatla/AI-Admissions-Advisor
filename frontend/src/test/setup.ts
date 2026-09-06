@@ -27,6 +27,19 @@ afterEach(() => {
 // the desktop shape, and it is deliberate rather than incidental: it is the
 // one with dropdowns, so it is the harder of the two to get right. A test that
 // needs the mobile shape should override this itself.
+// jsdom implements no scrolling either, for the same reason: scrolling is a
+// layout operation and there is no layout. The chat panel pins itself to the
+// newest message on every render, so without this every ChatBot test dies in
+// an effect before reaching its first assertion.
+//
+// A no-op rather than a spy. What these tests assert is which messages are in
+// the thread, never how far it scrolled — and a component that had to check
+// `scrollTo?.()` before calling it would be carrying a defensive branch that
+// exists only to satisfy a test environment.
+if (!Element.prototype.scrollTo) {
+  Element.prototype.scrollTo = () => {};
+}
+
 if (!window.matchMedia) {
   window.matchMedia = (query: string): MediaQueryList => ({
     media: query,

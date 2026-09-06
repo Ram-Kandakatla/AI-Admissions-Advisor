@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { isSettled } from "../applicationStatus";
 import { CYCLE_MONTHS, KIND_LABEL, MILESTONES } from "../data/milestones";
 import type { Milestone, MilestoneKind } from "../data/milestones";
 import { countdown, dayMonth, localMidnight, parseLocalDate, urgencyOf } from "../dates";
@@ -251,12 +252,9 @@ function MilestoneRow({ milestone, year }: { milestone: Milestone; year: number 
   );
 }
 
-// Once an application is submitted or decided, its deadline stops being a
-// countdown and becomes a fact — the same rule the tracker cards follow.
-const SETTLED = ["submitted", "accepted", "waitlisted", "denied", "withdrawn"];
 
 function OwnRow({ app, iso }: { app: Application; iso: string }) {
-  const settled = SETTLED.includes(app.status);
+  const settled = isSettled(app.status);
   const urgency = settled ? "done" : urgencyOf(iso);
 
   return (

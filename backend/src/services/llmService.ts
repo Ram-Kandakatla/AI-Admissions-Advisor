@@ -21,6 +21,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { createLogger, errorFields, type Logger } from "../log.js";
+import { DEFAULT_CHAT_MODE, type ChatMode } from "../models/chatMode.js";
 import type { Env, ChatMessage, StudentRecord } from "../types.js";
 
 const DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-8";
@@ -91,7 +92,21 @@ function warnOnce(log: Logger, name: string, status: KeyStatus): void {
   });
 }
 
-const SYSTEM_PROMPT = `You are Compass, a warm, plain-spoken college admissions advisor for U.S. high school students.
+// ---- The two modes ----
+//
+// Phase 6.3 added the essay assistant. It is a different prompt and a
+// different offline bank over identical plumbing — same key inspection, same
+// provider selection, same error path — which is what the guide means by
+// "reusing llmService's existing provider abstraction". If a third mode ever
+// lands, it is another entry in these two records and nothing else.
+//
+// The essay prompt's job is mostly restraint. A model asked to help with a
+// college essay will write one unless told not to, and a personal statement in
+// the model's voice rather than the student's is worse than no help at all:
+// it reads as generic to the reader it was meant to persuade, and it is the
+// student's own name on it.
+
+const ADVISING_PROMPT = `You are Compass, a warm, plain-spoken college admissions advisor for U.S. high school students.
 Help with the application process: timelines and deadlines, essays, standardized tests, recommendation letters,
 financial aid (FAFSA/CSS Profile, grants, loans, work-study), scholarships, and how to build a balanced college list.
 
@@ -104,6 +119,32 @@ Guidelines:
 - You are not a licensed financial advisor; for personal finance decisions, suggest talking to a school
   counselor or the college's financial aid office.
 - Stay on topic. If asked something unrelated to college/admissions/financial aid, gently redirect.`;
+
+const ESSAY_PROMPT = `You are Compass, helping a U.S. high school student brainstorm and revise their college application essays.
+This covers the personal statement (Common App), supplemental essays, and "why us" essays.
+
+Your job is to get the student's own thinking onto the page. You are a question-asker and an editor, not a ghostwriter.
+
+Guidelines:
+- NEVER write the essay, a paragraph of it, or an opening line for the student to paste. If asked directly,
+  say plainly that the essay has to be in their voice and offer to help them find it instead.
+- Lead with questions. "What were you actually thinking in that moment?" gets further than any suggestion.
+- Push for the specific. Vague drafts are the universal problem: ask for the concrete detail, the real
+  sentence someone said, the thing that surprised them.
+- Reflection over narration. Admissions readers want to know what the student made of an experience,
+  not a retelling of it. Ask "so what did that change?" relentlessly.
+- Ordinary topics beat dramatic ones done badly. Talk them out of writing about trauma they don't want to
+  share, and out of assuming their life is too boring to write about.
+- When they share a draft, react as a reader first — what landed, what confused you — then be specific
+  about what to cut. Most drafts are 30% too long.
+- Be encouraging and honest at once. A first draft is supposed to be bad; say so.
+- Stay on topic. If asked something about deadlines, tests, or financial aid, answer briefly and point
+  them back to the main Compass advisor.`;
+
+const PROMPTS: Record<ChatMode, string> = {
+  advising: ADVISING_PROMPT,
+  essay: ESSAY_PROMPT,
+};
 
 function buildContextLine(studentContext: StudentRecord | null): string {
   if (!studentContext) return "";
@@ -155,17 +196,18 @@ export function createLlmService(env: Env) {
   const anthropicModel = env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
   const openaiModel = env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
 
-  /** Answer an admissions question. */
+  /** Answer a question in one of the chatbot's modes. */
   async function answerAdmissionsQuestion(
     question: string,
     studentContext: StudentRecord | null = null,
-    history: ChatMessage[] = []
+    history: ChatMessage[] = [],
+    mode: ChatMode = DEFAULT_CHAT_MODE
   ): Promise<LlmAnswer> {
     if (provider === "fallback") {
-      return { answer: fallbackAnswer(question), source: "fallback" };
+      return { answer: fallbackAnswer(question, mode), source: "fallback" };
     }
 
-    const system = SYSTEM_PROMPT + buildContextLine(studentContext);
+    const system = PROMPTS[mode] + buildContextLine(studentContext);
     const messages = [
       ...history
         .filter((m) => m.role === "user" || m.role === "assistant")
@@ -181,13 +223,13 @@ export function createLlmService(env: Env) {
           : await askOpenAI(system, messages);
       return answer
         ? { answer, source: provider }
-        : { answer: fallbackAnswer(question), source: "fallback" };
+        : { answer: fallbackAnswer(question, mode), source: "fallback" };
     } catch (err) {
       log.error(`${provider} API error`, errorFields(err));
       return {
         answer:
           "I'm having trouble reaching my knowledge service right now. Here's a general pointer:\n\n" +
-          fallbackAnswer(question),
+          fallbackAnswer(question, mode),
         source: "fallback",
       };
     }
@@ -277,14 +319,95 @@ const FALLBACKS = [
   },
 ];
 
-export function fallbackAnswer(question: string): string {
-  const q = (question || "").toLowerCase();
-  const hit = FALLBACKS.find((f) => f.keys.some((k) => q.includes(k)));
-  if (hit) return hit.answer;
-  return (
+// ---- Essay mode's own bank ----
+//
+// A dedicated mode that answers out of the advising bank is worse than no
+// mode: the advising bank has exactly one essay entry, so nine questions in
+// ten would get the same paragraph back. These are the questions students
+// actually open an essay assistant with.
+//
+// Every answer here is a prompt to think, not a draft — the same restraint the
+// live prompt is built around, held to in the offline path so the two modes
+// behave the same way with and without a key.
+
+const ESSAY_FALLBACKS = [
+  {
+    keys: ["start", "begin", "blank page", "stuck", "where do i", "how do i start"],
+    answer:
+      "Don't start by writing — start by collecting. Give yourself 20 minutes and list ten small, specific moments from the last few years: an argument you changed your mind in, something you made badly and then made better, a time you were the only person who noticed something. No filtering. Then pick the one you still have opinions about and freewrite for 15 minutes without stopping. That's your raw material. The opening line is the last thing to write, not the first.",
+  },
+  {
+    keys: ["topic", "what should i write about", "idea", "boring", "nothing interesting"],
+    answer:
+      "The best topics are usually small. Readers remember the student who wrote about repairing a bike or losing an argument with their grandmother far more than the one who wrote about a service trip. Two tests for a topic: (1) can only you have written it? (2) does it show you thinking, not just doing? If your life feels too ordinary, that's a sign you're looking for events instead of moments — the material is in what you noticed, not in what happened to you.",
+  },
+  {
+    keys: ["show don't tell", "show dont tell", "descriptive", "vague", "generic", "cliché", "cliche"],
+    answer:
+      "\"I learned resilience\" tells; the two hours you spent redoing it shows. A working rule: every abstract noun in your draft (passion, resilience, leadership, growth) is a place where you summarized instead of showing. Cut the noun, put the scene back. If a sentence could appear in another student's essay with a word swapped, it isn't doing work.",
+  },
+  {
+    keys: ["supplement", "why us", "why this college", "why major"],
+    answer:
+      "A \"why us\" essay is a research assignment wearing an essay's clothes. Name specifics only that school has — a named course, a lab, a program's actual structure — and connect each to something you've already done, not something you hope to feel. Anything you could paste into another school's box is filler. And never praise the school's ranking, weather, or prestige; they know.",
+  },
+  {
+    keys: ["revise", "edit", "draft", "feedback", "too long", "word count", "cut"],
+    answer:
+      "Revise in three separate passes, never at once. First: is the essay about the right moment? (This is the pass that sometimes means starting over — do it early.) Second: does every paragraph earn its space? Most drafts run about 30% long, and the fat is usually setup before the real story starts. Third, and last: sentences and words. Read the whole thing aloud — anything you stumble over is a sentence to rewrite, and anything that sounds like someone else is a sentence to cut.",
+  },
+  {
+    keys: ["hard topic", "trauma", "mental health", "difficult", "personal", "too much", "share"],
+    answer:
+      "You are never obligated to write about the hardest thing that has happened to you, and a difficult topic isn't automatically a strong essay. If you do write about one, the test is whether you can write about it from the other side — reflecting on it rather than still inside it. And ask yourself who you'd be comfortable having read it, because you can't control who does.",
+  },
+  {
+    keys: ["ai", "chatgpt", "write it for me", "write my essay", "generate"],
+    answer:
+      "I won't write it for you, and it isn't only a rules question. Admissions readers read thousands of these; generated prose reads as flat and interchangeable precisely where an essay needs to sound like a person. What I can do is ask you the questions that get your own thinking out — tell me the moment you're circling, and I'll start there.",
+  },
+  {
+    // "end" alone is unusable as a key — it is inside "recommend", "friend",
+    // "attend", and "weekend", all of which appear in real essay questions.
+    // These are the phrasings that actually mean the closing paragraph.
+    keys: [
+      "ending",
+      "conclusion",
+      "how to end",
+      "how do i end",
+      "how should i end",
+      "last line",
+      "final paragraph",
+      "wrap up",
+    ],
+    answer:
+      "Don't summarize what you just said, and don't promise what you'll do at their college — both are endings that could be pasted onto anyone's essay. The strongest closings usually return to the concrete thing you opened with and show it looking different now. If you're stuck, try deleting your final paragraph entirely: essays are often already over one paragraph before their author stops.",
+  },
+];
+
+const BANKS: Record<ChatMode, { keys: string[]; answer: string }[]> = {
+  advising: FALLBACKS,
+  essay: ESSAY_FALLBACKS,
+};
+
+const NO_MATCH: Record<ChatMode, string> = {
+  advising:
     "I can help with admissions timelines, essays, tests, building a balanced college list, and financial aid basics. " +
-    "Try asking something like \"When are early action deadlines?\", \"How do I start my personal statement?\", or " +
-    "\"How does the FAFSA work?\"\n\n(Note: I'm running in offline mode right now. Add an ANTHROPIC_API_KEY or " +
-    "OPENAI_API_KEY to backend/.dev.vars for full, personalized answers.)"
-  );
+    'Try asking something like "When are early action deadlines?", "How do I start my personal statement?", or ' +
+    '"How does the FAFSA work?"',
+  essay:
+    "I can help you brainstorm and revise your college essays — finding a topic, getting off a blank page, " +
+    'making a draft specific, and cutting it down. Try asking "How do I pick a topic?", "How do I start when ' +
+    'I\'m stuck?", or "How do I make this less generic?"',
+};
+
+const OFFLINE_NOTE =
+  "\n\n(Note: I'm running in offline mode right now. Add an ANTHROPIC_API_KEY or " +
+  "OPENAI_API_KEY to backend/.dev.vars for full, personalized answers.)";
+
+export function fallbackAnswer(question: string, mode: ChatMode = DEFAULT_CHAT_MODE): string {
+  const q = (question || "").toLowerCase();
+  const hit = BANKS[mode].find((f) => f.keys.some((k) => q.includes(k)));
+  if (hit) return hit.answer;
+  return NO_MATCH[mode] + OFFLINE_NOTE;
 }

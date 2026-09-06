@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { isSettled } from "../applicationStatus";
+import { applicationsToIcs, deadlinesIcsFilename, downloadIcs } from "../calendar";
 import { countdown, dayMonth, daysUntil, monthYear, parseLocalDate, urgencyOf } from "../dates";
 import type {
   Application,
@@ -34,8 +36,6 @@ const STATUS_LABEL: Record<ApplicationStatus, string> = {
   withdrawn: "Withdrawn",
 };
 
-// Once a decision is in, the deadline countdown stops being the story.
-const CLOSED: ApplicationStatus[] = ["submitted", "accepted", "waitlisted", "denied", "withdrawn"];
 
 export default function ApplicationTracker({
   student,
@@ -140,9 +140,13 @@ export default function ApplicationTracker({
   if (!apps || !meta) return <div className="spinner" aria-label="Loading your tracker" />;
 
   const ordered = [...apps].sort(byDeadline);
-  const open = ordered.filter((a) => !CLOSED.includes(a.status));
+  const open = ordered.filter((a) => !isSettled(a.status));
   const next = open.find((a) => a.deadline && daysUntil(a.deadline) >= 0) ?? null;
   const submitted = apps.filter((a) => a.status !== "planning" && a.status !== "in-progress").length;
+  // A tracker can be non-empty and still have nothing to export: rolling
+  // admission has no date, and inventing one is the mistake the whole
+  // deadlineIsTypical flag exists to avoid.
+  const datedCount = apps.filter((a) => a.deadline).length;
 
   return (
     <div>
@@ -266,6 +270,38 @@ export default function ApplicationTracker({
             </div>
           </div>
 
+          {/* Sits under the summary rather than above it, unlike the export
+              bar on Matches and Saved. "Next deadline" is the most useful
+              thing on this page, and an export CTA above it would push it
+              below the fold on a phone. */}
+          <div className="export-bar no-print">
+            <div className="export-copy">
+              <strong>Put these dates where you&apos;ll see them.</strong>{" "}
+              {datedCount === 0 ? (
+                <>
+                  Nothing here has a fixed date yet — rolling applications have none to export.
+                  Set a deadline on any application and it can go in your calendar.
+                </>
+              ) : (
+                <>
+                  A calendar file for Google Calendar, Apple Calendar, or Outlook. Every deadline
+                  arrives with a reminder a week ahead of it.
+                </>
+              )}
+            </div>
+            <div className="export-actions">
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={datedCount === 0}
+                onClick={() =>
+                  downloadIcs(deadlinesIcsFilename(student), applicationsToIcs(ordered, meta))
+                }
+              >
+                Export calendar
+              </button>
+            </div>
+          </div>
+
           <Timeline applications={ordered} />
 
           <h2 className="sec-hd">Your applications</h2>
@@ -319,7 +355,7 @@ function Timeline({ applications }: { applications: Application[] }) {
           <ol className="tl-items">
             {month.items.map((app) => {
               const urgency = urgencyOf(app.deadline);
-              const done = CLOSED.includes(app.status);
+              const done = isSettled(app.status);
               return (
                 <li
                   key={app.id}
@@ -384,7 +420,7 @@ function ApplicationCard({
 
   const doneCount = meta.checklist.filter((c) => app.checklist[c.key]).length;
   const total = meta.checklist.length;
-  const closed = CLOSED.includes(app.status);
+  const closed = isSettled(app.status);
   const urgency = urgencyOf(app.deadline);
 
   return (

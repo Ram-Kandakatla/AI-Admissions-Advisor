@@ -42,6 +42,17 @@ write-up — [PHASE-1.md](PHASE-1.md) (Workers/D1 migration),
   tracker, collected on a **Saved** page that prints or exports.
 - **Ask Compass chatbot** — LLM-powered answers on deadlines, essays, tests, and aid,
   personalized to the student's profile. Falls back to a built-in guide with no API key.
+  A second mode, **Essay brainstorm**, helps find a topic and tighten a draft — it asks
+  questions rather than writing prose, and keeps its own conversation thread.
+- **Calendar export** — download your tracked deadlines as an `.ics` file for Google
+  Calendar, Apple Calendar, or Outlook. Each one arrives as an all-day entry with a
+  reminder a week ahead. Dates that are only the usual convention for a decision plan
+  import as *tentative*, so the caveat survives leaving the app.
+- **Admissions contacts** — record who handles your application at each school and when
+  you last spoke to them. A school you haven't contacted in months says so.
+- **Share your plan** — hand a parent or counselor a read-only link. No account needed on
+  their end, revocable at any time, and it never exposes your chat, your email, or what
+  you said about your family's finances.
 
 ## Run it locally
 
@@ -196,8 +207,9 @@ they deliberately never assert a date, for the same reason
 
 The store and services are written to be swapped without touching the UI:
 
-- **Accounts** — the schema is keyed by student id already; adding a users table and a
-  session cookie is the remaining step.
+- **Accounts** — built in Phase 2. A guest gets a real (email-less) account row so a
+  profile is owned from the first write, and signing up fills in that same row rather than
+  reparenting anything. See [PHASE-2.md](PHASE-2.md).
 - **Beyond D1** — D1 is SQLite, so it is single-writer per database. If write throughput
   ever outgrows it, [Hyperdrive](https://developers.cloudflare.com/hyperdrive/) lets a
   Worker talk to an external Postgres. That is a "years from now, if ever" concern at this
@@ -205,3 +217,7 @@ The store and services are written to be swapped without touching the UI:
 - **More scholarships** — [`backend/data/scholarships.json`](backend/data/scholarships.json)
   is a plain curated file. No free public scholarship API exists (Fastweb and College Board
   don't publish one), so growing this list means curating it or licensing a feed.
+- **Aid figures** — the dataset carries sticker tuition and nothing else financial, which
+  is why there is no net-price estimator. Adding average grant by income bracket and
+  percent-of-need-met (IPEDS or the College Scorecard, cited per school) would unlock one.
+  See [PHASE-6.md](PHASE-6.md#64--net-price-estimator).
