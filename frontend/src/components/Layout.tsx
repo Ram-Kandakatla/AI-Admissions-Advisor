@@ -35,6 +35,7 @@ const NAV: NavEntry[] = [
       { to: "/saved", label: "Saved", needsProfile: true },
       { to: "/tracker", label: "Tracker", needsProfile: true },
       { to: "/timeline", label: "Timeline" },
+      { to: "/share", label: "Share", needsProfile: true },
     ],
   },
   {
@@ -118,7 +119,7 @@ export default function Layout({
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const compact = useCompactNav();
   const navRef = useRef<HTMLElement>(null);
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
 
   // An open dropdown closes on a click anywhere else and on Escape — the two
@@ -144,8 +145,8 @@ export default function Layout({
   // typed URL too, and there is exactly one place to look when a title is
   // wrong.
   useEffect(() => {
-    document.title = titleFor(pathname);
-  }, [pathname]);
+    document.title = titleFor(pathname, search);
+  }, [pathname, search]);
 
   // Arriving somewhere new closes whatever menu got you there and puts you at
   // the top of the page. Before the router this rode along inside a `go()`

@@ -563,26 +563,87 @@ before it.)*
 
 ## Phase 6 — Product roadmap (feature ideas, roughly prioritized)
 
+> **Four of seven built. See [PHASE-6.md](PHASE-6.md) for what shipped and
+> why.** The list below is preserved as written; where the build deviated, a
+> note says so inline. 6.1 is blocked on a purchase, 6.4 on data that does not
+> exist, and 6.6 is not an engineering task.
+
 1. **Deadline reminder emails** — the timeline and tracker already compute
    what's due when. On Cloudflare this maps directly onto a
    [Cron Trigger](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
    (`[triggers] crons = ["0 13 * * *"]` in `wrangler.toml`, handled by a
    `scheduled()` export) — no separate cron host needed. Needs Phase 2
    first (an email address to send to).
+
+   *(Not built, and the dependency list is longer than "Phase 2". It needs a
+   paid email provider — MailChannels' free Workers integration was retired,
+   and Cloudflare's own `send_email` binding only sends to addresses verified
+   in your own account, not to students — plus a verified sending domain from
+   §7.5, and email verification, since signup takes an address on trust today.
+   Note also that §6.2 below already delivers the reminder itself, from the
+   student's own calendar, needing none of that. See
+   [PHASE-6.md](PHASE-6.md#61--deadline-reminder-emails).)*
 2. **Calendar export (.ics)** — same dependency (real deadlines), pure
    client-side generation, no new backend needed.
+
+   *(Built, client-side as described. Two things this line does not anticipate.
+   It is the **deliverable half of 6.1**: a `VALARM` fires a week ahead from the
+   student's own calendar, with no provider and no domain — so the priority
+   order here is backwards. And RFC 5545 has four edges worth the 250 lines:
+   `DTEND` is exclusive for an all-day event, TEXT escapes four characters
+   (backslash first), folding is at 75 **octets** and must not split a
+   character, and the file is CRLF throughout. `deadlineIsTypical` maps onto
+   `STATUS:TENTATIVE`, which is the format's own word for it.)*
 3. **Essay brainstorm assistant** — a second chatbot mode reusing
    `llmService.js`'s existing provider abstraction and offline-fallback
    pattern.
+
+   *(Built, and the abstraction did carry it — but a second prompt is worthless
+   without a second **thread**, which this line does not mention. The `messages`
+   table had no mode, so both assistants would have appended to one history and
+   every essay question would have reached the model wrapped in the student's
+   last FAFSA question. Migration `0004` adds it. The prompt itself is mostly
+   restraint: a model asked for essay help writes the essay unless told not to,
+   and the offline bank holds the same line.)*
 4. **Net price estimator** — a rough net-price-after-aid estimate (sticker
    tuition − typical aid by income bracket, clearly labeled as an estimate),
    deepening the recommendation engine's existing "financial fit" logic.
+
+   *(Not built. The aid data does not exist: `universities.json` carries
+   `tuition` and nothing else financial — no room and board, no average grant by
+   income bracket, no percent-of-need-met — and the whole "financial fit" logic
+   is one line, `AFFORDABLE_CEILING`. This is a data-acquisition task wearing an
+   engineering task's clothes, and "clearly labeled as an estimate" does not
+   rescue a number the app made up: this is the same app that refuses to publish
+   an unconfirmed deadline. The honest version is real IPEDS/Scorecard figures
+   for the 42 schools, cited per school.)*
 5. **Admissions officer / contact tracker** — a small addition to the
    existing per-school note, reusing that infrastructure.
+
+   *(Built exactly that way — columns on `school_notes`, not a new table, which
+   costs one contact per school. Two things this line does not anticipate. It
+   deliberately stores **no email or phone**: a counselor did not consent to
+   being in this database, and a name and job title are already public on the
+   school's site. And the addition is not as small as it sounds — `school_notes`
+   deletes a row that "holds nothing", so that definition had to learn about
+   contacts or a student unstarring a school would silently lose the name of the
+   person reading their application.)*
 6. **Growing the scholarship dataset** — no free scholarship API exists;
    stays a curation task on `scholarships.json`, not an engineering one.
+
+   *(Not built, on this line's own terms. Still 45 entries.)*
 7. **Parent/counselor view** — a read-only shared link to a student's plan.
    Needs Phase 2's accounts first.
+
+   *(Built. The framing to hold onto is that **the URL is the credential** —
+   there is no account on the other end, which is the point, and every
+   constraint follows from it. Revoking is a DELETE rather than a `revoked_at`
+   flag, because the server must never be able to answer "revoked" and "never
+   existed" differently; no expiry, because one a student forgets is a dead link
+   to their counselor in December. The shared payload is enumerated field by
+   field rather than spread — a rule worth stating because reusing `decorate()`
+   for applications broke it during the build and shipped the student id until a
+   test caught it.)*
 
 ---
 
@@ -886,14 +947,43 @@ land rather than trusting memory.
       re-downloaded by returning visitors on every deploy. Four lines, but a
       different kind of split than §5.2 asks for.
 
-**Phase 6 — Product roadmap** *(pick off as time allows, none started)*
-- [ ] Deadline reminder emails (Cron Trigger)
-- [ ] Calendar export (.ics)
-- [ ] Essay brainstorm assistant
-- [ ] Net price estimator
-- [ ] Admissions officer / contact tracker
-- [ ] Growing the scholarship dataset
-- [ ] Parent/counselor view
+**Phase 6 — Product roadmap** — **four of seven built**, written up in [PHASE-6.md](PHASE-6.md)
+- [x] **Calendar export (.ics)** — `frontend/src/calendar.ts`, one button on the tracker.
+      All-day events with a `VALARM` a week ahead, `STATUS:TENTATIVE` for a date that is
+      only the plan's convention, rolling applications named rather than given an invented
+      date. **This is the deliverable half of 6.1** — the reminder fires from the student's
+      own calendar, needing no provider and no domain
+- [x] **Essay brainstorm assistant** — a second mode on `/chat` (`?mode=essay`) over the
+      same provider abstraction, with its own prompt and its own offline bank. Migration
+      `0004` gives it a separate thread, which is what makes it a second assistant rather
+      than differently-worded output; the 40-turn cap is per mode
+- [x] **Admissions officer / contact tracker** — name, role, and last-contacted on
+      `school_notes` (`0005`, `0007`). Past 30 days a card says how long a school has been
+      quiet, past 90 it escalates. Deliberately **no email or phone** — a counselor's
+      contact details are a third party's personal data
+- [x] **Parent/counselor view** — one revocable read-only link per student (`0006`), no
+      account on the other end. `GET /shared/:token` is the only unauthenticated read path
+      into student data in the API; its payload is enumerated field by field, and chat,
+      email, session, student id and `financialNeed` are all withheld
+- [x] Settled-status list consolidated into `frontend/src/applicationStatus.ts` — it was
+      about to become a fourth copy under a second name
+- [x] 465 tests (was 320), backend 165 → 217 and frontend 155 → 248. Three axe violations
+      found and fixed, including a pre-existing `--txf`-for-prose contrast failure the
+      Phase 5 audit could not see because the element is empty almost always
+- [ ] **Blocked, not deferred:** deadline reminder emails. Needs a paid provider
+      (MailChannels' free Workers integration is gone; Cloudflare's `send_email` only
+      reaches addresses verified in your own account), a verified sending domain from
+      §7.5, and email verification at signup. Revisit the *priority* too — §6.2 already
+      delivers the reminder. See [PHASE-6.md](PHASE-6.md#61--deadline-reminder-emails)
+- [ ] **Not built — needs data, not code:** net price estimator. `universities.json` has
+      sticker tuition and nothing else financial. Building it on invented aid figures would
+      contradict how this app behaves everywhere else about numbers it cannot source
+- [ ] *Not built:* growing the scholarship dataset. Still 45 entries; a curation task, as
+      the section itself says
+- [ ] *Follow-ups:* a `webcal://` subscription feed (the §6.7 token machinery is most of
+      it, and would make the calendar live rather than a snapshot); a `public/_headers`
+      `Referrer-Policy` for the shared page in Phase 7; and one pre-existing flaky test in
+      `App.test.tsx` (`/majors` slug fallback)
 
 **Phase 7 — Cloudflare Pages + Workers hosting**
 - [ ] Architecture chosen (Option A: Pages + Functions, recommended)

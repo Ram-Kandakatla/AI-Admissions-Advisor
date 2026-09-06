@@ -24,6 +24,7 @@ const TITLES: Record<string, string> = {
   "/majors": `Majors${SUFFIX}`,
   "/explore": `Explore schools${SUFFIX}`,
   "/chat": "Ask Compass",
+  "/share": `Share your plan${SUFFIX}`,
   "/signin": `Sign in${SUFFIX}`,
   "/signup": `Create an account${SUFFIX}`,
 };
@@ -47,8 +48,21 @@ function unslug(slug: string): string {
     .join(" ");
 }
 
-/** The document title for a path. Unknown paths get the 404's title. */
-export function titleFor(pathname: string): string {
+/**
+ * The document title for a location. Unknown paths get the 404's title.
+ *
+ * `search` matters for exactly one route so far. Phase 6.3 put the chatbot's
+ * two assistants on `/chat` and `/chat?mode=essay` — two separately
+ * bookmarkable pages, which is the same situation this module exists to fix,
+ * only inside one path instead of across fourteen. `/compare?ids=` is
+ * deliberately not treated this way: the query there is a set of schools, not
+ * a different page.
+ */
+export function titleFor(pathname: string, search = ""): string {
+  if (pathname === "/chat" && new URLSearchParams(search).get("mode") === "essay") {
+    return `Essay brainstorm${SUFFIX}`;
+  }
+
   const exact = TITLES[pathname];
   if (exact) return exact;
 

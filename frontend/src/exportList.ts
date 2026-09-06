@@ -162,6 +162,8 @@ const NOTE_HEADERS = [
   "Region",
   "Acceptance rate %",
   "Tuition (USD)",
+  "Admissions officer",
+  "Their role",
   "Your note",
   "Last written",
 ];
@@ -179,6 +181,8 @@ export function notesToCsv(rows: SchoolNote[]): string {
         u?.region ?? "",
         u?.acceptanceRate ?? "",
         u?.tuition ?? "",
+        row.contactName,
+        row.contactRole,
         row.note,
         // Date only: the time of day you typed a note is noise in a sheet.
         (row.updatedAt ?? row.createdAt ?? "").slice(0, 10),
@@ -190,8 +194,15 @@ export function notesToCsv(rows: SchoolNote[]): string {
   return lines.join("\r\n");
 }
 
-/** "Ada Lovelace" → "ada-lovelace"; empty or punctuation-only names fall back. */
-function slug(name: string): string {
+/**
+ * "Ada Lovelace" → "ada-lovelace"; empty or punctuation-only names fall back.
+ *
+ * Exported since Phase 6 so calendar.ts names its .ics the same way — every
+ * file Compass hands over should look like it came from the same app. Not to
+ * be confused with slugifyMajor() in slug.ts, which builds URL segments; this
+ * one only ever builds filenames.
+ */
+export function filenameSlug(name: string): string {
   const s = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -199,32 +210,34 @@ function slug(name: string): string {
   return s || "student";
 }
 
-export function csvFilename(student: StudentRecord, now = new Date()): string {
-  return `compass-college-list-${slug(student.name)}-${stamp(now)}.csv`;
-}
-
-export function scholarshipCsvFilename(student: StudentRecord, now = new Date()): string {
-  return `compass-scholarships-${slug(student.name)}-${stamp(now)}.csv`;
-}
-
-export function savedCsvFilename(student: StudentRecord, now = new Date()): string {
-  return `compass-saved-schools-${slug(student.name)}-${stamp(now)}.csv`;
-}
-
-function stamp(now: Date): string {
+export function filenameStamp(now: Date): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
     now.getDate()
   ).padStart(2, "0")}`;
 }
 
+export function csvFilename(student: StudentRecord, now = new Date()): string {
+  return `compass-college-list-${filenameSlug(student.name)}-${filenameStamp(now)}.csv`;
+}
+
+export function scholarshipCsvFilename(student: StudentRecord, now = new Date()): string {
+  return `compass-scholarships-${filenameSlug(student.name)}-${filenameStamp(now)}.csv`;
+}
+
+export function savedCsvFilename(student: StudentRecord, now = new Date()): string {
+  return `compass-saved-schools-${filenameSlug(student.name)}-${filenameStamp(now)}.csv`;
+}
+
 /**
  * Hand a generated file to the browser's download machinery.
  *
- * The BOM is there for Excel, which otherwise reads a UTF-8 CSV as the local
- * codepage and mangles any school name with an accent in it.
+ * Split out of downloadCsv in Phase 6 so the .ics export shares one
+ * implementation of this rather than growing a second one that forgets the
+ * Safari note below. The BOM stays in downloadCsv, where it belongs — it is
+ * an Excel workaround, not a property of downloading a file.
  */
-export function downloadCsv(filename: string, csv: string): void {
-  const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8" });
+export function downloadFile(filename: string, content: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -236,4 +249,14 @@ export function downloadCsv(filename: string, csv: string): void {
   // Safari reads the blob asynchronously after click(); revoking in the same
   // tick cancels the download.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Download a CSV.
+ *
+ * The BOM is there for Excel, which otherwise reads a UTF-8 CSV as the local
+ * codepage and mangles any school name with an accent in it.
+ */
+export function downloadCsv(filename: string, csv: string): void {
+  downloadFile(filename, `﻿${csv}`, "text/csv;charset=utf-8");
 }

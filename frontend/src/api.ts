@@ -4,6 +4,8 @@ import type {
   AuthUser,
   ApplicationMeta,
   ApplicationsResponse,
+  ChatMessage,
+  ChatMode,
   LlmProvider,
   MajorInsights,
   Meta,
@@ -12,6 +14,8 @@ import type {
   RecommendationResponse,
   ScholarshipResponse,
   SchoolNote,
+  SharedPlan,
+  ShareLink,
   StudentRecord,
   University,
 } from "./types";
@@ -102,7 +106,19 @@ export const api = {
 
   notes: (studentId: string) => request<NotesResponse>(`/students/${studentId}/notes`),
 
-  saveNote: (studentId: string, universityId: number, body: { starred?: boolean; note?: string }) =>
+  // Every field is optional and only what's sent is changed — starring a
+  // school from a card must not wipe the note or the contact recorded on it.
+  saveNote: (
+    studentId: string,
+    universityId: number,
+    body: {
+      starred?: boolean;
+      note?: string;
+      contactName?: string;
+      contactRole?: string;
+      contactLastAt?: string;
+    }
+  ) =>
     request<SchoolNote>(`/students/${studentId}/notes/${universityId}`, {
       method: "PUT",
       body: JSON.stringify(body),
@@ -111,11 +127,19 @@ export const api = {
   forgetNote: (studentId: string, universityId: number) =>
     request<void>(`/students/${studentId}/notes/${universityId}`, { method: "DELETE" }),
 
-  chat: (question: string, studentId?: string) =>
-    request<{ answer: string; source: LlmProvider }>("/chat", {
+  // `mode` picks the assistant: the admissions advisor or the essay
+  // brainstorm partner. Omitted means advising, which is what the server
+  // defaults to — the two threads are stored separately.
+  chat: (question: string, studentId?: string, mode: ChatMode = "advising") =>
+    request<{ answer: string; source: LlmProvider; mode: ChatMode }>("/chat", {
       method: "POST",
-      body: JSON.stringify({ question, studentId }),
+      body: JSON.stringify({ question, studentId, mode }),
     }),
+
+  chatHistory: (studentId: string, mode: ChatMode = "advising") =>
+    request<{ mode: ChatMode; messages: ChatMessage[] }>(
+      `/students/${studentId}/chat?mode=${mode}`
+    ),
 
   majors: () => request<{ majors: { major: string; schoolCount: number }[] }>("/majors"),
 
@@ -125,6 +149,26 @@ export const api = {
     ),
 
   applicationMeta: () => request<ApplicationMeta>("/application-meta"),
+
+  // ---- Sharing ----
+  //
+  // The first three are owner-only. The fourth takes a token instead of a
+  // session and is the only call in this file that works signed out.
+
+  shareLink: (studentId: string) =>
+    request<{ link: ShareLink | null }>(`/students/${studentId}/share`),
+
+  createShareLink: (studentId: string, rotate = false) =>
+    request<{ link: ShareLink }>(`/students/${studentId}/share`, {
+      method: "POST",
+      body: JSON.stringify({ rotate }),
+    }),
+
+  revokeShareLink: (studentId: string) =>
+    request<void>(`/students/${studentId}/share`, { method: "DELETE" }),
+
+  sharedPlan: (token: string) =>
+    request<SharedPlan>(`/shared/${encodeURIComponent(token)}`),
 
   applications: (studentId: string) =>
     request<ApplicationsResponse>(`/students/${studentId}/applications`),

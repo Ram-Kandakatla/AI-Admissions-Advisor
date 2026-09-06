@@ -16,6 +16,7 @@
 // Reference data (universities, scholarships) moved to ./staticData.ts — it
 // never lived in SQLite and has no reason to touch this file.
 
+import { DEFAULT_CHAT_MODE, type ChatMode } from "../models/chatMode.js";
 import type {
   ApplicationInput,
   ApplicationRecord,
@@ -23,6 +24,7 @@ import type {
   ChatMessage,
   SchoolNoteRecord,
   SessionRecord,
+  ShareLinkRecord,
   StudentProfile,
   StudentRecord,
   UserRecord,
@@ -97,11 +99,20 @@ interface SessionRow {
   expires_at: string;
 }
 
+interface ShareLinkRow {
+  token: string;
+  student_id: string;
+  created_at: string;
+}
+
 interface SchoolNoteRow {
   student_id: string;
   university_id: number;
   starred: number;
   note: string;
+  contact_name: string;
+  contact_role: string;
+  contact_last_at: string;
   created_at: string;
   updated_at: string | null;
 }
@@ -163,12 +174,23 @@ function userFromRow(row: UserRow | null): UserRecord | null {
   };
 }
 
+function shareFromRow(row: ShareLinkRow | null): ShareLinkRecord | null {
+  if (!row) return null;
+  return { token: row.token, studentId: row.student_id, createdAt: row.created_at };
+}
+
 function noteFromRow(row: SchoolNoteRow | null): SchoolNoteRecord | null {
   if (!row) return null;
   const record: SchoolNoteRecord = {
     universityId: row.university_id,
     starred: Boolean(row.starred),
     note: row.note,
+    // Coalesced because rows written before migration 0005 have no value for
+    // these at all when read through an older cached statement, and `undefined`
+    // reaching the client as a missing field would make the form uncontrolled.
+    contactName: row.contact_name ?? "",
+    contactRole: row.contact_role ?? "",
+    contactLastAt: row.contact_last_at ?? "",
     createdAt: row.created_at,
   };
   if (row.updated_at) record.updatedAt = row.updated_at;
@@ -283,44 +305,55 @@ export function createStore(db: D1Database) {
 
   // ---- Conversations ----
 
+  // Every query below is scoped to (student, mode) since Phase 6.3. The
+  // advisor and the essay assistant keep separate threads, so "this student's
+  // history" is no longer a well-formed question — asking it without a mode
+  // would hand the essay assistant the student's aid questions as context.
   const insertMessage = db.prepare(
-    "INSERT INTO messages (student_id, role, content, at) VALUES (?, ?, ?, ?)"
+    "INSERT INTO messages (student_id, role, content, at, mode) VALUES (?, ?, ?, ?, ?)"
   );
 
   const selectMessages = db.prepare(
-    "SELECT role, content, at FROM messages WHERE student_id = ? ORDER BY seq"
+    "SELECT role, content, at FROM messages WHERE student_id = ? AND mode = ? ORDER BY seq"
   );
 
   // Keep history bounded at the most recent 40 turns, as before — the difference
-  // is that the trim now happens in the table instead of in an array.
+  // is that the trim now happens in the table instead of in an array. The 40 is
+  // per mode rather than per student: a long essay session should not evict the
+  // advising thread, and vice versa.
   const trimMessages = db.prepare(`
     DELETE FROM messages
     WHERE student_id = ?
+      AND mode = ?
       AND seq NOT IN (
-        SELECT seq FROM messages WHERE student_id = ? ORDER BY seq DESC LIMIT 40
+        SELECT seq FROM messages WHERE student_id = ? AND mode = ? ORDER BY seq DESC LIMIT 40
       )
   `);
 
-  async function getConversation(studentId: unknown): Promise<ChatMessage[]> {
+  async function getConversation(
+    studentId: unknown,
+    mode: ChatMode = DEFAULT_CHAT_MODE
+  ): Promise<ChatMessage[]> {
     if (typeof studentId !== "string") return [];
-    const { results } = await selectMessages.bind(studentId).all<ChatMessage>();
+    const { results } = await selectMessages.bind(studentId, mode).all<ChatMessage>();
     return results;
   }
 
   async function appendMessage(
     studentId: string,
     role: string,
-    content: string
+    content: string,
+    mode: ChatMode = DEFAULT_CHAT_MODE
   ): Promise<ChatMessage[]> {
     // Batched so the insert and the trim land together. On Express these were
     // two synchronous calls that could not interleave; in a Worker two
     // concurrent chat requests can, and a trim that runs against a
     // half-written history would drop the wrong turn.
     await db.batch([
-      insertMessage.bind(studentId, role, content, new Date().toISOString()),
-      trimMessages.bind(studentId, studentId),
+      insertMessage.bind(studentId, role, content, new Date().toISOString(), mode),
+      trimMessages.bind(studentId, mode, studentId, mode),
     ]);
-    return getConversation(studentId);
+    return getConversation(studentId, mode);
   }
 
   // ---- Applications ----
@@ -460,11 +493,17 @@ export function createStore(db: D1Database) {
   // The pair is the primary key, so an upsert is the whole write path: no
   // read-then-branch, and no way to end up with two notes for one school.
   const upsertNote = db.prepare(`
-    INSERT INTO school_notes (student_id, university_id, starred, note, created_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO school_notes (
+      student_id, university_id, starred, note,
+      contact_name, contact_role, contact_last_at, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (student_id, university_id) DO UPDATE SET
       starred = excluded.starred,
       note = excluded.note,
+      contact_name = excluded.contact_name,
+      contact_role = excluded.contact_role,
+      contact_last_at = excluded.contact_last_at,
       updated_at = excluded.created_at
     RETURNING *
   `);
@@ -490,14 +529,49 @@ export function createStore(db: D1Database) {
   async function saveSchoolNote(
     studentId: string,
     universityId: number,
-    { starred = false, note = "" }: { starred?: boolean; note?: string } = {}
+    {
+      starred = false,
+      note = "",
+      contactName = "",
+      contactRole = "",
+      contactLastAt = "",
+    }: {
+      starred?: boolean;
+      note?: string;
+      contactName?: string;
+      contactRole?: string;
+      contactLastAt?: string;
+    } = {}
   ): Promise<SchoolNoteRecord | null> {
-    if (!starred && note.trim() === "") {
+    // An empty row is deleted rather than kept — an empty note is the absence
+    // of a note. Phase 6.5 made "empty" a wider question than it was: before
+    // contacts, a school with no star and no text held nothing, and now it can
+    // hold the name of the person handling your application. Leaving this
+    // condition as it was would have deleted that name the moment a student
+    // unstarred the school, with nothing on screen to suggest why.
+    const holdsNothing =
+      !starred &&
+      note.trim() === "" &&
+      contactName.trim() === "" &&
+      contactRole.trim() === "" &&
+      contactLastAt.trim() === "";
+
+    if (holdsNothing) {
       await deleteNoteRow.bind(studentId, universityId).run();
       return null;
     }
+
     const row = await upsertNote
-      .bind(studentId, universityId, bool(starred), note, new Date().toISOString())
+      .bind(
+        studentId,
+        universityId,
+        bool(starred),
+        note,
+        contactName,
+        contactRole,
+        contactLastAt,
+        new Date().toISOString()
+      )
       .first<SchoolNoteRow>();
     return noteFromRow(row);
   }
@@ -508,6 +582,67 @@ export function createStore(db: D1Database) {
   ): Promise<boolean> {
     if (typeof studentId !== "string") return false;
     const { meta } = await deleteNoteRow.bind(studentId, universityId).run();
+    return meta.changes > 0;
+  }
+
+  // ---- Share links ----
+  //
+  // One per student, enforced by the UNIQUE on student_id rather than by
+  // remembering to check. See migrations/0006_share_links.sql for why revoking
+  // is a delete and why there is no expiry.
+
+  const selectShareByStudent = db.prepare("SELECT * FROM share_links WHERE student_id = ?");
+  const selectShareByToken = db.prepare("SELECT * FROM share_links WHERE token = ?");
+  const insertShare = db.prepare(
+    "INSERT INTO share_links (token, student_id, created_at) VALUES (?, ?, ?) RETURNING *"
+  );
+  const deleteShare = db.prepare("DELETE FROM share_links WHERE student_id = ?");
+
+  async function getShareLink(studentId: string): Promise<ShareLinkRecord | null> {
+    return shareFromRow(await selectShareByStudent.bind(studentId).first<ShareLinkRow>());
+  }
+
+  /**
+   * Resolve a token to the profile it opens.
+   *
+   * The only unauthenticated read path into a student's data in the whole API.
+   * It returns the id and nothing else — deciding what a holder may then *see*
+   * is the route's job, not the store's, so that decision lives in one
+   * reviewable place instead of being implied by a SELECT here.
+   */
+  async function findShareLink(token: unknown): Promise<ShareLinkRecord | null> {
+    if (typeof token !== "string" || token === "") return null;
+    return shareFromRow(await selectShareByToken.bind(token).first<ShareLinkRow>());
+  }
+
+  /** The student's link, creating one if they have none. Idempotent. */
+  async function ensureShareLink(studentId: string): Promise<ShareLinkRecord> {
+    const existing = await getShareLink(studentId);
+    if (existing) return existing;
+    const row = await insertShare
+      .bind(crypto.randomUUID(), studentId, new Date().toISOString())
+      .first<ShareLinkRow>();
+    return shareFromRow(row)!;
+  }
+
+  /**
+   * Mint a new link, invalidating the old one.
+   *
+   * Batched so there is no window in which the student has no link at all —
+   * and, more importantly, none in which a second caller could insert against
+   * the UNIQUE and fail.
+   */
+  async function rotateShareLink(studentId: string): Promise<ShareLinkRecord> {
+    const token = crypto.randomUUID();
+    await db.batch([
+      deleteShare.bind(studentId),
+      insertShare.bind(token, studentId, new Date().toISOString()),
+    ]);
+    return (await getShareLink(studentId))!;
+  }
+
+  async function revokeShareLink(studentId: string): Promise<boolean> {
+    const { meta } = await deleteShare.bind(studentId).run();
     return meta.changes > 0;
   }
 
@@ -661,5 +796,10 @@ export function createStore(db: D1Database) {
     getSchoolNote,
     saveSchoolNote,
     deleteSchoolNote,
+    getShareLink,
+    findShareLink,
+    ensureShareLink,
+    rotateShareLink,
+    revokeShareLink,
   };
 }

@@ -1293,6 +1293,14 @@ table.uni-table {
   height: min(66vh, 620px);
   overflow: hidden;
 }
+/* The advisor/essays switch, sitting under the page's lead paragraph. Only
+   spacing — the control itself is the shared .segmented, so it matches the one
+   on the profile form and the sign-in page rather than inventing a third
+   look for the same interaction. */
+.chat-modes {
+  margin-top: 16px;
+}
+
 .chat-bar {
   padding: 11px 16px;
   border-bottom: 0.5px solid var(--border);
@@ -3533,12 +3541,86 @@ table.cmp-table {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
 }
 
+/* Who is handling this application.
+
+   Two fields on one row where there is room, stacked below ~420px — these sit
+   inside a card that is itself a column on some pages, so the breakpoint is
+   the container's, not the viewport's. They inherit .field's label styling and
+   then override the input to the notepad's scale: the form-sized input the
+   profile page uses would tower over the textarea above it. */
+.note-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.note-contact .field {
+  flex: 1 1 150px;
+  margin: 0;
+}
+.note-contact .field label {
+  font-size: 10px;
+  margin-bottom: 3px;
+}
+.note-contact .field input[type="text"] {
+  font-size: 12.5px;
+  padding: 6px 10px;
+  min-height: 0;
+  background: var(--s2);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+}
+.note-contact .field input[type="text"]:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+/* How long a school has gone quiet. Only rendered past 30 days, so it is a
+   real signal rather than a label on every card — see stalenessOf() for why
+   the threshold exists at all. Orange and red are the same two colours the
+   tracker uses for a deadline approaching and passed, because "this needs
+   attention" should look the same wherever the app says it. */
+.note-stale {
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 8px 0 0;
+  color: var(--txm);
+}
+.note-stale[data-stale="warm"] {
+  color: var(--orange);
+}
+.note-stale[data-stale="cold"] {
+  color: var(--red);
+}
+.note-contact .field input[type="date"] {
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  min-height: 0;
+  background: var(--s2);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+  color: var(--tx);
+}
+.note-contact .field input[type="date"]:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
 /* Saving is automatic and quick, so this is empty almost always. It holds no
-   height of its own to avoid the row jumping each time it appears. */
+   height of its own to avoid the row jumping each time it appears.
+
+   --txm, not --txf. This is the fourth instance of the mistake PHASE-5.md
+   catalogued — the faint token, meant for marks and dividers, used for prose —
+   and the audit that fixed the other three could not see this one: the line is
+   empty except for about a second after a save, so axe had no text to measure.
+   It was 2.60:1 dark and 2.22:1 light against the card; --txm is 7.55 and
+   7.19. It also happens to be the only confirmation a sighted user gets that
+   their typing was kept. */
 .note-status {
   min-height: 12px;
   font-size: 10.5px;
-  color: var(--txf);
+  color: var(--txm);
 }
 
 .note-print {
@@ -4096,5 +4178,276 @@ table.cmp-table {
   body::before {
     animation: none;
     transform: none;
+  }
+}
+
+/* =========================================================================
+   Sharing (Phase 6.7)
+   ========================================================================= */
+
+.share-panel {
+  padding: 22px;
+}
+.share-hd {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+}
+.share-sub {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--txm);
+  margin: 0 0 16px;
+  max-width: 60ch;
+}
+
+.share-url {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+.share-url input {
+  flex: 1 1 320px;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--tx);
+  background: var(--s2);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+  padding: 9px 11px;
+  /* The token is long and must not push the panel wide on a phone. */
+  text-overflow: ellipsis;
+}
+.share-url input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+.share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.share-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--txm);
+}
+.share-confirm > span {
+  flex: 1 1 260px;
+}
+
+/* Two columns where there is room, stacked below. Deliberately not a
+   disclosure widget: what a link exposes is the decision being made, so it is
+   never behind a click. */
+.share-scope {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+}
+.share-scope h2 {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--txm);
+  margin: 0 0 8px;
+}
+.share-scope ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.share-scope li {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--tx);
+  margin-bottom: 4px;
+}
+.share-scope .share-private li {
+  color: var(--txm);
+}
+
+/* ---- The shared view itself ---- */
+
+/* No app chrome, so the page provides its own frame. */
+.shared-page {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+.shared-section {
+  margin-top: 34px;
+}
+
+.shared-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  margin: 0;
+}
+.shared-facts dt {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--txm);
+  margin-bottom: 3px;
+}
+.shared-facts dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.shared-goal {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--txm);
+  margin: 14px 0 0;
+  max-width: 68ch;
+}
+
+.shared-apps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* Urgency reads through --u, the same variable and the same four colours the
+   tracker cards and the timeline use. A shared plan showing a different colour
+   for "due this week" than the student's own tracker does would be two people
+   looking at the same deadline and seeing different urgency. */
+.shared-app {
+  --u: var(--bmed);
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-left: 3px solid var(--u);
+  border-radius: var(--r);
+}
+.shared-app[data-urgency="past"],
+.shared-app[data-urgency="urgent"] {
+  --u: var(--red);
+}
+.shared-app[data-urgency="soon"] {
+  --u: var(--orange);
+}
+.shared-app[data-urgency="later"] {
+  --u: var(--blue);
+}
+.shared-app-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.shared-app-meta {
+  display: block;
+  font-size: 11.5px;
+  color: var(--txm);
+  margin-top: 2px;
+}
+.shared-app-when {
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--txm);
+}
+.shared-app-when strong {
+  display: block;
+  font-size: 13px;
+  color: var(--tx);
+}
+.shared-app-caveat {
+  display: block;
+  font-size: 10.5px;
+  color: var(--txm);
+  max-width: 22ch;
+}
+.shared-app-progress {
+  font-size: 11.5px;
+  color: var(--txm);
+  white-space: nowrap;
+}
+
+.shared-tier {
+  margin-top: 16px;
+}
+.shared-tier h3 {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--txm);
+  margin: 0 0 8px;
+}
+.shared-tier h3 span {
+  color: var(--tx);
+}
+.shared-tier ul,
+.shared-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+.shared-tier li,
+.shared-notes li,
+.shared-award {
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--r);
+}
+.shared-award {
+  margin-bottom: 8px;
+}
+.shared-uni {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.shared-uni-meta {
+  display: block;
+  font-size: 11.5px;
+  color: var(--txm);
+  margin-top: 2px;
+}
+.shared-note-text {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--txm);
+  margin: 6px 0 0;
+}
+
+@media (max-width: 620px) {
+  .shared-app {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .shared-app-when {
+    text-align: left;
+  }
+  .shared-app-caveat {
+    max-width: none;
   }
 }

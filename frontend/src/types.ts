@@ -138,6 +138,18 @@ export interface SchoolNote {
   universityId: number;
   starred: boolean;
   note: string;
+  /**
+   * The admissions officer for this school, if the student has found out who.
+   *
+   * Empty string means "not recorded" — never null and never absent, so every
+   * reader has one thing to check. Name and job title only: see
+   * backend/migrations/0005_school_contacts.sql for why there is no email or
+   * phone number here.
+   */
+  contactName: string;
+  contactRole: string;
+  /** YYYY-MM-DD of the last contact, or "" for never. */
+  contactLastAt: string;
   createdAt?: string;
   updatedAt?: string;
   university: {
@@ -277,8 +289,71 @@ export interface ApplicationMeta {
 
 export type LlmProvider = "claude" | "openai" | "fallback";
 
+/**
+ * Which assistant is answering.
+ *
+ * Not to be confused with LlmProvider, which is *who* is answering (Claude,
+ * OpenAI, or the offline bank). The two are independent: either mode runs on
+ * any provider. Mirrors CHAT_MODES in backend/src/models/chatMode.ts.
+ */
+export type ChatMode = "advising" | "essay";
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   source?: LlmProvider;
+}
+
+// ---- Sharing (Phase 6.7) ----
+
+export interface ShareLink {
+  token: string;
+  createdAt: string;
+}
+
+/**
+ * One student's plan, as a parent or counselor sees it.
+ *
+ * A deliberately narrower shape than the pages it mirrors, and the narrowness
+ * is the feature. There is no chat, no email, no student id, and no
+ * `financialNeed` — see backend/src/app.ts's GET /shared/:token for the four
+ * rules that shape it. `applications` is not `Application`: it carries no id
+ * and no studentId, because a read-only holder has nothing to address them
+ * with.
+ */
+export interface SharedApplication {
+  universityId: number;
+  plan: DecisionPlan;
+  status: ApplicationStatus;
+  deadline: string | null;
+  deadlineIsTypical: boolean;
+  checklist: Checklist;
+  notes: string;
+  university: {
+    id: number;
+    name: string;
+    shortName: string;
+    city: string;
+    state: string;
+    acceptanceRate: number;
+  } | null;
+}
+
+export interface SharedPlan {
+  sharedAt: string;
+  cycleYear: number;
+  student: {
+    name: string;
+    gpa: number;
+    satScore: number | null;
+    actScore: number | null;
+    interestedMajors: string[];
+    extracurriculars: string[];
+    careerGoals: string;
+    preferredRegions: string[];
+  };
+  recommendations: Record<Tier, Recommendation[]>;
+  scholarships: Record<Tier, Scholarship[]>;
+  applications: SharedApplication[];
+  notes: SchoolNote[];
 }

@@ -16,6 +16,15 @@ import type { SchoolNote } from "./types";
 /** How long to wait after the last keystroke before saving. */
 const SAVE_DELAY = 700;
 
+/** The writable half of a note. Every field optional: writes are partial. */
+export interface NotePatch {
+  starred?: boolean;
+  note?: string;
+  contactName?: string;
+  contactRole?: string;
+  contactLastAt?: string;
+}
+
 export interface NotesStore {
   /** Every annotated or starred school, keyed by university id. */
   byId: Map<number, SchoolNote>;
@@ -25,6 +34,11 @@ export interface NotesStore {
   saving: boolean;
   toggleStar: (universityId: number) => void;
   setNote: (universityId: number, note: string) => void;
+  /** Record who handles this school. Debounced like the note. */
+  setContact: (
+    universityId: number,
+    patch: Pick<NotePatch, "contactName" | "contactRole" | "contactLastAt">
+  ) => void;
   forget: (universityId: number) => void;
 }
 
@@ -35,6 +49,7 @@ const EMPTY: NotesStore = {
   saving: false,
   toggleStar: () => {},
   setNote: () => {},
+  setContact: () => {},
   forget: () => {},
 };
 
@@ -47,6 +62,17 @@ export function useSchoolNotes(studentId: string | null): NotesStore {
   // One timer per school: editing two notes in quick succession must not have
   // the second cancel the first one's save.
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+
+  // What that timer will send when it fires, merged across every edit made
+  // during the window.
+  //
+  // One timer per school was enough while a note was the only debounced field.
+  // Phase 6.5 added two more, and a timer that carried only its own field's
+  // value would mean typing a note and then a contact name within 700ms
+  // cancels the note's save and sends the contact alone — the note surviving
+  // on screen, because the optimistic update already landed, and not on the
+  // server. Accumulating the patch is what keeps one timer correct.
+  const pending = useRef(new Map<number, NotePatch>());
 
   useEffect(() => {
     if (!studentId) {
@@ -72,15 +98,17 @@ export function useSchoolNotes(studentId: string | null): NotesStore {
   // Pending saves are flushed by the timers themselves; on unmount there is
   // nowhere to put the result, so they are simply dropped.
   useEffect(() => {
-    const pending = timers.current;
+    const queued = timers.current;
+    const patches = pending.current;
     return () => {
-      pending.forEach((t) => clearTimeout(t));
-      pending.clear();
+      queued.forEach((t) => clearTimeout(t));
+      queued.clear();
+      patches.clear();
     };
   }, []);
 
   const write = useCallback(
-    async (universityId: number, body: { starred?: boolean; note?: string }) => {
+    async (universityId: number, body: NotePatch) => {
       if (!studentId) return;
       setInFlight((n) => n + 1);
       try {
@@ -112,6 +140,9 @@ export function useSchoolNotes(studentId: string | null): NotesStore {
         universityId,
         starred: false,
         note: "",
+        contactName: "",
+        contactRole: "",
+        contactLastAt: "",
         university: null,
         ...current,
         ...patch,
@@ -119,6 +150,32 @@ export function useSchoolNotes(studentId: string | null): NotesStore {
       return next;
     });
   }, []);
+
+  /**
+   * Show the edit now, save it once the typing stops.
+   *
+   * Shared by every debounced field so they queue into one patch per school
+   * rather than racing each other for the school's single timer.
+   */
+  const queue = useCallback(
+    (universityId: number, patch: NotePatch) => {
+      optimistic(universityId, patch);
+      pending.current.set(universityId, { ...pending.current.get(universityId), ...patch });
+
+      const existing = timers.current.get(universityId);
+      if (existing) clearTimeout(existing);
+      timers.current.set(
+        universityId,
+        setTimeout(() => {
+          timers.current.delete(universityId);
+          const body = pending.current.get(universityId);
+          pending.current.delete(universityId);
+          if (body) void write(universityId, body);
+        }, SAVE_DELAY)
+      );
+    },
+    [optimistic, write]
+  );
 
   const toggleStar = useCallback(
     (universityId: number) => {
@@ -132,29 +189,29 @@ export function useSchoolNotes(studentId: string | null): NotesStore {
   );
 
   const setNote = useCallback(
-    (universityId: number, note: string) => {
-      optimistic(universityId, { note });
-      const existing = timers.current.get(universityId);
-      if (existing) clearTimeout(existing);
-      timers.current.set(
-        universityId,
-        setTimeout(() => {
-          timers.current.delete(universityId);
-          void write(universityId, { note });
-        }, SAVE_DELAY)
-      );
-    },
-    [optimistic, write]
+    (universityId: number, note: string) => queue(universityId, { note }),
+    [queue]
+  );
+
+  const setContact = useCallback(
+    (
+      universityId: number,
+      patch: Pick<NotePatch, "contactName" | "contactRole" | "contactLastAt">
+    ) => queue(universityId, patch),
+    [queue]
   );
 
   const forget = useCallback(
     (universityId: number) => {
-      const pending = timers.current.get(universityId);
-      if (pending) {
+      const queued = timers.current.get(universityId);
+      if (queued) {
         // A queued save would otherwise resurrect the note seconds later.
-        clearTimeout(pending);
+        clearTimeout(queued);
         timers.current.delete(universityId);
       }
+      // And its patch with it, or the next edit to this school would carry
+      // the forgotten note's text along with it.
+      pending.current.delete(universityId);
       setById((prev) => {
         const next = new Map(prev);
         next.delete(universityId);
@@ -165,7 +222,7 @@ export function useSchoolNotes(studentId: string | null): NotesStore {
     [studentId]
   );
 
-  return { byId, loading, error, saving: inFlight > 0, toggleStar, setNote, forget };
+  return { byId, loading, error, saving: inFlight > 0, toggleStar, setNote, setContact, forget };
 }
 
 export { EMPTY as EMPTY_NOTES };

@@ -58,3 +58,23 @@ describe("titleFor", () => {
     }
   });
 });
+
+describe("the chatbot's two assistants", () => {
+  // /chat and /chat?mode=essay are two bookmarkable pages, which is the same
+  // problem this module exists to solve — just inside one path.
+  it("names the essay assistant separately", () => {
+    expect(titleFor("/chat", "?mode=essay")).toBe("Essay brainstorm — Compass");
+  });
+
+  it("keeps the advisor's title for the bare path and for ?mode=advising", () => {
+    expect(titleFor("/chat")).toBe("Ask Compass");
+    expect(titleFor("/chat", "?mode=advising")).toBe("Ask Compass");
+    expect(titleFor("/chat", "?mode=nonsense")).toBe("Ask Compass");
+  });
+
+  // A query string is page state on /compare, not a different page.
+  it("does not let a query string rename any other route", () => {
+    expect(titleFor("/compare", "?ids=1,2")).toBe("Compare schools — Compass");
+    expect(titleFor("/matches", "?mode=essay")).toBe("Your matches — Compass");
+  });
+});

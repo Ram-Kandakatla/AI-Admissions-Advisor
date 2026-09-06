@@ -1,4 +1,4 @@
-import { lazy, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import {
   Link,
   Route,
@@ -11,11 +11,12 @@ import { api } from "./api";
 import { toggleCompare } from "./compare";
 import { slugifyMajor } from "./slug";
 import { useSchoolNotes } from "./useSchoolNotes";
-import type { AuthUser, Meta, StudentRecord } from "./types";
+import type { AuthUser, ChatMode, Meta, StudentRecord } from "./types";
 import Layout from "./components/Layout";
 import Home from "./components/Home";
 import ProfileForm from "./components/ProfileForm";
 import NotFound from "./components/NotFound";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 // ---- What ships in the first bundle, and what doesn't ----
 //
@@ -41,6 +42,8 @@ const ApplicationTracker = lazy(() => import("./components/ApplicationTracker"))
 const ApplicationTimeline = lazy(() => import("./components/ApplicationTimeline"));
 const MajorDeepDive = lazy(() => import("./components/MajorDeepDive"));
 const Account = lazy(() => import("./components/Account"));
+const ShareSettings = lazy(() => import("./components/ShareSettings"));
+const SharedPlanView = lazy(() => import("./components/SharedPlanView"));
 
 type Theme = "light" | "dark";
 
@@ -187,6 +190,12 @@ export default function App() {
 
   return (
     <Routes>
+      {/* Outside the Layout route on purpose. The person opening this has no
+          account, no profile and no session, so the app's nav would offer them
+          fourteen destinations they cannot use and a "Sign in" that implies
+          this is theirs. It renders as its own page instead. */}
+      <Route path="/shared/:token" element={<SharedRoute />} />
+
       <Route
         element={
           <Layout
@@ -234,6 +243,8 @@ export default function App() {
         />
 
         <Route path="/timeline" element={<ApplicationTimeline student={student} />} />
+
+        <Route path="/share" element={gated((s) => <ShareSettings student={s} />)} />
 
         <Route
           path="/compare"
@@ -337,6 +348,32 @@ function CompareRoute({
   return <SchoolCompare student={student} selected={selected} onChange={onChange} notes={notes} />;
 }
 
+/**
+ * `/shared/:token` — the read-only view, for someone who is not the student.
+ *
+ * Chrome-free and gate-free by design: this page must render for a visitor
+ * with no session at all, so it deliberately does not go through `gated()`.
+ * Its own Suspense and ErrorBoundary, since it sits outside Layout's.
+ */
+function SharedRoute() {
+  const { token } = useParams();
+  useEffect(() => {
+    document.title = "A shared college plan — Compass";
+  }, []);
+  return (
+    // <main>, because this page renders outside Layout and so gets none of
+    // its landmarks. Without it the whole document sits in no landmark at all,
+    // which is a screen reader with no way to skip past anything.
+    <main className="shared-page" id="main">
+      <ErrorBoundary>
+        <Suspense fallback={<div className="spinner" aria-label="Loading the shared plan" />}>
+          <SharedPlanView token={token ?? ""} />
+        </Suspense>
+      </ErrorBoundary>
+    </main>
+  );
+}
+
 /** `/majors/:major` — the slug in, a navigation out. */
 function MajorsRoute({ student }: { student: StudentRecord | null }) {
   const { major } = useParams();
@@ -365,19 +402,44 @@ function MajorsRoute({ student }: { student: StudentRecord | null }) {
  * in the address bar makes it something to share by accident and something a
  * proxy log keeps. History state is scoped to this tab's history entry and
  * never leaves the browser.
+ *
+ * The assistant *is* in the URL, though — `?mode=essay`. It names which of two
+ * screens you are looking at rather than anything you typed, so it is exactly
+ * the kind of state §5.1 put in the address bar: bookmarkable, shareable, and
+ * survives a refresh. Unknown values fall back to advising rather than
+ * erroring, since a mistyped query string should still show a usable page.
  */
 function ChatRoute({ student }: { student: StudentRecord | null }) {
   const location = useLocation();
   const navigate = useNavigate();
   const question = (location.state as { question?: string } | null)?.question ?? null;
 
+  const requested = new URLSearchParams(location.search).get("mode");
+  const mode: ChatMode = requested === "essay" ? "essay" : "advising";
+
   return (
     <ChatBot
       student={student}
+      mode={mode}
+      // `replace`, so flipping the switch four times doesn't put four entries
+      // between the student and the page they arrived from. Advising drops the
+      // parameter entirely rather than writing ?mode=advising — the default
+      // belongs at the bare URL.
+      onModeChange={(next) =>
+        navigate(
+          { pathname: location.pathname, search: next === "essay" ? "?mode=essay" : "" },
+          { replace: true, state: location.state }
+        )
+      }
       initialQuestion={question}
       // Drop it from the history entry once asked, or a refresh or a trip
       // back to this page would ask it again.
-      onQuestionSent={() => navigate(location.pathname, { replace: true, state: null })}
+      onQuestionSent={() =>
+        navigate(
+          { pathname: location.pathname, search: location.search },
+          { replace: true, state: null }
+        )
+      }
     />
   );
 }

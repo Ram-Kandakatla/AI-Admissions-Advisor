@@ -16,8 +16,12 @@
 //   GET  /api/students/:id/notes             Starred schools + notes
 //   PUT  /api/students/:id/notes/:uniId      Star and/or annotate one school
 //   DELETE /api/students/:id/notes/:uniId    Forget a school entirely
-//   POST /api/chat                           Ask the admissions chatbot
-//   GET  /api/students/:id/chat              Fetch conversation history
+//   POST /api/chat                           Ask the chatbot (?mode=advising|essay)
+//   GET  /api/students/:id/chat              Fetch one thread (?mode=advising|essay)
+//   GET  /api/students/:id/share             The student's share link, if any
+//   POST /api/students/:id/share             Create it, or {rotate:true} to replace
+//   DELETE /api/students/:id/share           Revoke it
+//   GET  /api/shared/:token                  Read-only plan — NO SESSION, token is the credential
 //   GET  /api/majors                         Every major with a school count
 //   GET  /api/majors/:major                  Deep dive on one major (?studentId=)
 //   GET  /api/application-meta               Decision plans, statuses, checklist
@@ -46,6 +50,7 @@ import {
   normalizeChecklist,
   validateApplication,
 } from "./models/application.js";
+import { CHAT_MODES, parseChatMode } from "./models/chatMode.js";
 import { createStore } from "./store/dataStore.js";
 import { loadUniversities, universityIndex } from "./store/staticData.js";
 import { recommendUniversities } from "./services/recommendationEngine.js";
@@ -479,9 +484,18 @@ app.delete("/students/:id/applications/:appId", async (c) => {
 // without a second request or a client-side lookup table.
 
 const MAX_NOTE = 1000;
+// A name and a job title, not prose. Generous enough for "Assistant Director of
+// Admissions, Mid-Atlantic Region" and short enough that neither field becomes
+// a second notepad.
+const MAX_CONTACT_NAME = 120;
+const MAX_CONTACT_ROLE = 120;
 
 function decorateNote(
-  note: Pick<SchoolNoteRecord, "universityId" | "starred" | "note"> & Partial<SchoolNoteRecord>,
+  note: Pick<
+    SchoolNoteRecord,
+    "universityId" | "starred" | "note" | "contactName" | "contactRole" | "contactLastAt"
+  > &
+    Partial<SchoolNoteRecord>,
   universitiesById: Map<number, University>
 ) {
   const uni = universitiesById.get(note.universityId) || null;
@@ -521,8 +535,10 @@ app.put("/students/:id/notes/:universityId", async (c) => {
   const body = await readJson<Record<string, unknown>>(c);
   const existing = await store.getSchoolNote(c.req.param("id"), universityId);
 
-  // A partial write keeps the other half: starring a school from a card must
-  // not wipe the paragraph typed about it on another page, and vice versa.
+  // A partial write keeps every other part: starring a school from a card must
+  // not wipe the paragraph typed about it on another page, nor the name of the
+  // officer recorded on a third. Each field is only touched when the request
+  // actually mentions it.
   const starred =
     body.starred === undefined ? Boolean(existing?.starred) : Boolean(body.starred);
 
@@ -534,13 +550,59 @@ app.put("/students/:id/notes/:universityId", async (c) => {
     note = body.note.slice(0, MAX_NOTE);
   }
 
-  const record = await store.saveSchoolNote(c.req.param("id"), universityId, { starred, note });
+  // A person's name and job title, not free-form text, so the caps are much
+  // tighter than the note's — and trimmed, so " " is stored as the empty
+  // string rather than as a contact that looks present to every check and
+  // blank on screen.
+  let contactName = existing?.contactName ?? "";
+  let contactRole = existing?.contactRole ?? "";
+  for (const [key, cap] of [
+    ["contactName", MAX_CONTACT_NAME],
+    ["contactRole", MAX_CONTACT_ROLE],
+  ] as const) {
+    if (body[key] === undefined) continue;
+    if (typeof body[key] !== "string") {
+      return c.json({ error: `${key} must be a string` }, 400);
+    }
+    const value = (body[key] as string).trim().slice(0, cap);
+    if (key === "contactName") contactName = value;
+    else contactRole = value;
+  }
 
-  // Emptied and unstarred, so the row is gone. The client still gets the same
-  // shape back — an empty note for that school — plus `removed` so it can drop
-  // the card from a saved list without refetching.
+  // Validated rather than capped, unlike the two above: a truncated name is
+  // still a name, but a truncated date is a different day. isDateString is the
+  // same check application deadlines go through.
+  let contactLastAt = existing?.contactLastAt ?? "";
+  if (body.contactLastAt !== undefined) {
+    if (body.contactLastAt === null || body.contactLastAt === "") {
+      contactLastAt = "";
+    } else if (!isDateString(body.contactLastAt)) {
+      return c.json({ error: "contactLastAt must be a YYYY-MM-DD date" }, 400);
+    } else {
+      contactLastAt = body.contactLastAt as string;
+    }
+  }
+
+  const record = await store.saveSchoolNote(c.req.param("id"), universityId, {
+    starred,
+    note,
+    contactName,
+    contactRole,
+    contactLastAt,
+  });
+
+  // Emptied, unstarred, and with no contact, so the row is gone. The client
+  // still gets the same shape back — a blank note for that school — plus
+  // `removed` so it can drop the card from a saved list without refetching.
   if (!record) {
-    const blank = { universityId, starred: false, note: "" };
+    const blank = {
+      universityId,
+      starred: false,
+      note: "",
+      contactName: "",
+      contactRole: "",
+      contactLastAt: "",
+    };
     return c.json({ ...decorateNote(blank, index), removed: true });
   }
   return c.json(decorateNote(record, index));
@@ -552,6 +614,145 @@ app.delete("/students/:id/notes/:universityId", async (c) => {
     .deleteSchoolNote(c.req.param("id"), Number(c.req.param("universityId")));
   if (!removed) return c.json({ error: "No note for that school" }, 404);
   return c.body(null, 204);
+});
+
+// ---- Sharing ----
+//
+// A read-only view of one student's plan, for a parent or a counselor.
+//
+// The three routes below are behind requireOwner (they sit under
+// /students/:id), so only the student manages their own link. The fourth —
+// GET /shared/:token — is the single unauthenticated read path into student
+// data in this API, and everything about it is written defensively.
+
+app.get("/students/:id/share", async (c) => {
+  const link = await c.get("store").getShareLink(c.req.param("id"));
+  return c.json({ link: link && { token: link.token, createdAt: link.createdAt } });
+});
+
+/**
+ * Create the link, or rotate it.
+ *
+ * Idempotent by default: asking twice gives the same token, so a student who
+ * reloads the page does not quietly strand the URL they already sent their
+ * counselor. `{ rotate: true }` is the deliberate opposite — it mints a new
+ * token and the old one stops working immediately, which is what "this went to
+ * the wrong person" needs.
+ */
+app.post("/students/:id/share", async (c) => {
+  const store = c.get("store");
+  const studentId = c.req.param("id");
+  const { rotate } = await readJson<{ rotate?: unknown }>(c);
+
+  const link = rotate === true
+    ? await store.rotateShareLink(studentId)
+    : await store.ensureShareLink(studentId);
+
+  return c.json({ link: { token: link.token, createdAt: link.createdAt } }, 201);
+});
+
+app.delete("/students/:id/share", async (c) => {
+  await c.get("store").revokeShareLink(c.req.param("id"));
+  // 204 whether or not there was a link. "Revoked" and "there was nothing to
+  // revoke" are the same end state, and reporting 404 for the second would
+  // make a double-click look like a failure.
+  return c.body(null, 204);
+});
+
+/**
+ * The shared view. NO SESSION, BY DESIGN — the token is the credential.
+ *
+ * Registered outside the /students/:id prefix on purpose, so requireOwner does
+ * not apply and nobody later assumes it does. Four rules hold this route
+ * together, and all four are load-bearing:
+ *
+ *  1. **It builds its own payload, field by field.** It never spreads a record
+ *     from the store. `...student` would ship every column the profile ever
+ *     grows, so the next migration would silently widen what a shared link
+ *     exposes. Listing the fields means adding one is a decision somebody makes
+ *     in this file.
+ *  2. **No chat, ever, and no toggle to add it.** A student asking whether
+ *     their family can afford a school, or working through an essay about
+ *     something hard, did not write it for an audience. There is no product
+ *     reason strong enough to make that conditional.
+ *  3. **No email, no user id, no session.** The holder learns about the plan,
+ *     never about the account behind it.
+ *  4. **404 for an unknown token and for a revoked one alike.** Distinguishing
+ *     them would confirm that a link was once real, which is exactly the thing
+ *     a forwarded-and-then-revoked URL should stop telling people.
+ */
+app.get("/shared/:token", async (c) => {
+  const store = c.get("store");
+  const link = await store.findShareLink(c.req.param("token"));
+  const student = link && (await store.getStudent(link.studentId));
+
+  if (!link || !student) {
+    return c.json({ error: "This link is no longer active." }, 404);
+  }
+
+  // Never cached anywhere but the reader's own tab. A shared URL is the kind
+  // of thing that ends up passing through a proxy, and a plan cached there
+  // outlives the revocation that was supposed to end it.
+  c.header("Cache-Control", "no-store, private");
+
+  const index = universityIndex();
+  const [applications, notes] = await Promise.all([
+    store.getApplications(student.id),
+    store.getSchoolNotes(student.id),
+  ]);
+
+  return c.json({
+    sharedAt: new Date().toISOString(),
+    cycleYear: currentCycleYear(),
+    // Enumerated, not spread. See rule 1 above.
+    student: {
+      name: student.name,
+      gpa: student.gpa,
+      satScore: student.satScore,
+      actScore: student.actScore,
+      interestedMajors: student.interestedMajors,
+      extracurriculars: student.extracurriculars,
+      careerGoals: student.careerGoals,
+      preferredRegions: student.preferredRegions,
+      // financialNeed is deliberately absent. "How much help does this family
+      // need paying for college" is the most sensitive field in the profile,
+      // it is not needed to read the plan, and a link forwarded one hop past
+      // the intended reader should not carry it.
+    },
+    recommendations: recommendUniversities(student),
+    scholarships: recommendScholarships(student),
+    // Enumerated for the same reason the profile is, and this one was caught
+    // by a test rather than by care: reusing decorate() here shipped the
+    // application's `studentId` on every row, because ApplicationRecord
+    // carries it and decorate() spreads. Knowing the id opens nothing without
+    // a session — but a read-only view has no business handing out the key
+    // every owner-gated route is addressed by.
+    applications: [...applications].sort(byDeadline).map((a) => {
+      const uni = index.get(a.universityId);
+      return {
+        universityId: a.universityId,
+        plan: a.plan,
+        status: a.status,
+        deadline: a.deadline,
+        deadlineIsTypical: a.deadlineIsTypical,
+        checklist: a.checklist,
+        notes: a.notes,
+        university: uni
+          ? {
+              id: uni.id,
+              name: uni.name,
+              shortName: uni.shortName,
+              city: uni.city,
+              state: uni.state,
+              acceptanceRate: uni.acceptanceRate,
+            }
+          : null,
+      };
+    }),
+    // SchoolNoteRecord carries no student id, so this one is safe as it
+    // stands — the test above is what keeps that true.
+    notes: notes.map((n) => decorateNote(n, index)),
+  });
 });
 
 // ---- Chat ----
@@ -586,13 +787,27 @@ app.use(
 
 app.post("/chat", async (c) => {
   const store = c.get("store");
-  const { studentId, question } = await readJson<{ studentId?: string; question?: unknown }>(c);
+  const { studentId, question, mode: rawMode } = await readJson<{
+    studentId?: string;
+    question?: unknown;
+    mode?: unknown;
+  }>(c);
 
   if (typeof question !== "string" || question.trim() === "") {
     return c.json({ error: "A non-empty question is required." }, 400);
   }
   if (question.length > 1000) {
     return c.json({ error: "Please keep questions under 1000 characters." }, 400);
+  }
+
+  // Absent means advising, so every client written before Phase 6.3 keeps
+  // working untouched. An unrecognised mode is refused rather than coerced —
+  // quietly filing an essay turn in the advising thread is a bug that only
+  // shows up later, as history that mysteriously belongs to the wrong
+  // conversation.
+  const mode = parseChatMode(rawMode);
+  if (!mode) {
+    return c.json({ error: `mode must be one of: ${CHAT_MODES.join(", ")}` }, 400);
   }
 
   // Same off-path ownership case as /majors/:major above, with more at stake:
@@ -606,22 +821,25 @@ app.post("/chat", async (c) => {
   }
 
   const student = wantsProfile ? await ownedStudent(c) : null;
-  const history = wantsProfile ? await store.getConversation(studentId) : [];
+  const history = wantsProfile ? await store.getConversation(studentId, mode) : [];
 
   try {
     const { answer, source } = await c
       .get("llm")
-      .answerAdmissionsQuestion(question.trim(), student, history);
+      .answerAdmissionsQuestion(question.trim(), student, history, mode);
     // Only persist history against a profile that exists — chat history is a
     // child of the student row, so there is nothing to hang an unknown id off.
     if (student) {
-      await store.appendMessage(student.id, "user", question.trim());
-      await store.appendMessage(student.id, "assistant", answer);
+      await store.appendMessage(student.id, "user", question.trim(), mode);
+      await store.appendMessage(student.id, "assistant", answer, mode);
     }
-    return c.json({ answer, source });
+    return c.json({ answer, source, mode });
   } catch (err) {
     createLogger(c.env).error("chat request failed", {
       route: "/api/chat",
+      // Which assistant failed is worth knowing and safe to log: it is one of
+      // two fixed strings, not anything the student typed.
+      mode,
       ...errorFields(err),
     });
     return c.json({ error: "Something went wrong answering that. Please try again." }, 500);
@@ -629,7 +847,14 @@ app.post("/chat", async (c) => {
 });
 
 app.get("/students/:id/chat", async (c) => {
-  return c.json({ messages: await c.get("store").getConversation(c.req.param("id")) });
+  const mode = parseChatMode(c.req.query("mode"));
+  if (!mode) {
+    return c.json({ error: `mode must be one of: ${CHAT_MODES.join(", ")}` }, 400);
+  }
+  return c.json({
+    mode,
+    messages: await c.get("store").getConversation(c.req.param("id"), mode),
+  });
 });
 
 // ---- Fallbacks ----
