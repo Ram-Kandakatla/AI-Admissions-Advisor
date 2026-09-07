@@ -18,6 +18,12 @@ node_modules/
 # app. Never in the repo.
 backend/.wrangler/
 
+# The same, for the root: `npm run preview` runs `wrangler pages dev` from here
+# and writes its own build cache and state alongside this file. It is pointed
+# at backend/.wrangler/state for D1 so the two dev loops share one database,
+# but the directory itself still appears.
+/.wrangler/
+
 # The pre-D1 SQLite database, from when the backend ran on node:sqlite. Kept
 # ignored so an existing clone doesn't suddenly start offering to commit it.
 backend/data/compass.db

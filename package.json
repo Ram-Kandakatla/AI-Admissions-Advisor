@@ -2,7 +2,7 @@
   "name": "compass",
   "private": true,
   "version": "1.0.0",
-  "description": "Compass — AI college admissions advisor. Root workspace scripts; the app itself lives in backend/ (Hono on Cloudflare Workers) and frontend/ (React + Vite).",
+  "description": "Compass \u2014 AI college admissions advisor. Root workspace scripts; the app itself lives in backend/ (Hono on Cloudflare Workers) and frontend/ (React + Vite).",
   "engines": {
     "node": ">=22.5.0"
   },
@@ -14,6 +14,8 @@
     "dev:frontend": "npm run dev --prefix frontend",
     "dev": "concurrently -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
     "build": "npm run build --prefix frontend",
+    "build:pages": "npm ci --prefix backend && npm ci --prefix frontend && npm run build --prefix frontend",
+    "preview": "npm run build && backend/node_modules/.bin/wrangler pages dev --persist-to backend/.wrangler/state",
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "npm test --prefix backend",
     "test:frontend": "npm test --prefix frontend",
