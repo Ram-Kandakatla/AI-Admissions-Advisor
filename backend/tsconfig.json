@@ -10,6 +10,12 @@
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
+
+    // Dead imports and locals are a checker's job, not a reviewer's. The
+    // frontend has caught these since Phase 3 via `tsc -b`; the backend only
+    // ran a bare `tsc --noEmit`, so four of them accumulated unnoticed.
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noImplicitOverride": true,
     "verbatimModuleSyntax": true,
 

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import { classifyTier, recommendUniversities } from "../src/services/recommendationEngine.js";
 import type { StudentRecord, University } from "../src/types.js";
 

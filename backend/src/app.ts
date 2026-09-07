@@ -76,7 +76,6 @@ import type {
   AppEnv,
   Checklist,
   SchoolNoteRecord,
-  StudentRecord,
   University,
 } from "./types.js";
 
