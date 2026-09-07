@@ -52,10 +52,25 @@ describe("titleFor", () => {
       "/chat",
       "/signin",
       "/signup",
+      "/terms",
+      "/privacy",
+      "/cookies",
+      "/security",
     ];
     for (const path of destinations) {
       expect(titleFor(path), path).not.toBe("Page not found — Compass");
     }
+  });
+});
+
+describe("the legal pages", () => {
+  // These are found in a history list weeks later rather than in a tab bar, so
+  // the title has to name the document, not the app.
+  it("names each document", () => {
+    expect(titleFor("/terms")).toBe("Terms of Service — Compass");
+    expect(titleFor("/privacy")).toBe("Privacy Policy — Compass");
+    expect(titleFor("/cookies")).toBe("Cookie Policy — Compass");
+    expect(titleFor("/security")).toBe("Security & disclosure — Compass");
   });
 });
 

@@ -40,6 +40,29 @@ if (!Element.prototype.scrollTo) {
   Element.prototype.scrollTo = () => {};
 }
 
+// jsdom implements no ResizeObserver, for the same reason it implements no
+// matchMedia or scrollTo: all three are questions about layout, and there is
+// no layout here. The cookie notice observes itself so it can publish its own
+// height for the footer to clear — see CookieNotice.tsx — and without this it
+// throws on mount and takes down every test that renders the app chrome.
+//
+// The callback fires once on observe and never again. That mirrors the one
+// guarantee the real API makes — an initial observation is delivered as soon
+// as an element is observed — and stops there, because everything after that
+// is driven by layout changes jsdom will never have. It is enough for a test
+// to assert that a height was published; a test about *which* height belongs
+// in a browser, where the numbers are real.
+if (!window.ResizeObserver) {
+  window.ResizeObserver = class implements ResizeObserver {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.callback([{ target } as ResizeObserverEntry], this);
+    }
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 if (!window.matchMedia) {
   window.matchMedia = (query: string): MediaQueryList => ({
     media: query,
@@ -53,3 +76,46 @@ if (!window.matchMedia) {
     dispatchEvent: () => false,
   });
 }
+
+// jsdom under this Vitest version exposes no `localStorage` at all — the
+// global is undefined rather than empty. Three things in the app read or write
+// it: the theme persists there, index.html's pre-paint script reads it back,
+// and the cookie notice records that it has been dismissed. All three are
+// wrapped in try/catch for private-mode browsers, so the missing global did
+// not fail anything — it silently took the *else* branch of every one of them,
+// which meant no test could observe the behaviour it was supposed to be
+// covering.
+//
+// A plain in-memory object rather than an instance of jsdom's Storage: the
+// app only ever calls these five methods, and building on Storage.prototype
+// would buy nothing except a subtler thing to go wrong. A test that needs a
+// throwing storage (private mode, quota exceeded) spies on this object
+// directly — `vi.spyOn(window.localStorage, "setItem")` — which works against
+// a plain object and would not work against a prototype-backed one shared
+// with sessionStorage.
+if (!window.localStorage) {
+  const store = new Map<string, string>();
+  const memoryStorage: Storage = {
+    get length() {
+      return store.size;
+    },
+    key: (i) => [...store.keys()][i] ?? null,
+    getItem: (k) => (store.has(k) ? store.get(k)! : null),
+    // Real storage stringifies whatever it is handed, and a test passing a
+    // number should see the same "1" the browser would.
+    setItem: (k, v) => void store.set(k, String(v)),
+    removeItem: (k) => void store.delete(k),
+    clear: () => store.clear(),
+  };
+  Object.defineProperty(window, "localStorage", {
+    value: memoryStorage,
+    configurable: true,
+  });
+}
+
+// Storage outlives a render, so it has to be reset the way the document is —
+// without this, a theme written by one test decides what the next one sees,
+// and the pair passes or fails depending on the order they ran in.
+afterEach(() => {
+  window.localStorage.clear();
+});

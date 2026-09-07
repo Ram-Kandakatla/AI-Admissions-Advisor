@@ -3892,6 +3892,443 @@ table.cmp-table {
   word-break: break-all;
 }
 
+/* =========================================================================
+   Legal & trust pages — /terms, /privacy, /cookies, /security
+
+   These are the only long-form reading surfaces in an app that is otherwise
+   cards, forms and tables, so they get the one thing none of those need: a
+   measure. Everything below is in service of a paragraph you can actually
+   read — a 68ch column, a 1.7 line height, and generous space between
+   sections so the eye can find where one obligation ends and the next begins.
+
+   No new tokens. The whole page is the existing ramp, which is what keeps
+   dark mode working here for free: the only colors used are --tx / --txm,
+   the four accents, and their matching --?bg tints.
+   ========================================================================= */
+.legal {
+  max-width: 68ch;
+  margin: 0 auto;
+  padding-bottom: 20px;
+}
+
+.legal-head {
+  margin-bottom: 22px;
+}
+.legal-head .section-title {
+  margin: 6px 0 10px;
+  /* Wider than the global 22ch: "Security & disclosure" and "What Compass
+     knows about you" both want a second line at 22ch and neither needs one. */
+  max-width: 26ch;
+}
+.legal-head .lead {
+  max-width: none;
+}
+
+.legal-dates {
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--txm);
+}
+
+/* ── The plain-language summary ──
+   Sits above the contents because for most readers it is the whole document.
+   Tinted with --bbg rather than left on --surface so it reads as a distinct
+   register — this is the app talking, not the agreement. */
+.legal-summary {
+  background: var(--bbg);
+  border-color: var(--blue);
+  margin-bottom: 26px;
+}
+.legal-summary-title {
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin: 0 0 12px;
+}
+.legal-tldr {
+  list-style: none;
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.legal-tldr li {
+  position: relative;
+  padding-left: 20px;
+}
+/* A tick rather than a bullet: every line in this list is a thing that is
+   true, and the summary's job is reassurance before it is enumeration. */
+.legal-tldr li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 6px;
+  width: 9px;
+  height: 5px;
+  border-left: 1.5px solid var(--blue);
+  border-bottom: 1.5px solid var(--blue);
+  transform: rotate(-45deg);
+}
+
+/* ── Contents ── */
+.legal-toc {
+  border: 0.5px solid var(--border);
+  border-radius: var(--rl);
+  padding: 16px 20px;
+  margin-bottom: 34px;
+  background: var(--surface);
+}
+.legal-toc-title {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--txm);
+  margin: 0 0 10px;
+}
+.legal-toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  columns: 2;
+  column-gap: 26px;
+  font-size: 12.5px;
+}
+.legal-toc li {
+  break-inside: avoid;
+  margin-bottom: 6px;
+  counter-increment: toc;
+}
+.legal-toc a {
+  color: var(--txm);
+  text-decoration: none;
+}
+.legal-toc a:hover {
+  color: var(--tx);
+  text-decoration: underline;
+}
+
+/* ── Sections ── */
+.legal-section {
+  /* Clears the sticky header when a #anchor jumps here. Without it the
+     heading you asked for lands underneath the nav, which reads as the link
+     having gone to the wrong place. */
+  scroll-margin-top: 84px;
+  margin-bottom: 38px;
+}
+.legal-section h2 {
+  font-family: var(--display);
+  font-size: 19px;
+  line-height: 1.3;
+  letter-spacing: -0.2px;
+  margin: 0 0 12px;
+  padding-bottom: 9px;
+  border-bottom: 0.5px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.legal-num {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  /* --txm, not --txf. The faint token is for text the eye is meant to skip,
+     and at 11px on --surface it measures 2.94:1 in dark mode — below AA. A
+     section number is not decoration: it is how a paragraph gets cited, out
+     loud and in email, so it has to be readable. Caught by the in-page
+     contrast audit, which is worth re-running after any change here. */
+  color: var(--txm);
+  flex: none;
+  /* Tabular so §9 and §10 start at the same x — a ragged left edge down a
+     column of headings is the kind of small wrongness that makes a document
+     look unproofed. */
+  font-variant-numeric: tabular-nums;
+  min-width: 1.4em;
+}
+.legal-section h3 {
+  font-family: var(--display);
+  font-size: 14px;
+  margin: 20px 0 7px;
+  color: var(--tx);
+}
+.legal-section p {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--txm);
+  margin: 0 0 12px;
+}
+.legal-section strong {
+  color: var(--tx);
+  font-weight: 600;
+}
+.legal-section code {
+  font-size: 0.92em;
+}
+
+.legal-list {
+  margin: 0 0 14px;
+  padding-left: 20px;
+  display: grid;
+  gap: 9px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--txm);
+}
+.legal-list li::marker {
+  color: var(--txf);
+}
+
+/* ── The three callout registers ──
+   Deliberately only three, and each means one thing: orange warns, green
+   confirms something checkable, and the plain note closes a page. A document
+   with six colours of box has none. */
+.legal-warn,
+.legal-check,
+.legal-note {
+  border-radius: var(--r);
+  padding: 12px 15px;
+  font-size: 13px;
+  line-height: 1.65;
+  border: 0.5px solid;
+}
+.legal-section .legal-warn {
+  background: var(--obg);
+  border-color: var(--orange);
+  color: var(--orange);
+}
+.legal-section .legal-warn strong {
+  color: var(--orange);
+}
+.legal-section .legal-check {
+  background: var(--gbg);
+  border-color: var(--green);
+  color: var(--green);
+}
+.legal-section .legal-check strong {
+  color: var(--green);
+}
+.legal-section .legal-warn a,
+.legal-section .legal-check a {
+  color: inherit;
+}
+
+.legal-cta-row {
+  margin: 14px 0 16px;
+}
+
+/* ── Tables (cookie inventory, disclosure scope, response targets) ── */
+.legal-table-wrap {
+  /* The page body must never scroll sideways, so a wide table scrolls inside
+     its own box on a phone instead. */
+  overflow-x: auto;
+  margin: 0 0 16px;
+  border: 0.5px solid var(--border);
+  border-radius: var(--r);
+}
+.legal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.55;
+  min-width: 460px;
+}
+.legal-table th,
+.legal-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 10px 13px;
+  border-bottom: 0.5px solid var(--border);
+}
+.legal-table thead th {
+  background: var(--s2);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--txm);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.legal-table tbody th {
+  color: var(--tx);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.legal-table td {
+  color: var(--txm);
+}
+.legal-table tbody tr:last-child th,
+.legal-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.legal-yes {
+  color: var(--green);
+  font-weight: 700;
+}
+.legal-no {
+  color: var(--red);
+  font-weight: 700;
+}
+
+/* ── An unfilled placeholder ──
+   Loud on purpose. The failure this guards against is a legal page shipping
+   with "[YOUR STATE]" set in the same type as everything around it, where it
+   reads as finished at a glance. */
+.legal-todo {
+  background: var(--obg);
+  color: var(--orange);
+  border: 0.5px dashed var(--orange);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 0.92em;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.legal-foot {
+  margin-top: 30px;
+  padding-top: 18px;
+  border-top: 0.5px solid var(--border);
+}
+.legal-note {
+  background: var(--s2);
+  border-color: var(--border);
+  color: var(--txm);
+}
+.legal-siblings {
+  margin-top: 26px;
+  font-size: 11.5px;
+  color: var(--txm);
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .legal-toc ol {
+    columns: 1;
+  }
+  .legal-section h2 {
+    font-size: 17px;
+  }
+}
+
+/* The footer clears the cookie notice.
+   The bar is fixed, so on a page too short to scroll — the 404, a signed-out
+   home — anything under it cannot be reached at all. What it sat on was the
+   footer's legal row, which contains the link to the cookie policy the notice
+   is pointing at. The variable is published by CookieNotice from its own
+   measured height and removed when the bar goes, so this is 20px again the
+   moment it is dismissed. */
+.footer {
+  padding-bottom: calc(20px + var(--cookie-notice-h, 0px));
+}
+
+/* ── The legal row in the site footer ── */
+.footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+}
+.footer-legal a {
+  color: var(--txm);
+  text-decoration: none;
+  border-bottom: 0.5px solid transparent;
+}
+.footer-legal a:hover {
+  color: var(--tx);
+  border-bottom-color: var(--bmed);
+}
+.footer-legal a[aria-current="page"] {
+  color: var(--tx);
+  font-weight: 600;
+}
+
+/* =========================================================================
+   Cookie notice
+
+   A bar, not a modal and not an overlay that dims the page. Nothing is being
+   asked — Compass sets one strictly-necessary cookie — so this informs and
+   leaves. It sits at the bottom because that is where the eye goes last, and
+   it is last in the DOM so a keyboard user reaches it after the content
+   rather than before it.
+   ========================================================================= */
+.cookie-notice {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  background: var(--surface);
+  border-top: 0.5px solid var(--bmed);
+  /* The one shadow on this component, and it earns its place: the bar floats
+     over scrolling content and needs to read as a layer above it rather than
+     as the end of the page. */
+  box-shadow: 0 -6px 22px var(--glow);
+  padding: 12px 0;
+  animation: cookie-rise 0.28s ease-out;
+}
+
+/* Slides up from the edge rather than fading in over the content — a fade
+   makes text appear on top of text for a moment, which is briefly unreadable
+   in exactly the place someone is trying to read. */
+@keyframes cookie-rise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Someone who has asked for less motion gets none. The bar still appears; it
+   simply arrives rather than travels. */
+@media (prefers-reduced-motion: reduce) {
+  .cookie-notice {
+    animation: none;
+  }
+}
+
+.cookie-notice-inner {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 28px);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.cookie-notice-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--txm);
+  flex: 1;
+}
+.cookie-notice-text strong {
+  color: var(--tx);
+}
+.cookie-notice-link {
+  white-space: nowrap;
+}
+.cookie-notice-ok {
+  flex: none;
+}
+
+@media (max-width: 620px) {
+  .cookie-notice-inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .cookie-notice-ok {
+    width: 100%;
+  }
+}
+
 @media print {
   :root,
   [data-theme="dark"] {
@@ -3935,6 +4372,33 @@ table.cmp-table {
   body {
     background: #fff;
   }
+  /* Legal pages are the one thing here somebody prints to keep or to hand to
+     a parent, so they get a paper measure rather than the screen's 68ch, and
+     a heading is never left stranded at the foot of a page. The contents list
+     goes: its anchors do nothing on paper and it would cost most of page one.
+     The placeholder highlight deliberately survives — a draft that prints as
+     though it were finished is the whole failure it exists to prevent. */
+  .legal {
+    max-width: none;
+  }
+  .legal-toc {
+    display: none;
+  }
+  .legal-section {
+    margin-bottom: 26px;
+  }
+  .legal-section h2,
+  .legal-section h3 {
+    break-after: avoid;
+  }
+  .legal-summary,
+  .legal-table-wrap {
+    break-inside: avoid;
+  }
+  .legal-table-wrap {
+    overflow-x: visible;
+  }
+
   /* The drifting clouds and stars are a screen affordance. */
   body::before,
   body::after {

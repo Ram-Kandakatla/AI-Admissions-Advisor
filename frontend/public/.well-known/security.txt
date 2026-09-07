@@ -1,0 +1,36 @@
+# Compass — security contact, per RFC 9116.
+#
+# WHY CONTACT IS A URL AND NOT AN EMAIL ADDRESS
+#
+# RFC 9116 permits either. A URL is the better choice here for the same reason
+# the Security page uses one: there is no mailbox to publish and therefore none
+# to harvest, the report lands in a workflow that already has private
+# discussion and a coordinated-disclosure path attached, and — the practical
+# one — a GitHub repository outlives a personal address. A security.txt
+# pointing at a dead mailbox is worse than no security.txt, because it converts
+# a researcher who wanted to help into one who believes they were ignored.
+#
+# Reporting requires "Private vulnerability reporting" to be enabled on the
+# repository: Settings -> Code security and analysis. It is off by default.
+#
+# BEFORE DEPLOYING, three things need doing here:
+#   1. Set Canonical to the real https origin (this file must be served from
+#      /.well-known/security.txt at that exact URL for the field to be valid).
+#   2. Push Expires out from the deploy date. RFC 9116 says it SHOULD be less
+#      than a year away, so the value below is deliberately just under rather
+#      than exactly twelve months — a strict validator reads an exact year as
+#      out of range. An expired file is treated as stale by every scanner
+#      that reads one, so this needs a calendar reminder, not good intentions.
+#   3. Consider signing this file with the PGP key referenced by Encryption,
+#      if one is ever published. Unsigned is fine and is what most sites do.
+
+Contact: https://github.com/kandakatla-ram/AI-Admissions-Advisor/security/advisories/new
+Expires: 2027-08-31T00:00:00.000Z
+Preferred-Languages: en
+Policy: https://compass.example.com/security
+Canonical: https://compass.example.com/.well-known/security.txt
+
+# Compass is open source; the code behind every claim on the policy page above
+# is readable, which is a better basis for trust than the claim itself.
+# Good-faith research within the scope on that page is authorised, and no legal
+# action will be pursued over it.

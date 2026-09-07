@@ -45,6 +45,15 @@ const Account = lazy(() => import("./components/Account"));
 const ShareSettings = lazy(() => import("./components/ShareSettings"));
 const SharedPlanView = lazy(() => import("./components/SharedPlanView"));
 
+// The legal and trust pages. Lazy like everything else behind a click, and
+// grouped into one chunk each — they are text, they share a layout component,
+// and a visitor who opens the privacy policy has already decided to read
+// rather than to browse, so a request they never notice is the right cost.
+const Terms = lazy(() => import("./components/legal/Terms"));
+const Privacy = lazy(() => import("./components/legal/Privacy"));
+const CookiePolicy = lazy(() => import("./components/legal/CookiePolicy"));
+const Security = lazy(() => import("./components/legal/Security"));
+
 type Theme = "light" | "dark";
 
 // The pre-paint script in index.html has already put the right theme on
@@ -285,6 +294,16 @@ export default function App() {
             />
           }
         />
+
+        {/* Ungated and outside every profile check, deliberately. A visitor
+            deciding whether to trust Compass with a GPA reads these *before*
+            there is anything to gate on, and a privacy policy you have to sign
+            up to read is not a privacy policy. They are also the destinations
+            a footer link has to reach from anywhere, including from the 404. */}
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/cookies" element={<CookiePolicy />} />
+        <Route path="/security" element={<Security />} />
 
         <Route path="*" element={<NotFound />} />
       </Route>

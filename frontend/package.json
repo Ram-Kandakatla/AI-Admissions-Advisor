@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc -b",
     "preview": "vite preview",
-    "icons": "node scripts/build-icons.mjs"
+    "icons": "node scripts/build-icons.mjs",
+    "fonts": "node scripts/fetch-fonts.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
