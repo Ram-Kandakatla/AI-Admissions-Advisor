@@ -1,0 +1,114 @@
+# Compass — Cloudflare Pages project configuration (Phase 7).
+#
+# This is the deployed configuration. It is the second wrangler file in the
+# repo, and the split is deliberate rather than an oversight:
+#
+#   wrangler.toml          (this file) — Pages mode. Read by Cloudflare when it
+#                          builds and deploys, and by `wrangler pages dev`.
+#                          Serves frontend/dist plus functions/api/[[route]].ts.
+#   backend/wrangler.toml  — Workers mode. Read by the local `wrangler dev`
+#                          loop on :8787, and by backend/vitest.config.ts, which
+#                          takes the test bindings from it precisely so a test
+#                          cannot pass under a configuration the deployed thing
+#                          does not have.
+#
+# The two must agree on compatibility_date, compatibility_flags and the DB
+# binding. They are duplicated here because Pages will not read a config from a
+# subdirectory, and the alternative — keeping production settings in dashboard
+# fields instead — puts them outside git and outside review. Change one, change
+# the other; there is no import mechanism to lean on.
+#
+# NOTE: the fields this file sets become read-only in the Cloudflare dashboard.
+# That is the intended direction for anything that should be reviewed, and it
+# is the reason LOG_LEVEL is deliberately absent below.
+
+name = "compass-web"
+
+# Required in Pages mode, and what tells wrangler this is a Pages project
+# rather than a Worker. Relative to this file, so it is the frontend's Vite
+# output directory. There is no `main` key: Pages discovers functions/ by
+# convention instead, which is why functions/api/[[route]].ts is named the way
+# it is.
+pages_build_output_dir = "frontend/dist"
+
+compatibility_date = "2026-08-01"
+
+# Same flag, same reason as backend/wrangler.toml: the Anthropic and OpenAI
+# SDKs pull in Node built-in shims, and without this the bundle fails at build
+# time. It has to be repeated here because the Function is bundled by Pages
+# using this config, not the backend one.
+compatibility_flags = ["nodejs_compat"]
+
+# ============================================================================
+# Production — the top-level configuration is the production environment.
+# ============================================================================
+
+[[d1_databases]]
+binding = "DB"
+database_name = "compass-db"
+# Filled in from `wrangler d1 create compass-db` — see PHASE-7.md. Until then
+# a deploy fails fast with an unknown-database error, which is the right
+# failure: better than silently binding nothing and 500ing on every route.
+database_id = "REPLACE-WITH-PRODUCTION-D1-DATABASE-ID"
+# Relative to this file. Declared here, and not only in backend/wrangler.toml,
+# because this is the config that knows the real database ids — so this is the
+# only place `wrangler d1 migrations apply --remote` can be run from. The
+# backend copy stays local-only.
+migrations_dir = "backend/migrations"
+
+[vars]
+# Belt and braces. Option A puts the frontend and the API on one origin, so no
+# browser request from Compass to Compass is cross-origin and this allowlist is
+# never consulted for normal traffic. It matters for what it *refuses*: without
+# it the middleware falls back to localhost:5173, and any other site's fetch is
+# rejected. Replace with the custom domain when Phase 7.5 attaches one.
+CORS_ORIGIN = "https://compass-web.pages.dev"
+
+# LOG_LEVEL is deliberately NOT set here, and its absence is the decision.
+#
+# Phase 4 made it a var rather than a secret for one stated reason: so it could
+# be turned up mid-incident from the dashboard without a redeploy. Declaring it
+# in this file would make that dashboard field read-only and put a log-level
+# change behind a git push and a rebuild — losing the only property it was
+# given for. There is also nothing to record: log.ts already defaults to
+# "info", so a committed LOG_LEVEL = "info" would be a no-op that costs the
+# knob. Set it in the dashboard when an incident calls for "debug", and clear
+# it afterwards.
+
+# ============================================================================
+# Preview — every non-production deployment, i.e. every pull request.
+# ============================================================================
+#
+# Preview gets its OWN database. Phase 7.4 makes this call for the LLM key —
+# leave it unset on Preview so previews run the offline fallback and spend no
+# real money — and the same reasoning applies harder to student data: a PR
+# preview is unreviewed code, and pointing it at the production D1 would let a
+# half-finished migration or a bad DELETE reach real profiles. A preview
+# database costs nothing and fails safe.
+#
+# Named to sort next to its production sibling in the dashboard, which is the
+# actual benefit a naming convention buys (Phase 7.6).
+#
+# Both of the keys below have to be restated rather than inherited: `vars` and
+# `d1_databases` are non-inheritable, and Pages requires an environment that
+# overrides any one of them to specify all of them. Omitting env.preview.vars
+# here would leave preview deployments with no CORS_ORIGIN at all, not with
+# the production one.
+#
+# Remember to apply migrations to both databases — see PHASE-7.md.
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "compass-db-preview"
+database_id = "REPLACE-WITH-PREVIEW-D1-DATABASE-ID"
+# The same migrations. Preview differs from production in its data, never in
+# its schema — a preview running an older schema would fail in ways production
+# never would, which is the opposite of what a preview is for.
+migrations_dir = "backend/migrations"
+
+[env.preview.vars]
+# Preview deployments are same-origin too, so this is never consulted in
+# practice. It cannot be made accurate anyway: each preview is served from its
+# own <hash>.compass-web.pages.dev hostname, and no static allowlist can
+# enumerate those in advance.
+CORS_ORIGIN = "https://compass-web.pages.dev"

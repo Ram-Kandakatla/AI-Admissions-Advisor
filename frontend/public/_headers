@@ -1,0 +1,47 @@
+# Response headers for the static side of the app.
+#
+# This covers documents and assets only. Pages does NOT apply this file to
+# responses produced by functions/api/[[route]].ts — a Function's headers come
+# from its own code, which for /api/* is hono/secure-headers in backend/src/
+# app.ts. So the two halves of the origin are hardened in two places by
+# necessity, not by choice; if you change a policy here, check whether app.ts
+# needs the same change.
+
+/*
+  # The HTML document was the one thing with no frame protection. app.ts sends
+  # X-Frame-Options on API responses, but that does nothing for the page a
+  # browser actually renders, so until this file existed Compass could be
+  # framed and clickjacked. Nothing legitimately embeds this app.
+  #
+  # This is the legacy header rather than a CSP `frame-ancestors`. A real CSP
+  # is worth doing and is not a one-liner: the document loads Google Fonts and
+  # runs the inline theme script that prevents the dark-mode flash, so a policy
+  # written carelessly here breaks first paint. Deferred deliberately.
+  X-Frame-Options: DENY
+  # Stops a browser from second-guessing Content-Type — the defense against an
+  # asset being coaxed into executing as script.
+  X-Content-Type-Options: nosniff
+  # The modern browser default, stated rather than assumed: full URL to our own
+  # origin, bare origin to anyone else. It is what keeps the path out of the
+  # Referer on the Google Fonts request every page makes.
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/shared/*
+  # The share link has no account behind it — the URL *is* the credential, and
+  # the token sits in the path. Anything that leaks this URL leaks read access
+  # to a student's plan until they revoke it.
+  #
+  # SharedPlanView already sets rel="noreferrer" on every outbound link it
+  # renders, which is the leak that actually matters. This is the belt to that
+  # pair of braces: it also covers what the page requests rather than links to,
+  # and it does not depend on a future edit remembering the attribute.
+  #
+  # ORDERING IS LOAD-BEARING. Pages does not replace a header from an earlier
+  # matching rule, it appends to it, so this page is actually served
+  # `Referrer-Policy: strict-origin-when-cross-origin, no-referrer`. That is
+  # correct, and correct for a spec reason rather than by luck: a browser walks
+  # the token list in order and keeps the last valid one, which is the
+  # mechanism the spec provides for stating a fallback before a stronger
+  # policy. Moving this block above the /* rule would silently invert it and
+  # leave the share token's page on the weaker policy.
+  Referrer-Policy: no-referrer

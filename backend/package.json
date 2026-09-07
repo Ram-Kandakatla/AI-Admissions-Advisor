@@ -15,7 +15,6 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "db:migrate:local": "wrangler d1 migrations apply compass-db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply compass-db --remote",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {

@@ -10,8 +10,10 @@ Built to the [step-by-step guide](ClaudeAIAdmissionsSteps.md) and the
 [web-design standards](ClaudeWebDesign.md) in this repo. The hosting roadmap is
 [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md); each completed phase has its own
 write-up — [PHASE-1.md](PHASE-1.md) (Workers/D1 migration),
-[PHASE-2.md](PHASE-2.md) (accounts), [PHASE-3.md](PHASE-3.md) (testing & CI), and
-[PHASE-4.md](PHASE-4.md) (observability).
+[PHASE-2.md](PHASE-2.md) (accounts), [PHASE-3.md](PHASE-3.md) (testing & CI),
+[PHASE-4.md](PHASE-4.md) (observability), [PHASE-5.md](PHASE-5.md) (routing,
+code-splitting, accessibility), [PHASE-6.md](PHASE-6.md) (calendar export, essay
+assistant, contacts, sharing), and [PHASE-7.md](PHASE-7.md) (hosting).
 
 ## What's inside
 
@@ -72,6 +74,16 @@ every route returns a 500, you skipped the migration — `npm run db:migrate`.
 
 No Cloudflare account is needed. `wrangler dev` runs a real local D1 (SQLite under
 `backend/.wrangler/state`), so the whole stack works offline.
+
+To see the app in its **deployed** shape instead — one origin serving the built
+frontend and the API together, the way Cloudflare Pages runs it:
+
+```bash
+npm run preview          # wrangler pages dev, port 8788
+```
+
+Use it when a bug looks origin- or routing-related; `npm run dev` is better for
+everything else, since it has hot reload and this does not.
 
 <details>
 <summary>Prefer two terminals?</summary>
@@ -154,10 +166,35 @@ gives you by default — cannot observe that bug at all.
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs both suites, both
 typechecks, and the frontend build on every pull request and every push to `main`.
 
-It deliberately does **not** deploy. Cloudflare Pages' git integration (Phase 7) builds
-and deploys on push and gives every PR its own preview URL, which is less to maintain
-than wiring `wrangler deploy` into Actions and keeping an API token in repository
-secrets. Actions says whether the code is safe to merge; Cloudflare ships it.
+It also builds the Pages Functions bundle — the one step that exercises the deploy path.
+`functions/` has no `node_modules` above it, so a package imported from there resolves
+fine in an editor and then fails in Cloudflare's build; this catches that on the pull
+request instead.
+
+It deliberately does **not** deploy. Cloudflare Pages' git integration builds and deploys
+on push and gives every PR its own preview URL, which is less to maintain than wiring
+`wrangler deploy` into Actions and keeping an API token in repository secrets. Actions
+says whether the code is safe to merge; Cloudflare ships it.
+
+## Deploying
+
+One Cloudflare Pages project serves both halves on one origin: the built frontend from
+`frontend/dist`, and the API from `functions/api/[[route]].ts`, which re-exports the same
+Hono app the local Worker runs. Same origin, so there is no CORS to configure and one
+thing to deploy.
+
+The deployed configuration is the root [`wrangler.toml`](wrangler.toml) — in git rather
+than in dashboard fields, so it is reviewable. `backend/wrangler.toml` is the local-only
+one; the two duplicate a few keys by necessity and both say so.
+
+Preview deployments bind a **separate** database, so an unreviewed pull request cannot
+write to real profiles, and get no LLM key, so they run the offline fallback and cost
+nothing.
+
+The account setup — sign-in, creating the databases, connecting the repo, secrets, the
+domain — is a step-by-step runbook in [PHASE-7.md](PHASE-7.md), along with two things
+that are **blocked rather than pending**: the global rate limit needs both a custom
+domain and a paid plan, and PBKDF2's cost exceeds the Workers free plan's CPU limit.
 
 ## Observability
 

@@ -649,6 +649,12 @@ before it.)*
 
 ## Phase 7 — Hosting on Cloudflare Pages + Workers, step by step
 
+> **Code half built; account half is a runbook. See [PHASE-7.md](PHASE-7.md)
+> for what shipped, the exact steps to run, and — most importantly — the two
+> items below that turned out to be *blocked* rather than pending.** The plan
+> below is preserved as written; where the build deviated, a note says so
+> inline.
+
 Everything above should be done — or done enough to demo — before this
 phase. This is the one-time (well, once-per-project) Cloudflare setup.
 
@@ -686,6 +692,18 @@ load-bearing instead of skippable.
 API, one frontend) and defers Option B's complexity until there's an actual
 reason for it — e.g. a second frontend project wanting to call the same API.
 
+*(Built as Option A, with one correction and one caveat. The sketch above puts
+the `hono/cloudflare-pages` import in `functions/api/[[route]].ts`, which cannot
+resolve in this repo — nothing above `functions/` has a `node_modules`, so tsc
+and esbuild fail identically and the first sign of it would have been a red
+Cloudflare build. The adapter lives in `backend/src/pages.ts` instead and the
+root file is a bare re-export; CI now runs `wrangler pages functions build` so
+that class of break is caught on a PR. The caveat: Cloudflare's docs now say
+outright to start new projects on **Workers**, not Pages, and Workers Builds has
+since gained the git integration and per-PR previews §7.2 picks Pages for. Pages
+was kept deliberately; PHASE-7.md records what that costs and how short the
+migration would be.)*
+
 ### 7.2 Set up Wrangler and the Cloudflare project
 
 ```bash
@@ -703,6 +721,14 @@ offered here.
 - **Build command**: `npm install --prefix frontend && npm run build --prefix frontend`
 - **Build output directory**: `frontend/dist`
 - **Root directory**: repo root (so the `functions/` directory at the root is picked up alongside the frontend build)
+
+*(Two corrections. `npm install -D wrangler` is already done — wrangler has been
+a backend devDependency since Phase 1. And the build command above is wrong for
+this repo: it installs frontend dependencies only, after which the Functions
+bundler cannot resolve `hono`, `@anthropic-ai/sdk` or `openai`, which live in
+`backend/node_modules`. Use `npm run build:pages`, a root script that installs
+both halves — a script rather than a dashboard string so the build command is in
+git and reviewable.)*
 
 ### 7.3 Create the D1 database
 
@@ -731,6 +757,17 @@ Cloudflare Pages supports distinct environment variables for **Production**
 vs. **Preview** — a nice fit for this app specifically: leave the LLM key
 unset on Preview so every PR preview runs in the existing offline-fallback
 mode, and only spend real API money on Production traffic.
+
+*(Done, and the same reasoning was followed through to the **database**, which
+this section stops short of. A preview deployment is unreviewed code; pointing
+it at the production D1 puts real profiles one stray migration away from an
+unread branch. `[env.preview]` binds `compass-db-preview` instead. Note that
+`vars` had to be restated inside that block rather than inherited — Pages
+requires an environment overriding any non-inheritable key to specify all of
+them, so omitting it would leave previews with no `CORS_ORIGIN` at all. Note
+also what is deliberately **not** in the config: `LOG_LEVEL`. Declared fields
+become read-only in the dashboard, and Phase 4 made it a var precisely so it
+could be raised mid-incident without a redeploy.)*
 
 ### 7.5 Custom domain
 
@@ -985,14 +1022,44 @@ land rather than trusting memory.
       `Referrer-Policy` for the shared page in Phase 7; and one pre-existing flaky test in
       `App.test.tsx` (`/majors` slug fallback)
 
-**Phase 7 — Cloudflare Pages + Workers hosting**
-- [ ] Architecture chosen (Option A: Pages + Functions, recommended)
-- [ ] Wrangler installed, Cloudflare Pages project connected to GitHub
-- [ ] D1 database created and bound
-- [ ] Secrets set (`ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) per environment
-- [ ] Custom domain attached
-- [ ] Naming convention picked for multi-project account
+**Phase 7 — Cloudflare Pages + Workers hosting** — **code half done**, account
+half is a runbook in [PHASE-7.md](PHASE-7.md)
+- [x] Architecture chosen — Option A (Pages + Functions), kept deliberately even
+      though Cloudflare now recommends Workers for new projects
+- [x] `functions/api/[[route]].ts` + `backend/src/pages.ts` — the adapter is not
+      where §7.1 puts it, because `hono` cannot resolve from `functions/`
+- [x] Root `wrangler.toml` in Pages mode — the deployed config, in git rather
+      than in dashboard fields. Duplicates compatibility settings and the DB
+      binding from `backend/wrangler.toml`, which vitest still reads
+- [x] `[env.preview]` binding a separate `compass-db-preview`, so an unreviewed
+      PR preview cannot write to real student data
+- [x] `LOG_LEVEL` deliberately **not** declared — declaring it would freeze the
+      dashboard field Phase 4 created it for
+- [x] `frontend/public/_headers` — closes PHASE-6's deferred `Referrer-Policy`
+      item, and closes a gap nobody had noticed: the HTML document had no frame
+      protection at all, since `secure-headers` only covers `/api/*`
+- [x] Remote migrations moved to root scripts (`db:migrate:remote`,
+      `db:migrate:preview`) — the backend's version could only ever have failed,
+      resolving against a config with a placeholder database id
+- [x] CI builds the Pages Functions bundle, the only step exercising the deploy path
+- [x] Verified locally end-to-end with `npm run preview` (`wrangler pages dev`):
+      D1 reachable through the Function, deep SPA routes served, headers applied
+- [ ] Wrangler login, D1 databases created, Pages project connected to GitHub
+- [ ] Migrations applied to both databases
+- [ ] Secret set (`ANTHROPIC_API_KEY`) on Production; Preview deliberately none
+- [ ] Custom domain attached — also unblocks the four `compass.example.com`
+      placeholders in `index.html` and the WAF rule below
+- [x] Naming convention picked — `compass-web`, `compass-db`, `compass-db-preview`
 - [ ] Post-deploy smoke test (incl. second-device data check)
+- [ ] **Blocked, not pending:** the global rate limit. WAF rate limiting rules
+      are zone-scoped, so there is nothing to attach one to until a custom
+      domain exists — and a **15-minute** counting period needs a **Business**
+      plan (Free and Pro cap it at 1 minute; Free allows one rule total). Until
+      then there is no global limit at all. LLM spend is still capped by the
+      in-code `/api/chat` limiter
+- [ ] **Blocked, not pending:** PBKDF2 vs. the plan. Free caps CPU at 10ms per
+      invocation (confirmed current); 100k iterations costs 40–60ms, so signup
+      and login **fail outright** on Free. Settle before the first real signup
 
 **Phase 8 — Post-launch operations**
 - [ ] Backup plan beyond D1's Time Travel window confirmed

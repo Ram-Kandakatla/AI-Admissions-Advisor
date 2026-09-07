@@ -23,6 +23,13 @@
 
     "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "*.ts", "*.d.ts", "data/*.json"],
+  // ../functions is the repo-root Pages Function (Phase 7). It is checked by
+  // this project rather than by a tsconfig of its own because it is backend
+  // code that happens to live at the root — Pages discovers functions/ by
+  // convention and will not look in a subdirectory — and because a tsconfig
+  // in functions/ cannot resolve "@cloudflare/workers-types" from the `types`
+  // array: there is no node_modules above that directory. One include line
+  // beats a second config plus a second CI step.
+  "include": ["src/**/*.ts", "test/**/*.ts", "*.ts", "*.d.ts", "data/*.json", "../functions/**/*.ts"],
   "exclude": ["node_modules"]
 }
