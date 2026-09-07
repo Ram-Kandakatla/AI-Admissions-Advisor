@@ -20,20 +20,21 @@ import type {
   University,
 } from "./types";
 
-// All requests go through the Vite proxy to the backend Worker (/api -> :8787).
-//
-// Phase 7 puts the frontend and the API on one Cloudflare Pages origin, at
-// which point /api resolves directly and the proxy goes away — this file needs
-// no change either way, since every path here is already origin-relative.
+// Every path here is origin-relative, which is what let this file survive
+// Phase 7 unchanged. In local development the Vite proxy forwards /api to the
+// backend Worker on :8787; deployed, Compass is one Cloudflare Pages origin
+// and /api resolves straight to the Function. Same strings either way.
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     headers: { "Content-Type": "application/json" },
-    // Every route that touches a profile is now behind a session cookie.
-    // "include" rather than the default "same-origin" so this keeps working if
-    // Phase 7 puts the API on its own origin (Option B) — at which point the
-    // cookie also needs SameSite=None and the CORS middleware needs
-    // credentials:true, which it already has.
+    // Every route that touches a profile is behind a session cookie.
+    // "include" rather than the default "same-origin". Phase 7 chose Option A,
+    // one origin, so "same-origin" would now be enough — this is kept because
+    // it is also correct under Option A and would be the thing forgotten if the
+    // API were ever split onto its own origin. (That split would additionally
+    // need SameSite=None on the cookie; the CORS middleware already sends
+    // credentials:true.)
     credentials: "include",
     ...options,
   });

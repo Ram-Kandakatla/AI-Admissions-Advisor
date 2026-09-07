@@ -1,9 +1,19 @@
-# Compass API — Cloudflare Worker.
+# Compass API — Cloudflare Worker, for local development.
 #
-# Phase 1 runs this as a standalone Worker (`npm run dev` → wrangler dev on
-# :8787, which the Vite dev server proxies /api to). Phase 7 adds a thin
-# functions/api/[[route]].ts adapter that imports the same src/app.ts, so
-# nothing here has to move when the API becomes a Pages Function.
+# This runs the API as a standalone Worker (`npm run dev` → wrangler dev on
+# :8787, which the Vite dev server proxies /api to), and it is also what
+# vitest.config.ts reads its bindings from, so a test cannot pass under a
+# configuration the deployed app does not have.
+#
+# It is NOT the deployed configuration. Phase 7 puts the API on Cloudflare
+# Pages, which reads the repo root's wrangler.toml instead — Pages will not
+# take a config from a subdirectory. That means compatibility_date, the
+# compatibility flags and the DB binding below exist in both files and have to
+# be changed in both; there is no import mechanism between them. The root file
+# says the same thing from its side.
+#
+# `name` is therefore a local-only label: nothing is ever deployed as
+# "compass-api". The deployed project is "compass-web".
 
 name = "compass-api"
 main = "src/index.ts"
@@ -20,16 +30,18 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "compass-db"
-# Filled in by `wrangler d1 create compass-db` (Phase 7.3). Local `wrangler dev`
-# ignores this and uses a SQLite file under .wrangler/state, so the local dev
-# loop works before the real database exists.
-database_id = "local-placeholder-replace-in-phase-7"
+# Stays a placeholder forever. Local `wrangler dev` ignores it and uses a
+# SQLite file under .wrangler/state, and nothing deploys from this file — the
+# real production and preview ids live in the root wrangler.toml, which is
+# also the only place remote migrations can be applied from.
+database_id = "local-only-never-deployed"
 migrations_dir = "migrations"
 
 [vars]
 # Comma-separated browser origins allowed to call this API. The Vite dev server
-# is the only one that matters until Phase 7. Same allowlist decision as the
-# Express build, just read from a Worker var instead of process.env.
+# on :5173 is the only origin this local Worker ever answers; the deployed
+# value lives in the root wrangler.toml. Same allowlist decision as the Express
+# build, just read from a Worker var instead of process.env.
 CORS_ORIGIN = "http://localhost:5173"
 
 # Lowest level that reaches the log: debug | info | warn | error | silent.
