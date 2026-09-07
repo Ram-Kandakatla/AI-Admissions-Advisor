@@ -9,7 +9,7 @@
 // out where it lives: the global 300/15min limiter no longer exists in code.
 
 import { beforeEach, describe, expect, test } from "vitest";
-import { api, body, get, newStudent, post, resetRateLimits, send } from "./helpers.js";
+import { api, get, newStudent, post, resetRateLimits, send } from "./helpers.js";
 import { inspectApiKey } from "../src/services/llmService.js";
 
 const ALLOWED_ORIGIN = "http://localhost:5173";

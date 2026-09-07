@@ -7,7 +7,7 @@ import {
   recommendScholarships,
 } from "../src/services/scholarshipEngine.js";
 import { loadScholarships } from "../src/store/staticData.js";
-import { body, get, newStudent, post } from "./helpers.js";
+import { body, get, post } from "./helpers.js";
 import type { Scholarship, StudentRecord } from "../src/types.js";
 
 const student = (overrides: Record<string, unknown> = {}): StudentRecord => ({
