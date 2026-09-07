@@ -72,22 +72,6 @@
           document.documentElement.setAttribute("data-theme", theme);
         } catch (e) {}
       })();
-      // TEMPORARY — picking a warmer night palette. ?night=dusk|ember|slate
-      // selects one of the preview blocks in global.css; ?night=off or no
-      // parameter is the current teal. Remove this, the stored key, and the
-      // preview blocks once one of them wins.
-      (function () {
-        try {
-          var pick = new URLSearchParams(location.search).get("night");
-          if (pick) localStorage.setItem("compass-night", pick);
-          var night = localStorage.getItem("compass-night");
-          if (night && night !== "off") {
-            document.documentElement.setAttribute("data-night", night);
-          } else {
-            document.documentElement.removeAttribute("data-night");
-          }
-        } catch (e) {}
-      })();
     </script>
   </head>
   <body>
