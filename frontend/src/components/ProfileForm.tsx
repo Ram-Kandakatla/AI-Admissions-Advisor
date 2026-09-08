@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useState } from "react";
 import { api } from "../api";
 import type { FinancialNeed, Meta, ProfileInput, StudentRecord } from "../types";
@@ -292,6 +293,16 @@ export default function ProfileForm({
           <span className="hero-note">You can edit this any time.</span>
         </div>
       </form>
+
+      {/* The only route to /account a guest has: the header's account box only
+          appears once there is an email to put in it, and a guest deleting a
+          profile from a shared computer is precisely who needs that page.
+          Shown only once there is something to delete. */}
+      {existing && (
+        <p className="form-account-link">
+          <Link to="/account">Manage or delete your account</Link>
+        </p>
+      )}
     </div>
   );
 }

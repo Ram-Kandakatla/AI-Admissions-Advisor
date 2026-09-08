@@ -72,6 +72,22 @@ export const api = {
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 
+  /**
+   * Erase the account and everything attached to it. There is no undo.
+   *
+   * `password` is required for a signed-in account and meaningless for a
+   * guest, which has none — the caller decides which it is from `user.guest`
+   * rather than this function guessing. The confirm phrase is sent by this
+   * client rather than surfaced as a parameter: it exists to stop a stray or
+   * mis-wired request reaching the one endpoint that destroys data, and a
+   * caller who could get it wrong is exactly who it is guarding against.
+   */
+  deleteAccount: (password?: string) =>
+    request<{ deleted: true; hadProfile: boolean }>("/auth/account", {
+      method: "DELETE",
+      body: JSON.stringify({ confirm: "DELETE", ...(password ? { password } : {}) }),
+    }),
+
   health: () => request<{ status: string; llm: LlmProvider }>("/health"),
 
   meta: () => request<Meta>("/meta"),

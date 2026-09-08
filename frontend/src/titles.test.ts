@@ -52,6 +52,7 @@ describe("titleFor", () => {
       "/chat",
       "/signin",
       "/signup",
+      "/account",
       "/terms",
       "/privacy",
       "/cookies",

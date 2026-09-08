@@ -5,6 +5,8 @@
 //   POST /api/auth/login    { email, password }  → new session for that account
 //   POST /api/auth/logout                        → revokes the session
 //   GET  /api/auth/me                            → who the caller is, if anyone
+//   DELETE /api/auth/account { password?, confirm } → erases the account and
+//                                                     everything it owns
 //
 // Signup is a *claim*, not a create: the caller almost always already has an
 // anonymous user row holding the profile they just built, and signing up fills
@@ -40,6 +42,18 @@ auth.use(
 );
 auth.use(
   "/signup",
+  rateLimit({
+    bucket: "auth",
+    limit: 15,
+    windowMs: 15 * 60 * 1000,
+    message: "Too many attempts. Please wait a few minutes and try again.",
+  })
+);
+// Deletion re-checks the password, which makes it a third place a password can
+// be guessed against — and the only one where a correct guess destroys data
+// instead of merely reading it. Same budget as the other two.
+auth.use(
+  "/account",
   rateLimit({
     bucket: "auth",
     limit: 15,
@@ -192,6 +206,109 @@ auth.get("/me", async (c) => {
 
   const student = await store.getStudentByUserId(user.id);
   return c.json({ user, studentId: student?.id ?? null });
+});
+
+/**
+ * The word a caller has to send to prove they mean it.
+ *
+ * Not a CSRF defence — the session cookie is SameSite=Lax, so a cross-site
+ * DELETE never carries it, and this would be a poor defence anyway since any
+ * attacker who can read the docs can send the string. What it defends against
+ * is a mis-wired client: a stray or retried request to the one endpoint in
+ * this app that destroys data should not succeed by accident, and requiring a
+ * body that cannot be produced without intent is a cheap way to say so. It
+ * also gives the UI a natural type-to-confirm to bind to.
+ */
+const CONFIRM_PHRASE = "DELETE";
+
+/**
+ * Erase the caller's account and everything attached to it.
+ *
+ * WHY THIS EXISTS
+ *
+ * The privacy policy used to admit that it did not. Every self-serve right the
+ * page claims — see, correct, export — was true, and the one that matters most
+ * to a person who has changed their mind was a request to an inbox. For an app
+ * whose users are mostly minors, "email us and we will do it by hand" is the
+ * weakest possible answer, and it is the answer this route removes.
+ *
+ * WHY A MEMBER HAS TO RETYPE THEIR PASSWORD
+ *
+ * The session alone is not enough authority for an irreversible destruction of
+ * everything the person has built. A borrowed laptop, an unlocked phone, or a
+ * shared library machine is a realistic way for someone else to be holding a
+ * valid session, and every one of those is a case where a second factor the
+ * attacker does not have is exactly the right barrier. This is the same reason
+ * GitHub, Google and everyone else re-prompt here.
+ *
+ * WHY A GUEST DOES NOT
+ *
+ * Because there is no password to retype — an anonymous account has a NULL
+ * password_hash by construction, and asking for one would be asking for
+ * something that cannot exist. For a guest the session cookie *is* the whole
+ * of the credential, so it is also the whole of what can be checked. That is
+ * not a weakening: a guest's data is already reachable by exactly whoever
+ * holds that cookie, and letting them wipe it is strictly better than making
+ * them leave it behind on a shared computer.
+ *
+ * A wrong password is 403, not 401. The session is valid — 401 would tell the
+ * frontend the caller had been signed out and send them to a login screen,
+ * which is both untrue and a confusing answer to a typo.
+ */
+auth.delete("/account", async (c) => {
+  const session = c.get("session");
+  if (!session) {
+    return c.json({ error: "You need to be signed in to delete an account." }, 401);
+  }
+
+  const body = await readJson<Record<string, unknown>>(c);
+  if (body.confirm !== CONFIRM_PHRASE) {
+    return c.json(
+      { error: `Send "confirm": "${CONFIRM_PHRASE}" to delete this account.` },
+      400
+    );
+  }
+
+  const store = c.get("store");
+  const user = await store.getUser(session.userId);
+  if (!user) {
+    // The session outlived its user row — already gone, by another tab or a
+    // previous half-finished attempt. Treat it as done rather than as an
+    // error: the caller wanted this account gone, and it is.
+    clearSessionCookie(c);
+    c.set("session", null);
+    return c.body(null, 204);
+  }
+
+  if (!user.guest) {
+    // A real account. Re-authenticate before destroying anything.
+    const row = user.email ? await store.findUserForLogin(user.email) : null;
+    const password = typeof body.password === "string" ? body.password : "";
+
+    // fakeVerify on the missing-row path for the same reason login does it:
+    // never let the shape of a failure be inferred from how long it took.
+    const ok = row
+      ? await verifyPassword(password, row.password_hash)
+      : await fakeVerify(password);
+
+    if (!ok || !row) {
+      return c.json({ error: "That password is not correct." }, 403);
+    }
+  }
+
+  const { hadProfile } = await store.deleteAccount(user.id);
+
+  // The session row went with the user (sessions cascade), so the cookie now
+  // names nothing. Clearing it stops the browser re-sending a dead id forever,
+  // and unsetting it on the context keeps this request's own later middleware
+  // from reading a session that no longer exists.
+  clearSessionCookie(c);
+  c.set("session", null);
+
+  // 200 rather than 204: the client shows a short confirmation afterwards and
+  // `hadProfile` is what lets it say "your profile and everything in it" only
+  // when that is true. A body of nothing would make that a guess.
+  return c.json({ deleted: true, hadProfile });
 });
 
 export default auth;

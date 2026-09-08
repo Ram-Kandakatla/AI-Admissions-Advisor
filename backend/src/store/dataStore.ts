@@ -683,6 +683,12 @@ export function createStore(db: D1Database) {
 
   const sweepSessionRows = db.prepare("DELETE FROM sessions WHERE expires_at <= ?");
 
+  // The two halves of erasing an account. Kept as separate statements rather
+  // than one because they must run in this order — see deleteAccount below,
+  // where the ordering is the entire subtlety.
+  const deleteStudentsOfUser = db.prepare("DELETE FROM students WHERE user_id = ?");
+  const deleteUserRow = db.prepare("DELETE FROM users WHERE id = ?");
+
   /** Sessions last 30 days from creation. Not extended on use — a fixed life
    *  means a stolen cookie has a definite expiry rather than one the thief can
    *  renew indefinitely just by continuing to use it. */
@@ -770,6 +776,58 @@ export function createStore(db: D1Database) {
     await sweepSessionRows.bind(new Date().toISOString()).run();
   }
 
+  /**
+   * Erase an account and everything it owns. There is no undo.
+   *
+   * WHY THE ORDER IS LOAD-BEARING
+   *
+   * Almost every table here cascades, so the obvious implementation — delete
+   * the users row and let the database do the rest — looks correct and is not.
+   * `students.user_id` was added by migrations/0003_auth.sql as
+   * `ALTER TABLE students ADD COLUMN user_id INTEGER REFERENCES users(id)`,
+   * with **no ON DELETE clause**, so it defaults to NO ACTION. SQLite cannot
+   * add a cascade to an existing column, and D1 has foreign keys enforced, so
+   * deleting the user first does not orphan the student — it fails outright on
+   * a constraint violation, and the account stays exactly where it was.
+   *
+   * Deleting the student first is therefore not a tidiness choice, it is the
+   * only order that works. It is also the order that does the most: students
+   * is the parent of everything a person actually typed, and all four of those
+   * children *do* cascade —
+   *
+   *   students -> messages        (both chat modes)
+   *            -> applications    (and their checklists)
+   *            -> school_notes    (notes, stars, contacts)
+   *            -> share_links     (so a shared URL dies with the account)
+   *
+   * then users -> sessions, which signs the person out of every device at
+   * once rather than only the one they clicked in.
+   *
+   * WHAT IS DELIBERATELY LEFT BEHIND
+   *
+   * Rows in `rate_limits`. They are keyed by a hash of the client address
+   * rather than by a user, they hold nothing about the person, and they expire
+   * on their own within the window. Deleting them would also hand anyone a
+   * free way to reset their own limit by making and destroying an account.
+   *
+   * Returns whether a profile was among the deleted rows — the caller uses it
+   * for nothing security-relevant, only to say something true afterwards, and
+   * an account that never finished a profile is a real and unremarkable case.
+   */
+  async function deleteAccount(userId: number): Promise<{ hadProfile: boolean }> {
+    // A batch, so this is one transaction: a failure between the two statements
+    // would otherwise leave an account with no profile and no way to notice.
+    // D1 rolls the whole batch back.
+    const results = await db.batch([
+      deleteStudentsOfUser.bind(userId),
+      deleteUserRow.bind(userId),
+    ]);
+    // Indexed rather than destructured: batch() is typed as a plain array, so
+    // `noUncheckedIndexedAccess` makes the first element possibly-undefined
+    // even though a two-statement batch always returns two results.
+    return { hadProfile: (results[0]?.meta?.changes ?? 0) > 0 };
+  }
+
   return {
     createStudent,
     getStudent,
@@ -784,6 +842,7 @@ export function createStore(db: D1Database) {
     getSession,
     deleteSession,
     sweepSessions,
+    deleteAccount,
     getConversation,
     appendMessage,
     getApplications,

@@ -24,13 +24,17 @@ import { CONTACT_EMAIL, OPERATOR_NAME, REPO_URL } from "../../legal";
  *   - index.html                what a page load fetches, which since the
  *                               fonts were self-hosted is nothing off-origin
  *
- * WHAT IT ADMITS THAT A TEMPLATE WOULD NOT
+ * WHAT IT USED TO ADMIT
  *
- * There is no self-serve account deletion yet. It is true, it is the kind of
- * thing a policy usually launders into vagueness, and it is stated plainly in
- * §8 as a current limitation rather than dressed up as a design decision.
+ * Two things, and both were fixed rather than reworded — which is the outcome
+ * an honest limitations section is *for*. Writing them down made them
+ * embarrassing enough to close.
  *
- * This page used to carry a second admission — that the Google Fonts CDN saw
+ * The first was that deleting an account meant emailing a person. §8 now
+ * points at /account, and the endpoint behind it erases the profile, notes,
+ * tracker, both conversations, every share link, and every session.
+ *
+ * The second — that the Google Fonts CDN saw
  * every visitor's IP — and it does not any more because the cause was removed
  * rather than the sentence. The fonts are served from this origin now (see
  * scripts/fetch-fonts.mjs), so the app makes no third-party request at all on
@@ -344,13 +348,19 @@ export default function Privacy() {
             <li>
               <strong>Use Compass without an account at all.</strong>
             </li>
+            <li>
+              <strong>Delete everything, yourself, right now.</strong>{" "}
+              <Link to="/account">Your account page</Link> erases your profile, notes,
+              tracker, both conversations, every share link, and every signed-in session —
+              immediately and permanently. It is not a request that goes into a queue and
+              there is no grace period: Compass keeps no backup it could restore you from.
+              This works for a guest account too, which is the case that matters on a
+              shared or library computer.
+            </li>
           </ul>
-          <p className="legal-warn">
-            <strong>What is not built yet:</strong> there is no button that deletes your
-            whole account and everything attached to it. Until there is, email{" "}
-            <Unfilled>{CONTACT_EMAIL}</Unfilled> and it will be done by hand. This is
-            stated as a current limitation rather than dressed up as a policy, and it is on
-            the list to fix.
+          <p>
+            If any of that fails or you would rather a person did it, email{" "}
+            <Unfilled>{CONTACT_EMAIL}</Unfilled>.
           </p>
           <p>
             Depending on where you live — the EU or UK under the GDPR, California under the
@@ -470,7 +480,7 @@ export default function Privacy() {
     <LegalPage
       eyebrow="Privacy"
       title="What Compass knows about you"
-      lead="Compass is a college-planning tool used mostly by minors, so this policy is written to be read rather than to be defensible. It says exactly what is collected, exactly who else sees it, and where the app currently falls short."
+      lead="Compass is a college-planning tool used mostly by minors, so this policy is written to be read rather than to be defensible. It says exactly what is collected, exactly who else sees it, and exactly how to delete all of it."
       sections={sections}
       summary={
         <ul className="legal-tldr">
@@ -499,8 +509,8 @@ export default function Privacy() {
             here, not from Google&apos;s CDN.
           </li>
           <li>
-            One honest caveat: <strong>account deletion is not self-serve yet</strong> —
-            email and it is done by hand.
+            <strong>You can delete all of it yourself, in one place</strong> — permanently,
+            with no waiting period.
           </li>
         </ul>
       }

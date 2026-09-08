@@ -275,7 +275,8 @@ export default function Terms() {
           <p>
             Access can be suspended for anyone who breaks the acceptable-use rules above. You
             can stop at any time, and can ask for your account and everything in it to be
-            deleted at <Unfilled>{CONTACT_EMAIL}</Unfilled>.
+            deleted on <Link to="/account">your account page</Link>, which does it
+            immediately rather than putting it in a queue.
           </p>
         </>
       ),
@@ -354,7 +355,8 @@ export default function Terms() {
             public commit history
           </a>
           . Continuing to use Compass after a change means you accept it. If a change is one
-          you do not accept, stop using the service and ask for your data to be deleted.
+          you do not accept, stop using the service and{" "}
+          <Link to="/account">delete your data</Link>.
         </p>
       ),
     },

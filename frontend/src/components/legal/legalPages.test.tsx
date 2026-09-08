@@ -99,11 +99,15 @@ describe("Privacy — the claims that are promises about the code", () => {
     ).toBeInTheDocument();
   });
 
-  it("admits that account deletion is not self-serve yet", () => {
-    // An admitted gap, not a policy. If a delete button ever ships, this test
-    // failing is the reminder that the page still says otherwise.
+  it("points at the page that actually deletes everything", () => {
+    // This replaced an admitted gap — the policy used to say deletion was a
+    // manual email. Both the claim and the link are asserted, because a claim
+    // whose link rots is worse than no claim.
     renderPage(Privacy);
-    expect(screen.getByText(/What is not built yet:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Delete everything, yourself, right now/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /your account page/i })
+    ).toHaveAttribute("href", "/account");
   });
 
   it("tells under-13s not to use Compass, and says why", () => {
@@ -218,8 +222,11 @@ describe("Security — the parts a researcher needs", () => {
     expect(
       section.getByRole("heading", { name: /known limitations/i })
     ).toBeInTheDocument();
-    expect(section.getByText(/no self-serve account deletion/i)).toBeInTheDocument();
     expect(section.getByText(/No independent security audit/i)).toBeInTheDocument();
+    expect(section.getByText(/No two-factor authentication/i)).toBeInTheDocument();
+    // The gap that got closed rather than reworded — if this string comes
+    // back, the page and the app disagree.
+    expect(section.queryByText(/no self-serve account deletion/i)).toBeNull();
   });
 
   it("points at security.txt for machines", () => {

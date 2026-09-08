@@ -291,9 +291,16 @@ export default function Layout({
             {user !== undefined &&
               (user && !user.guest ? (
                 <div className="account-box">
-                  <span className="account-email" title={user.email ?? undefined}>
+                  {/* The email is the account, so it is also the link to the
+                      page about it — the convention everywhere else, and it
+                      costs no room in a nav that has none to spare. */}
+                  <NavLink
+                    className="account-email"
+                    to="/account"
+                    title={user.email ?? undefined}
+                  >
                     {user.email}
-                  </span>
+                  </NavLink>
                   <button className="nav-link account-out" onClick={onSignOut}>
                     Sign out
                   </button>

@@ -272,11 +272,6 @@ export default function Security() {
           </p>
           <ul className="legal-list">
             <li>
-              <strong>There is no self-serve account deletion.</strong> Deleting an account
-              and everything attached to it is currently a manual request to{" "}
-              <Unfilled>{CONTACT_EMAIL}</Unfilled>. It should be a button.
-            </li>
-            <li>
               <strong>No two-factor authentication</strong>, and no password-reset email
               flow. A forgotten password currently has no self-serve recovery.
             </li>
@@ -368,8 +363,8 @@ export default function Security() {
             iterations; logs are built so they cannot hold a student identifier.
           </li>
           <li>
-            <strong>Known gaps, stated plainly:</strong> no self-serve account deletion, no
-            2FA, no independent audit, and share links are bearer tokens.
+            <strong>Known gaps, stated plainly:</strong> no 2FA, no password reset, no
+            independent audit, and share links are bearer tokens.
           </li>
           <li>Everything here is checkable — the source is public.</li>
         </ul>
