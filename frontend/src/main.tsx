@@ -3,6 +3,10 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
+// Before global.css, so the @font-face rules are registered by the time the
+// first rule that names a family is parsed. Self-hosted from public/fonts —
+// see scripts/fetch-fonts.mjs for why, and regenerate rather than editing.
+import "./styles/fonts.css";
 import "./styles/global.css";
 
 // BrowserRouter, not HashRouter: /matches is an address someone can read out

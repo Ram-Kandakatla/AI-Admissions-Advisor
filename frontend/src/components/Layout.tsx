@@ -4,6 +4,7 @@ import { titleFor } from "../titles";
 import type { AuthUser, StudentRecord } from "../types";
 import BrandMark from "./BrandMark";
 import ErrorBoundary from "./ErrorBoundary";
+import CookieNotice from "./CookieNotice";
 
 type Theme = "light" | "dark";
 
@@ -368,8 +369,32 @@ export default function Layout({
             <strong>Compass</strong> — a college-planning companion, not a substitute for your school counselor.
           </span>
           <span>Deadlines &amp; aid rules change — always confirm on official college sites.</span>
+
+          {/* The legal row lives in the footer and nowhere else, on purpose.
+              These four are destinations someone goes looking for — usually
+              once, usually before deciding to type a GPA into the thing — and
+              the footer is the first place anybody looks for them. Putting
+              them in the nav would spend four of eleven top-level slots on
+              pages nobody visits twice.
+
+              Its own <nav> with a label rather than loose links: a screen
+              reader user scanning landmarks should be able to find "Legal"
+              without reading the disclaimer sentences above it first. */}
+          <nav className="footer-legal" aria-label="Legal">
+            <NavLink to="/terms">Terms</NavLink>
+            <NavLink to="/privacy">Privacy</NavLink>
+            <NavLink to="/cookies">Cookies</NavLink>
+            <NavLink to="/security">Security</NavLink>
+          </nav>
         </div>
       </footer>
+
+      {/* Last in the document and outside every landmark above it, which is
+          what keeps it out of the way: a keyboard user reaches it after the
+          page content rather than before it, and it never sits between the
+          nav and the thing they came for. It renders nothing at all once
+          dismissed. */}
+      <CookieNotice />
     </div>
   );
 }

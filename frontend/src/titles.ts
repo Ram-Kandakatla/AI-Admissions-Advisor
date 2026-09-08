@@ -27,6 +27,14 @@ const TITLES: Record<string, string> = {
   "/share": `Share your plan${SUFFIX}`,
   "/signin": `Sign in${SUFFIX}`,
   "/signup": `Create an account${SUFFIX}`,
+  // The legal and trust pages. These are the titles most likely to be read in
+  // a history list rather than a tab bar — someone hunting for "that page that
+  // said what they do with my data" weeks later — so each names the document
+  // rather than the section it belongs to.
+  "/terms": `Terms of Service${SUFFIX}`,
+  "/privacy": `Privacy Policy${SUFFIX}`,
+  "/cookies": `Cookie Policy${SUFFIX}`,
+  "/security": `Security & disclosure${SUFFIX}`,
 };
 
 /**
