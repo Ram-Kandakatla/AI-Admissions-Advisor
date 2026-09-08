@@ -43,6 +43,7 @@ const ApplicationTimeline = lazy(() => import("./components/ApplicationTimeline"
 const MajorDeepDive = lazy(() => import("./components/MajorDeepDive"));
 const Account = lazy(() => import("./components/Account"));
 const ShareSettings = lazy(() => import("./components/ShareSettings"));
+const AccountSettings = lazy(() => import("./components/AccountSettings"));
 const SharedPlanView = lazy(() => import("./components/SharedPlanView"));
 
 // The legal and trust pages. Lazy like everything else behind a click, and
@@ -177,6 +178,27 @@ export default function App() {
     navigate(record ? "/matches" : "/profile");
   };
 
+  /**
+   * The account and everything in it has just been erased server-side.
+   *
+   * Deliberately not routed through signOut(): there is no session left to
+   * revoke — the sessions rows cascaded with the user — so calling logout
+   * would be a request that can only 401. What is needed is the same local
+   * reset, and a different sentence afterwards.
+   */
+  const onAccountDeleted = (hadProfile: boolean) => {
+    setUser(null);
+    setStudent(null);
+    setCompareIds([]);
+    setSavePrompt(true);
+    setNotice(
+      hadProfile
+        ? "Your account is deleted. Your profile, notes, tracker, and conversations are gone, and any share link you created has stopped working."
+        : "Your account is deleted. Nothing of yours is stored here any more."
+    );
+    navigate("/");
+  };
+
   const signOut = async () => {
     await api.logout().catch(() => {
       /* the cookie is the session; a failed call leaves it in place */
@@ -300,6 +322,21 @@ export default function App() {
             there is anything to gate on, and a privacy policy you have to sign
             up to read is not a privacy policy. They are also the destinations
             a footer link has to reach from anywhere, including from the 404. */}
+        {/* Ungated: a guest has an anonymous account holding real work, and
+            wiping it from a shared or library computer is the case this page
+            matters most for. Gating it behind a profile would lock out the
+            person with the most reason to be here. */}
+        <Route
+          path="/account"
+          element={
+            <AccountSettings
+              user={user}
+              hasProfile={!!student}
+              onDeleted={onAccountDeleted}
+            />
+          }
+        />
+
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/cookies" element={<CookiePolicy />} />

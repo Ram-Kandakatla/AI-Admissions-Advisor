@@ -3893,6 +3893,143 @@ table.cmp-table {
 }
 
 /* =========================================================================
+   Account settings — /account
+
+   One page, three panels, in the order the decision is actually made: who am
+   I, what can I take with me, and then the thing that cannot be undone. The
+   danger panel is last and is the only red on the page; a screen that shouted
+   from the top would make the export offer above it look like an obstacle
+   rather than the useful thing it is.
+   ========================================================================= */
+.acct-who dl {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.acct-who dl > div {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+.acct-who dt {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--txm);
+}
+.acct-who dd {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--tx);
+  /* An email is unbreakable and can be long; let it wrap rather than push the
+     panel wider than the page on a phone. */
+  overflow-wrap: anywhere;
+}
+.acct-who dd em {
+  color: var(--txm);
+}
+.acct-upgrade {
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--border);
+}
+
+.acct-export,
+.acct-danger {
+  margin-top: 18px;
+}
+.acct-hd {
+  font-family: var(--display);
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+.acct-hd-danger {
+  color: var(--red);
+}
+.acct-export p,
+.acct-danger p {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--txm);
+  margin: 0 0 12px;
+}
+.acct-export-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* The danger panel is bordered in red and tinted, but the *text* stays in the
+   normal ramp — a wall of red is read as an error the person has to fix, and
+   this is a deliberate action they came here to take. Only the heading and
+   the button carry the colour. */
+.acct-danger {
+  border-color: var(--red);
+  background: var(--rbg);
+}
+.acct-goes-label {
+  font-weight: 600;
+  color: var(--tx) !important;
+  margin-bottom: 8px !important;
+}
+.acct-danger .legal-list {
+  margin-bottom: 18px;
+}
+.acct-danger .field {
+  max-width: 340px;
+  margin-bottom: 16px;
+}
+.acct-danger-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+/* The one destructive button in the app. It is a filled red rather than a red
+   outline because it is the single action here with no undo, and it should not
+   be mistakable for the ghost buttons beside it. --on-accent flips with the
+   theme, so the label stays readable on both reds. */
+.btn-danger {
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--on-accent);
+}
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+.acct-foot {
+  margin-top: 20px;
+  font-size: 11.5px;
+  color: var(--txm);
+}
+
+/* The guest's only route to /account — the header account box needs an email
+   to render, and a guest has none. */
+.form-account-link {
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--txm);
+}
+
+@media (max-width: 620px) {
+  .acct-who dl > div {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+  .acct-danger .field {
+    max-width: none;
+  }
+  .acct-danger-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* =========================================================================
    Legal & trust pages — /terms, /privacy, /cookies, /security
 
    These are the only long-form reading surfaces in an app that is otherwise
@@ -4246,6 +4383,17 @@ table.cmp-table {
 .footer-legal a[aria-current="page"] {
   color: var(--tx);
   font-weight: 600;
+}
+
+/* The account email in the header became a NavLink. It should still read as
+   the label it was — the affordance is the whole box, not an underline in the
+   middle of the nav. */
+.account-email {
+  text-decoration: none;
+  color: inherit;
+}
+.account-email:hover {
+  text-decoration: underline;
 }
 
 /* =========================================================================

@@ -1,10 +1,23 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render as rtlRender, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProfileForm from "./ProfileForm";
 import { api } from "../api";
 import { student } from "../test/factories";
+import { MemoryRouter } from "react-router-dom";
 import type { Meta } from "../types";
+
+/**
+ * ProfileForm links to /account once a profile exists — the only route a guest
+ * has to the page that deletes it — so it needs a router around it. Wrapping
+ * here rather than at fourteen call sites keeps the tests reading as tests.
+ *
+ * RTL's `wrapper` option rather than wrapping the element by hand, because
+ * `rerender` re-renders whatever it is handed at the root: a hand-wrapped
+ * render passes its first assertion and then throws on the rerender, having
+ * dropped the router. `wrapper` is reapplied on every rerender.
+ */
+const render = (ui: React.ReactElement) => rtlRender(ui, { wrapper: MemoryRouter });
 
 vi.mock("../api", () => ({
   api: { createStudent: vi.fn(), updateStudent: vi.fn() },
