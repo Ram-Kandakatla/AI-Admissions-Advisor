@@ -30,6 +30,29 @@ export interface Env {
   OPENAI_API_KEY?: string;
   ANTHROPIC_MODEL?: string;
   OPENAI_MODEL?: string;
+  /**
+   * Resend credentials, both set as secrets. Absent = password reset reports
+   * itself unavailable rather than silently failing to deliver.
+   */
+  RESEND_API_KEY?: string;
+  /** The From address, e.g. "Compass <noreply@yourdomain>". Must be a sender
+   *  Resend has verified for your domain, or every send is rejected. */
+  EMAIL_FROM?: string;
+  /**
+   * Origin the reset link points at, e.g. "https://compass.example.com". The
+   * API has no reliable way to know the origin the *frontend* is served from —
+   * the Origin header is absent on some requests and attacker-controlled on
+   * others, and building a password-reset URL out of either is how host-header
+   * poisoning turns a reset into an account takeover. So it is configuration.
+   */
+  APP_ORIGIN?: string;
+  /**
+   * Development escape hatch: writes the reset link to the log so the flow can
+   * be exercised with no email provider. NEVER set this in production — a
+   * reset link in a log is a valid credential sitting in Cloudflare's log
+   * retention. Off unless it is exactly the string "true".
+   */
+  DEV_LOG_RESET_LINKS?: string;
 }
 
 /**

@@ -7,6 +7,8 @@
 //   GET  /api/auth/me                            → who the caller is, if anyone
 //   DELETE /api/auth/account { password?, confirm } → erases the account and
 //                                                     everything it owns
+//   POST /api/auth/forgot   { email }               → mails a reset link
+//   POST /api/auth/reset    { token, password }     → sets a new password
 //
 // Signup is a *claim*, not a create: the caller almost always already has an
 // anonymous user row holding the profile they just built, and signing up fills
@@ -15,7 +17,14 @@
 // unowned profiles behind.
 
 import { Hono } from "hono";
-import { hashPassword, verifyPassword, fakeVerify } from "../auth/password.js";
+import {
+  hashPassword,
+  verifyPassword,
+  fakeVerify,
+  generateResetToken,
+  hashResetToken,
+} from "../auth/password.js";
+import { createEmailService } from "../services/emailService.js";
 import {
   clearSessionCookie,
   ensureSession,
@@ -24,6 +33,7 @@ import {
 } from "../middleware/auth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { readJson } from "../http.js";
+import { createLogger, errorFields } from "../log.js";
 import type { AppEnv } from "../types.js";
 
 const auth = new Hono<AppEnv>();
@@ -54,6 +64,32 @@ auth.use(
 // instead of merely reading it. Same budget as the other two.
 auth.use(
   "/account",
+  rateLimit({
+    bucket: "auth",
+    limit: 15,
+    windowMs: 15 * 60 * 1000,
+    message: "Too many attempts. Please wait a few minutes and try again.",
+  })
+);
+
+// Requesting a reset sends mail to an address the caller names, so an
+// unlimited version of it is a spam cannon pointed at other people's inboxes
+// and a fast way to burn a provider quota. Tighter than login: nobody needs
+// five reset emails in a quarter of an hour.
+auth.use(
+  "/forgot",
+  rateLimit({
+    bucket: "auth",
+    limit: 5,
+    windowMs: 15 * 60 * 1000,
+    message: "Too many reset requests. Please wait a few minutes and try again.",
+  })
+);
+// Submitting a token is a guess at a 256-bit secret, which is hopeless, but
+// the limit costs nothing and keeps this off the list of endpoints anyone can
+// hammer for free.
+auth.use(
+  "/reset",
   rateLimit({
     bucket: "auth",
     limit: 15,
@@ -220,6 +256,187 @@ auth.get("/me", async (c) => {
  * also gives the UI a natural type-to-confirm to bind to.
  */
 const CONFIRM_PHRASE = "DELETE";
+
+/**
+ * How long a reset link lives.
+ *
+ * An hour is the usual number and the reasoning is worth stating: the window
+ * is how long a link sitting in an inbox — or in a mail server's logs, or on a
+ * shared computer someone walked away from — remains a working key to the
+ * account. Short enough that a stale link is rarely useful to anyone, long
+ * enough that "check your email" survives a distracted teenager.
+ */
+const RESET_TTL_MINUTES = 60;
+
+auth.post("/forgot", async (c) => {
+  const body = await readJson<Record<string, unknown>>(c);
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+
+  const store = c.get("store");
+  const log = createLogger(c.env);
+  const email_service = createEmailService(c.env);
+
+  // Everything below happens behind one unconditional 202. The response says
+  // "if that address has an account, a link is on the way" and says exactly
+  // that for an address with no account, a guest row, a send failure, and an
+  // unconfigured deployment alike.
+  //
+  // WHY THE RESPONSE CANNOT DEPEND ON WHETHER THE ACCOUNT EXISTS
+  //
+  // Anything that varies — the status, the wording, the shape of the body —
+  // turns this endpoint into a membership oracle: paste in a list of ten
+  // thousand addresses and learn which of them belong to teenagers with a
+  // college-planning account. That inference is worth more to the wrong person
+  // than the account itself, and it is why every "did you mean to sign up?"
+  // refinement of this message has to be refused.
+  const respond = () =>
+    c.json(
+      {
+        message:
+          "If an account exists for that address, a reset link is on its way. Check your spam folder if it doesn't arrive in a few minutes.",
+      },
+      202
+    );
+
+  // A shallow shape check only. Reporting "that isn't a valid email" is a
+  // usability win and not an enumeration risk — it says nothing about who has
+  // an account — but anything past this point must be silent.
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return c.json({ error: "Enter a valid email address." }, 400);
+  }
+
+  const row = await store.findUserForLogin(email);
+
+  // WHY THE WORK HAPPENS AFTER THE RESPONSE
+  //
+  // The timing is the other half of the oracle. Hashing a token, writing a
+  // row and making an HTTPS call to Resend is a few hundred milliseconds that
+  // a non-existent address would not spend, and a stopwatch reads that
+  // difference as reliably as a different error message would. waitUntil hands
+  // the work to the runtime and returns immediately, so both paths answer at
+  // the same speed — and the person waiting gets a faster page either way.
+  if (row) {
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const token = generateResetToken();
+          await store.createPasswordReset(
+            row.id,
+            await hashResetToken(token),
+            RESET_TTL_MINUTES
+          );
+
+          // Configuration, never a request header. Building this URL out of
+          // the Host or Origin the caller sent is host-header poisoning: an
+          // attacker requests a reset for someone else's address and points
+          // the link in that person's inbox at a server they control.
+          const origin = (c.env.APP_ORIGIN ?? "").replace(/\/+$/, "");
+          const resetUrl = `${origin}/reset?token=${token}`;
+
+          if (c.env.DEV_LOG_RESET_LINKS === "true") {
+            // Local development only, and gated on an explicit opt-in rather
+            // than on "no provider configured" — a deployment that lost its
+            // API key must not start writing live credentials to a log it
+            // did not before. See the binding's note in types.ts.
+            log.warn("DEV_LOG_RESET_LINKS is on — reset link written to the log", {
+              resetUrl,
+            });
+          }
+
+          const sent = await email_service.sendPasswordReset(
+            email,
+            resetUrl,
+            RESET_TTL_MINUTES
+          );
+          if (!sent.delivered) {
+            // The user has already been told to check their inbox, so this
+            // log line is the only place the failure surfaces. No address in
+            // it — see log.ts on what a log line may hold.
+            log.error("password reset requested but not delivered", {
+              provider: sent.provider,
+            });
+          }
+        } catch (err) {
+          log.error("password reset request failed", errorFields(err));
+        }
+      })()
+    );
+  }
+
+  // One in a hundred requests also tidies expired tokens, matching the session
+  // sweep. Housekeeping does not belong on the hot path of every request.
+  if (Math.random() < 0.01) {
+    c.executionCtx.waitUntil(
+      store.sweepPasswordResets().catch(() => {
+        /* housekeeping — never worth failing a request over */
+      })
+    );
+  }
+
+  return respond();
+});
+
+/**
+ * Spend a reset token and set a new password.
+ *
+ * On success the caller is signed in immediately. That is safe and it is the
+ * humane option: they have just proved control of the mailbox *and* chosen a
+ * password, which is strictly more than a login asks for, and bouncing them to
+ * a sign-in form to retype what they typed ten seconds ago is friction with no
+ * security to show for it.
+ *
+ * Every other session is destroyed first (see store.resetPassword). If this
+ * reset was prompted by a compromise, the attacker is holding a session cookie,
+ * and a password change that leaves them signed in has not recovered anything.
+ */
+auth.post("/reset", async (c) => {
+  const body = await readJson<Record<string, unknown>>(c);
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+  const password = typeof body.password === "string" ? body.password : "";
+
+  const errors: string[] = [];
+  if (!token) errors.push("This reset link is missing its token.");
+  if (!password) errors.push("Password is required.");
+  else if (password.length < MIN_PASSWORD) {
+    errors.push(`Password must be at least ${MIN_PASSWORD} characters.`);
+  } else if (password.length > MAX_PASSWORD) {
+    errors.push(`Password must be under ${MAX_PASSWORD} characters.`);
+  }
+  // Validated before the token is looked up, so a caller who typed a short
+  // password is told so without spending their one-use link on the attempt.
+  if (errors.length) return c.json({ errors }, 400);
+
+  const store = c.get("store");
+  const reset = await store.findPasswordReset(await hashResetToken(token));
+
+  // One message for expired, already-used, and never-existed. Distinguishing
+  // them would confirm that a token was real, and the useful next step is the
+  // same in all three cases anyway.
+  const invalid = () =>
+    c.json(
+      { error: "This reset link has expired or has already been used. Request a new one." },
+      400
+    );
+
+  if (!reset) return invalid();
+
+  const passwordHash = await hashPassword(password);
+  const spent = await store.resetPassword(
+    await hashResetToken(token),
+    reset.userId,
+    passwordHash
+  );
+  // Lost a race with a simultaneous submission of the same link. The other
+  // one set the password; this one must not report success.
+  if (!spent) return invalid();
+
+  // A brand-new session, minted after every old one was destroyed.
+  await rotateSession(c, reset.userId);
+  const user = await store.getUser(reset.userId);
+  const student = await store.getStudentByUserId(reset.userId);
+
+  return c.json({ user, studentId: student?.id ?? null });
+});
 
 /**
  * Erase the caller's account and everything attached to it.

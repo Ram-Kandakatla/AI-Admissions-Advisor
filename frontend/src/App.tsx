@@ -44,6 +44,8 @@ const MajorDeepDive = lazy(() => import("./components/MajorDeepDive"));
 const Account = lazy(() => import("./components/Account"));
 const ShareSettings = lazy(() => import("./components/ShareSettings"));
 const AccountSettings = lazy(() => import("./components/AccountSettings"));
+const ForgotPassword = lazy(() => import("./components/ForgotPassword"));
+const ResetPassword = lazy(() => import("./components/ResetPassword"));
 const SharedPlanView = lazy(() => import("./components/SharedPlanView"));
 
 // The legal and trust pages. Lazy like everything else behind a click, and
@@ -326,6 +328,22 @@ export default function App() {
             wiping it from a shared or library computer is the case this page
             matters most for. Gating it behind a profile would lock out the
             person with the most reason to be here. */}
+        {/* Reachable with no session at all — being locked out is the entire
+            reason to be here. */}
+        <Route path="/forgot" element={<ForgotPassword />} />
+        <Route
+          path="/reset"
+          element={
+            <ResetPassword
+              // A reset ends signed in, so this lands in the same handler a
+              // login does — minus the guest-draft question, which cannot
+              // arise: you cannot be holding an unsaved profile and be locked
+              // out of the account you would lose it to at the same time.
+              onSignedIn={(account, studentId) => onSignedIn(account, studentId, false)}
+            />
+          }
+        />
+
         <Route
           path="/account"
           element={
