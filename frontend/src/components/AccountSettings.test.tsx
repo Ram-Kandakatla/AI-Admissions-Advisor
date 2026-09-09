@@ -6,7 +6,11 @@ import AccountSettings from "./AccountSettings";
 import { api } from "../api";
 import type { AuthUser } from "../types";
 
-vi.mock("../api", () => ({ api: { deleteAccount: vi.fn() } }));
+// twoFactorStatus is stubbed because AccountSettings now renders the 2FA panel,
+// which fetches on mount. These tests are about deletion; the panel has its own.
+vi.mock("../api", () => ({
+  api: { deleteAccount: vi.fn(), twoFactorStatus: vi.fn() },
+}));
 const mockApi = vi.mocked(api);
 
 const member: AuthUser = {
@@ -14,8 +18,15 @@ const member: AuthUser = {
   email: "jordan@example.com",
   guest: false,
   createdAt: "2026-03-04T10:00:00.000Z",
+  twoFactorEnabled: false,
 };
-const guest: AuthUser = { id: 2, email: null, guest: true, createdAt: "2026-03-04T10:00:00.000Z" };
+const guest: AuthUser = {
+  id: 2,
+  email: null,
+  guest: true,
+  createdAt: "2026-03-04T10:00:00.000Z",
+  twoFactorEnabled: false,
+};
 
 function renderPage(
   user: AuthUser | null | undefined,
@@ -23,7 +34,12 @@ function renderPage(
 ) {
   render(
     <MemoryRouter>
-      <AccountSettings user={user} hasProfile={hasProfile} onDeleted={onDeleted} />
+      <AccountSettings
+        user={user}
+        hasProfile={hasProfile}
+        onDeleted={onDeleted}
+        onSecurityChanged={vi.fn()}
+      />
     </MemoryRouter>
   );
   return { onDeleted };
@@ -37,6 +53,11 @@ const deleteButton = () => screen.getByRole("button", { name: /delet|erase/i });
 beforeEach(() => {
   vi.clearAllMocks();
   mockApi.deleteAccount.mockResolvedValue({ deleted: true, hadProfile: true });
+  mockApi.twoFactorStatus.mockResolvedValue({
+    enabled: false,
+    recoveryCodesRemaining: 0,
+    recoveryCodesTotal: 0,
+  });
 });
 
 describe("who is looking", () => {

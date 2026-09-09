@@ -17,6 +17,7 @@ const user_: AuthUser = {
   email: "jordan@example.com",
   guest: false,
   createdAt: "2026-03-04T10:00:00.000Z",
+  twoFactorEnabled: false,
 };
 
 function renderForgot() {
@@ -167,9 +168,63 @@ describe("choosing a new password", () => {
     await user.click(screen.getByRole("button", { name: /set my password/i }));
 
     await waitFor(() =>
-      expect(mockApi.resetPassword).toHaveBeenCalledWith("tok_from_email", "a long enough one")
+      // The third argument is the 2FA code, undefined until the server asks
+      // for one — the client cannot know in advance whether this account has a
+      // second factor, because that is a fact about someone else's account.
+      expect(mockApi.resetPassword).toHaveBeenCalledWith(
+        "tok_from_email",
+        "a long enough one",
+        undefined
+      )
     );
     expect(onSignedIn).toHaveBeenCalledWith(user_, "stu_1");
+  });
+
+  it("asks for a second factor when the server says the account has one", async () => {
+    // A reset deliberately does not bypass 2FA, so a valid link plus a new
+    // password is not sufficient — the whole point, given that anyone who can
+    // read the inbox can start a reset.
+    const user = userEvent.setup();
+    mockApi.resetPassword.mockResolvedValueOnce({ mfaRequired: true });
+    const { onSignedIn } = renderReset("?token=tok_2fa");
+
+    await user.type(screen.getByLabelText(/new password/i), "a long enough one");
+    await user.type(screen.getByLabelText(/type it again/i), "a long enough one");
+    await user.click(screen.getByRole("button", { name: /set my password/i }));
+
+    // Not an error — the flow simply grew a step, and nothing has changed yet.
+    const codeField = await screen.findByLabelText(/two-factor code/i);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onSignedIn).not.toHaveBeenCalled();
+    expect(screen.getByText(/recovery codes/i)).toBeInTheDocument();
+
+    mockApi.resetPassword.mockResolvedValueOnce({ user: user_, studentId: "stu_1" });
+    await user.type(codeField, "123456");
+    await user.click(screen.getByRole("button", { name: /set my password/i }));
+
+    await waitFor(() =>
+      expect(mockApi.resetPassword).toHaveBeenLastCalledWith(
+        "tok_2fa",
+        "a long enough one",
+        "123456"
+      )
+    );
+    expect(onSignedIn).toHaveBeenCalledWith(user_, "stu_1");
+  });
+
+  it("keeps the submit disabled until a required code is typed", async () => {
+    const user = userEvent.setup();
+    mockApi.resetPassword.mockResolvedValueOnce({ mfaRequired: true });
+    renderReset("?token=tok_2fa");
+
+    await user.type(screen.getByLabelText(/new password/i), "a long enough one");
+    await user.type(screen.getByLabelText(/type it again/i), "a long enough one");
+    await user.click(screen.getByRole("button", { name: /set my password/i }));
+
+    await screen.findByLabelText(/two-factor code/i);
+    expect(screen.getByRole("button", { name: /set my password/i })).toBeDisabled();
+    await user.type(screen.getByLabelText(/two-factor code/i), "123456");
+    expect(screen.getByRole("button", { name: /set my password/i })).toBeEnabled();
   });
 
   it("warns up front that other devices will be signed out", () => {

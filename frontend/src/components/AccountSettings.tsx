@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import TwoFactorPanel from "./TwoFactorPanel";
 import type { AuthUser } from "../types";
 
 /**
@@ -37,11 +38,14 @@ export default function AccountSettings({
   user,
   hasProfile,
   onDeleted,
+  onSecurityChanged,
 }: {
   /** `undefined` while the session is still being restored. */
   user: AuthUser | null | undefined;
   hasProfile: boolean;
   onDeleted: (hadProfile: boolean) => void;
+  /** Turning 2FA on or off changes `user.twoFactorEnabled`, which App holds. */
+  onSecurityChanged: () => void;
 }) {
   const [confirm, setConfirm] = useState("");
   const [password, setPassword] = useState("");
@@ -136,6 +140,10 @@ export default function AccountSettings({
           </p>
         )}
       </div>
+
+      {/* Only for a real account: a guest has no password, so there is nothing
+          for a second factor to be second *to*. */}
+      {!isGuest && <TwoFactorPanel onChanged={onSecurityChanged} />}
 
       {hasProfile && (
         <div className="panel acct-export">

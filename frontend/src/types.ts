@@ -32,7 +32,35 @@ export interface AuthUser {
   email: string | null;
   guest: boolean;
   createdAt: string;
+  /** Whether a confirmed second factor is switched on. Never the secret. */
+  twoFactorEnabled: boolean;
 }
+
+/** What /auth/2fa reports for the account page. */
+export interface TwoFactorStatus {
+  enabled: boolean;
+  recoveryCodesRemaining: number;
+  recoveryCodesTotal: number;
+}
+
+/**
+ * A login that stopped halfway.
+ *
+ * The two shapes are deliberately disjoint rather than one object with
+ * optional fields: a caller has to narrow on `mfaRequired` before it can read
+ * a user, which makes "forgot to handle the 2FA case" a type error instead of
+ * a runtime undefined.
+ */
+export type LoginResult =
+  | { mfaRequired: true; challenge: string }
+  | {
+      mfaRequired?: false;
+      user: AuthUser;
+      studentId: string | null;
+      discardedGuestProfile: boolean;
+      usedRecoveryCode?: boolean;
+      recoveryCodesRemaining?: number;
+    };
 
 export interface AuthState {
   user: AuthUser | null;

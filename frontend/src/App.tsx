@@ -351,6 +351,16 @@ export default function App() {
               user={user}
               hasProfile={!!student}
               onDeleted={onAccountDeleted}
+              // 2FA state lives on the user record, so flipping it has to
+              // re-ask rather than being guessed at locally.
+              onSecurityChanged={() => {
+                api
+                  .me()
+                  .then(({ user: current }) => setUser(current))
+                  .catch(() => {
+                    /* the change landed; the badge can be stale until reload */
+                  });
+              }}
             />
           }
         />

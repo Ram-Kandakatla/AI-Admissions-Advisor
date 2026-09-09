@@ -161,6 +161,16 @@ export interface UserRecord {
   email: string | null;
   guest: boolean;
   createdAt: string;
+  /**
+   * Whether a second factor is switched on and confirmed.
+   *
+   * A boolean, never the secret. This record is what /auth/me returns, so
+   * anything on it reaches the browser — and the secret is the second factor,
+   * not a description of it. A half-finished enrollment (secret generated, no
+   * code verified yet) reports false here, because from every caller's point
+   * of view it is not on.
+   */
+  twoFactorEnabled: boolean;
 }
 
 export interface SessionRecord {

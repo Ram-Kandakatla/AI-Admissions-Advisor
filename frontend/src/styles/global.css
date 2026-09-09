@@ -3950,6 +3950,149 @@ table.cmp-table {
 }
 
 /* =========================================================================
+   Two-factor authentication — the /account panel and the code step on sign-in
+
+   The panel is a small state machine on one card: off, password, secret,
+   codes. Each state replaces the card's contents rather than expanding it, so
+   the page never grows a long form someone has to scroll through to find the
+   button they were looking for.
+   ========================================================================= */
+.acct-2fa {
+  margin-top: 18px;
+}
+.acct-2fa p {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--txm);
+  margin: 0 0 12px;
+}
+.acct-2fa strong {
+  color: var(--tx);
+}
+.acct-2fa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+.acct-2fa .field {
+  max-width: 340px;
+  margin-bottom: 16px;
+}
+
+/* The "it's on" line, with a green dot. The only status indicator in the app
+   that needs to be readable at a glance from the top of a page. */
+.acct-2fa-on {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.acct-2fa-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  flex: none;
+  transform: translateY(-1px);
+}
+.acct-2fa-low {
+  color: var(--orange);
+}
+
+.acct-2fa-steps {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  display: grid;
+  gap: 12px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--txm);
+}
+.acct-2fa-link {
+  font-weight: 600;
+}
+
+/* The setup key. Monospaced and letter-spaced because it is transcribed by
+   hand into another device — the one place in this app where being able to
+   tell an 8 from a B matters more than looking tidy. */
+.acct-2fa-secret {
+  display: block;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--s2);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  word-spacing: 0.3em;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+  /* Selecting the whole key in one gesture is the common case. */
+  user-select: all;
+}
+
+/* ── Recovery codes ── */
+.acct-2fa-codes {
+  border-color: var(--orange);
+  background: var(--obg);
+}
+.acct-2fa-codes .acct-hd {
+  color: var(--orange);
+}
+.acct-warn-strong {
+  font-weight: 600;
+  color: var(--orange) !important;
+}
+.recovery-codes {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 14px;
+  background: var(--surface);
+  border: 0.5px solid var(--bmed);
+  border-radius: var(--r);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px 18px;
+}
+.recovery-codes code {
+  font-size: 13.5px;
+  letter-spacing: 0.06em;
+  color: var(--tx);
+  background: none;
+  padding: 0;
+  user-select: all;
+}
+
+/* ── The code step on the sign-in screen ── */
+.acct-mfa {
+  max-width: 460px;
+  margin: 0 auto;
+}
+.acct-mfa .field {
+  margin-bottom: 18px;
+}
+/* A six-digit code is read back to check it, so it gets the same treatment as
+   the setup key: wide tracking, and big enough to check at a glance. */
+#mfa-code,
+#tfa-confirm,
+#tfa-off-code,
+#reset-code {
+  font-size: 18px;
+  letter-spacing: 0.22em;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 620px) {
+  .acct-2fa .field {
+    max-width: none;
+  }
+  .recovery-codes {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* =========================================================================
    Account settings — /account
 
    One page, three panels, in the order the decision is actually made: who am
