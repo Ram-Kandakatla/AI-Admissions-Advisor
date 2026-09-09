@@ -73,6 +73,28 @@ export const api = {
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 
   /**
+   * Ask for a reset link.
+   *
+   * Always resolves for any well-formed address, because the server always
+   * answers 202 — telling the caller whether an account exists would turn this
+   * into a way to test a list of addresses for membership. The client must not
+   * reintroduce that distinction by, say, showing a different message when the
+   * response is slow.
+   */
+  forgotPassword: (email: string) =>
+    request<{ message: string }>("/auth/forgot", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  /** Spend a reset token. On success the caller is signed in. */
+  resetPassword: (token: string, password: string) =>
+    request<{ user: AuthUser; studentId: string | null }>("/auth/reset", {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
+    }),
+
+  /**
    * Erase the account and everything attached to it. There is no undo.
    *
    * `password` is required for a signed-in account and meaningless for a

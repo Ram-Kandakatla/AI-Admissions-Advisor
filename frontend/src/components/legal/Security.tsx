@@ -241,6 +241,14 @@ export default function Security() {
               text to keep it that way.
             </li>
             <li>
+              <strong>A password reset revokes every session and every other pending reset
+              token.</strong> Recovering an account is only recovery if it also evicts
+              whoever prompted it — a password change that leaves an attacker signed in has
+              achieved nothing. Reset tokens are 256 bits from the platform CSPRNG, stored
+              as a SHA-256 hash so the table holds nothing usable, single-use, and expire in
+              an hour.
+            </li>
+            <li>
               <strong>Chat is rate limited</strong> to 30 requests per 15 minutes per client,
               counted in the database so it works across a distributed runtime.
             </li>
@@ -272,8 +280,16 @@ export default function Security() {
           </p>
           <ul className="legal-list">
             <li>
-              <strong>No two-factor authentication</strong>, and no password-reset email
-              flow. A forgotten password currently has no self-serve recovery.
+              <strong>No two-factor authentication.</strong> A password is the only thing
+              standing between an attacker who knows your email and your account, so use a
+              password you have not used anywhere else.
+            </li>
+            <li>
+              <strong>Password reset trusts your email provider completely.</strong> That is
+              true of essentially every website, and it is worth understanding rather than
+              glossing: anyone who can read your inbox can reset your Compass password. The
+              link is single-use and expires in an hour, which limits the window but does
+              not change who holds the keys.
             </li>
             <li>
               <strong>Share links are bearer tokens.</strong> Anyone holding the URL can read
@@ -363,8 +379,8 @@ export default function Security() {
             iterations; logs are built so they cannot hold a student identifier.
           </li>
           <li>
-            <strong>Known gaps, stated plainly:</strong> no 2FA, no password reset, no
-            independent audit, and share links are bearer tokens.
+            <strong>Known gaps, stated plainly:</strong> no 2FA, no independent audit, and
+            share links are bearer tokens.
           </li>
           <li>Everything here is checkable — the source is public.</li>
         </ul>

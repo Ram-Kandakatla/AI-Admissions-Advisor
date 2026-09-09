@@ -116,3 +116,44 @@ export async function fakeVerify(password: string): Promise<false> {
   await derive(password, new Uint8Array(SALT_BYTES), ITERATIONS);
   return false;
 }
+
+// ---- Reset tokens ----
+//
+// A different primitive from the password hashing above, for a different job.
+// See migrations/0008_password_resets.sql for the full reasoning; the short
+// version is that a password is low-entropy and needs an expensive hash to
+// survive being stolen, while a reset token is 256 bits of CSPRNG output and
+// needs a fast one.
+
+/** Bytes of entropy in a reset token. 32 = 256 bits, far past brute force. */
+const TOKEN_BYTES = 32;
+
+/**
+ * A new reset token, in the form that goes in the URL.
+ *
+ * base64url rather than hex: the same entropy in 43 characters instead of 64,
+ * and every character is already safe in a query string, so nothing has to be
+ * percent-encoded on the way into an email client that may or may not get the
+ * escaping right.
+ */
+export function generateResetToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(TOKEN_BYTES));
+  // btoa needs a binary string; spreading a 32-byte array is cheap.
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * The value actually stored, so the table holds nothing usable.
+ *
+ * Deterministic and unsalted on purpose. A salt would make the row
+ * unfindable — the lookup is "given this token, which row is it" — and buys
+ * nothing here: salts defend against precomputation across a *guessable* input
+ * space, and there is no rainbow table for 256 random bits.
+ */
+export async function hashResetToken(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}

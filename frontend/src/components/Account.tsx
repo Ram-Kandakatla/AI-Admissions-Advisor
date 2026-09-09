@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import type { AuthUser, StudentRecord } from "../types";
 
@@ -160,6 +160,15 @@ export default function Account({
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+
+            {/* Only on the sign-in tab: on a signup form there is no password
+                to have forgotten yet, and offering to reset one is a prompt to
+                wonder whether you already have an account. */}
+            {!signingUp && (
+              <p className="acct-forgot">
+                <Link to="/forgot">Forgot your password?</Link>
+              </p>
+            )}
 
             <button type="submit" className="btn btn-primary acct-submit" disabled={busy}>
               {busy

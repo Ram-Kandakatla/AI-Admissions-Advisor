@@ -224,9 +224,10 @@ describe("Security — the parts a researcher needs", () => {
     ).toBeInTheDocument();
     expect(section.getByText(/No independent security audit/i)).toBeInTheDocument();
     expect(section.getByText(/No two-factor authentication/i)).toBeInTheDocument();
-    // The gap that got closed rather than reworded — if this string comes
-    // back, the page and the app disagree.
+    // The two gaps that got closed rather than reworded. If either string
+    // comes back, the page and the app disagree about what exists.
     expect(section.queryByText(/no self-serve account deletion/i)).toBeNull();
+    expect(section.queryByText(/no self-serve recovery/i)).toBeNull();
   });
 
   it("points at security.txt for machines", () => {
