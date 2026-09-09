@@ -1,12 +1,13 @@
 import type {
   Application,
-  AuthState,
-  AuthUser,
   ApplicationMeta,
   ApplicationsResponse,
+  AuthState,
+  AuthUser,
   ChatMessage,
   ChatMode,
   LlmProvider,
+  LoginResult,
   MajorInsights,
   Meta,
   NotesResponse,
@@ -17,6 +18,7 @@ import type {
   SharedPlan,
   ShareLink,
   StudentRecord,
+  TwoFactorStatus,
   University,
 } from "./types";
 
@@ -66,12 +68,53 @@ export const api = {
     }),
 
   login: (email: string, password: string) =>
-    request<{ user: AuthUser; studentId: string | null; discardedGuestProfile: boolean }>(
+    request<LoginResult>(
       "/auth/login",
       { method: "POST", body: JSON.stringify({ email, password }) }
     ),
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
+
+  // ---- Two-factor ----
+
+  /** Whether it's on, and how many recovery codes are left. */
+  twoFactorStatus: () => request<TwoFactorStatus>("/auth/2fa"),
+
+  /**
+   * Stage a secret. Nothing is switched on until a code confirms it, which is
+   * what stops a mistyped setup key from locking someone out.
+   */
+  startTwoFactor: (password: string) =>
+    request<{ secret: string; otpauthUri: string }>("/auth/2fa/setup", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
+  /** Confirm with a real code. The recovery codes come back exactly once. */
+  enableTwoFactor: (code: string) =>
+    request<{ enabled: true; recoveryCodes: string[] }>("/auth/2fa/enable", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+
+  disableTwoFactor: (password: string, code: string) =>
+    request<{ enabled: false }>("/auth/2fa/disable", {
+      method: "POST",
+      body: JSON.stringify({ password, code }),
+    }),
+
+  regenerateRecoveryCodes: (password: string, code: string) =>
+    request<{ recoveryCodes: string[] }>("/auth/2fa/recovery-codes", {
+      method: "POST",
+      body: JSON.stringify({ password, code }),
+    }),
+
+  /** The second half of a login, redeeming the challenge from `login`. */
+  verifyTwoFactor: (challenge: string, code: string) =>
+    request<Extract<LoginResult, { mfaRequired?: false }>>("/auth/2fa/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge, code }),
+    }),
 
   /**
    * Ask for a reset link.
@@ -88,11 +131,22 @@ export const api = {
       body: JSON.stringify({ email }),
     }),
 
-  /** Spend a reset token. On success the caller is signed in. */
-  resetPassword: (token: string, password: string) =>
-    request<{ user: AuthUser; studentId: string | null }>("/auth/reset", {
+  /**
+   * Spend a reset token. On success the caller is signed in.
+   *
+   * `mfaRequired` comes back instead of a user when the account has a second
+   * factor: a reset deliberately does not bypass it here, so the link alone is
+   * not enough. The client cannot know in advance — the server will not say
+   * whether an account has 2FA until a valid token is presented, since that
+   * would be a fact about someone else's account.
+   */
+  resetPassword: (token: string, password: string, code?: string) =>
+    request<
+      | { mfaRequired: true }
+      | { mfaRequired?: false; user: AuthUser; studentId: string | null }
+    >("/auth/reset", {
       method: "POST",
-      body: JSON.stringify({ token, password }),
+      body: JSON.stringify({ token, password, ...(code ? { code } : {}) }),
     }),
 
   /**

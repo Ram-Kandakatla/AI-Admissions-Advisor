@@ -39,6 +39,16 @@ export default function ResetPassword({
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Set once the server says this account has a second factor.
+   *
+   * It cannot be known before submitting: the API will not reveal whether an
+   * account has 2FA until a valid reset token is presented, because that is a
+   * fact about someone else's account. So the form asks for a password first
+   * and then, if needed, for a code — which is also the friendlier order.
+   */
+  const [needsCode, setNeedsCode] = useState(false);
+  const [code, setCode] = useState("");
 
   // A link with no token at all — usually an email client that mangled the
   // URL, or someone who typed /reset by hand. Nothing to submit, so the form
@@ -62,7 +72,8 @@ export default function ResetPassword({
 
   const tooShort = password !== "" && password.length < MIN_PASSWORD;
   const mismatch = confirm !== "" && password !== confirm;
-  const ready = password.length >= MIN_PASSWORD && password === confirm;
+  const ready =
+    password.length >= MIN_PASSWORD && password === confirm && (!needsCode || code.trim() !== "");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,8 +81,15 @@ export default function ResetPassword({
     setBusy(true);
     setError(null);
     try {
-      const { user, studentId } = await api.resetPassword(token, password);
-      onSignedIn(user, studentId);
+      const result = await api.resetPassword(token, password, needsCode ? code : undefined);
+      if (result.mfaRequired) {
+        // The link is good and the password is acceptable; this account just
+        // also has a second factor. Nothing has been changed yet.
+        setNeedsCode(true);
+        setBusy(false);
+        return;
+      }
+      onSignedIn(result.user, result.studentId);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -136,6 +154,31 @@ export default function ResetPassword({
               </span>
             )}
           </div>
+
+          {needsCode && (
+            <div className="field">
+              <label htmlFor="reset-code">Two-factor code</label>
+              <input
+                id="reset-code"
+                type="text"
+                value={code}
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                autoCorrect="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                autoFocus
+                required
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="123456"
+              />
+              <span className="hint">
+                This account has two-factor authentication on, so the emailed link
+                isn&apos;t enough by itself — that&apos;s the point of it. Use a code from
+                your authenticator app, or one of your recovery codes.
+              </span>
+            </div>
+          )}
 
           <button type="submit" className="btn btn-primary acct-submit" disabled={!ready || busy}>
             {busy ? "Setting your password…" : "Set my password"}{" "}

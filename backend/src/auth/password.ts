@@ -117,7 +117,12 @@ export async function fakeVerify(password: string): Promise<false> {
   return false;
 }
 
-// ---- Reset tokens ----
+// ---- Opaque bearer tokens ----
+//
+// Used by password reset and, since 2FA, by the short-lived challenge that
+// carries "this caller's password was already checked" between the two halves
+// of a login. Same primitive, same reasoning; the names say "reset" for
+// historical reasons and are left alone rather than churning a merged file.
 //
 // A different primitive from the password hashing above, for a different job.
 // See migrations/0008_password_resets.sql for the full reasoning; the short

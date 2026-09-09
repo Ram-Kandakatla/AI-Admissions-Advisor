@@ -8,7 +8,12 @@
 //   DELETE /api/auth/account { password?, confirm } → erases the account and
 //                                                     everything it owns
 //   POST /api/auth/forgot   { email }               → mails a reset link
-//   POST /api/auth/reset    { token, password }     → sets a new password
+//   POST /api/auth/reset    { token, password, code? } → sets a new password
+//   POST /api/auth/2fa/setup   { password }         → stages a TOTP secret
+//   POST /api/auth/2fa/enable  { code }             → confirms it, issues codes
+//   POST /api/auth/2fa/disable { password, code }   → turns it off
+//   POST /api/auth/2fa/recovery-codes { password, code } → a fresh batch
+//   POST /api/auth/2fa/verify  { challenge, code }  → finishes a login
 //
 // Signup is a *claim*, not a create: the caller almost always already has an
 // anonymous user row holding the profile they just built, and signing up fills
@@ -26,6 +31,13 @@ import {
 } from "../auth/password.js";
 import { createEmailService } from "../services/emailService.js";
 import {
+  generateRecoveryCodes,
+  generateTotpSecret,
+  hashRecoveryCode,
+  otpauthUri,
+  verifyTotp,
+} from "../auth/totp.js";
+import {
   clearSessionCookie,
   ensureSession,
   ownedStudent,
@@ -34,6 +46,7 @@ import {
 import { rateLimit } from "../middleware/rateLimit.js";
 import { readJson } from "../http.js";
 import { createLogger, errorFields } from "../log.js";
+import type { Context } from "hono";
 import type { AppEnv } from "../types.js";
 
 const auth = new Hono<AppEnv>();
@@ -90,6 +103,20 @@ auth.use(
 // hammer for free.
 auth.use(
   "/reset",
+  rateLimit({
+    bucket: "auth",
+    limit: 15,
+    windowMs: 15 * 60 * 1000,
+    message: "Too many attempts. Please wait a few minutes and try again.",
+  })
+);
+
+// Every route under /2fa either checks a password or guesses at a six-digit
+// code, and the second is the one that matters: 15 attempts per 15 minutes
+// against a million possibilities is what keeps brute force out of reach.
+// Hono matches this prefix for the nested paths too.
+auth.use(
+  "/2fa/*",
   rateLimit({
     bucket: "auth",
     limit: 15,
@@ -181,6 +208,71 @@ auth.post("/signup", async (c) => {
   return c.json({ user, studentId: student?.id ?? null }, 201);
 });
 
+/**
+ * Check a second factor: a TOTP code, or a recovery code.
+ *
+ * One function because every place that needs a second factor needs both
+ * kinds. Splitting them would mean each caller decides which to accept, and
+ * the first one to forget recovery codes turns a lost phone into a lost
+ * account — which is the failure this whole feature has to avoid, given that
+ * password reset here does not bypass 2FA.
+ *
+ * A TOTP code is tried first and, if it verifies, its time-step is consumed.
+ * That consumption is the replay guard: a code is valid across a ±1 step
+ * window, so without it a code read off someone's shoulder stays usable for up
+ * to 90 seconds. `consumeTotpStep` is a conditional UPDATE, so two requests
+ * presenting the same code at the same instant cannot both succeed.
+ *
+ * A six-digit string is never tried as a recovery code and vice versa: the
+ * formats do not overlap, and attempting both would double the work and let a
+ * failed TOTP attempt silently consume a recovery code.
+ */
+async function verifySecondFactor(
+  c: Context<AppEnv>,
+  userId: number,
+  code: string
+): Promise<{ ok: boolean; usedRecoveryCode: boolean; remaining?: number }> {
+  const store = c.get("store");
+  const typed = code.trim();
+  if (!typed) return { ok: false, usedRecoveryCode: false };
+
+  const state = await store.getTotpState(userId);
+  if (!state?.secret) return { ok: false, usedRecoveryCode: false };
+
+  if (/^[\d\s-]{6,10}$/.test(typed)) {
+    const { valid, step } = await verifyTotp(state.secret, typed);
+    if (!valid) return { ok: false, usedRecoveryCode: false };
+    // Valid, but possibly already spent — see the replay note above.
+    const fresh = await store.consumeTotpStep(userId, step);
+    return { ok: fresh, usedRecoveryCode: false };
+  }
+
+  const spent = await store.consumeRecoveryCode(userId, await hashRecoveryCode(typed));
+  if (!spent) return { ok: false, usedRecoveryCode: false };
+  const { remaining } = await store.countRecoveryCodesLeft(userId);
+  return { ok: true, usedRecoveryCode: true, remaining };
+}
+
+/**
+ * Mint the token that carries "the password was already checked" between the
+ * two halves of a flow.
+ *
+ * Deliberately not a session cookie. A half-authenticated session is still a
+ * session, and every ownership check in this app would have to learn about a
+ * state that does not exist today — one forgotten check and the second factor
+ * is optional. A separate short-lived row keeps `sessions` meaning exactly one
+ * thing: fully authenticated.
+ */
+async function issueMfaChallenge(
+  c: Context<AppEnv>,
+  userId: number,
+  purpose: "login" | "reset"
+): Promise<string> {
+  const token = generateResetToken();
+  await c.get("store").createMfaChallenge(userId, await hashResetToken(token), purpose);
+  return token;
+}
+
 auth.post("/login", async (c) => {
   const store = c.get("store");
   const { errors, credentials } = validateCredentials(
@@ -202,6 +294,19 @@ auth.post("/login", async (c) => {
     return c.json({ error: "That email and password don't match an account." }, 401);
   }
 
+  // WHERE 2FA INTERRUPTS THE LOGIN
+  //
+  // Here, before any session exists. The password was right, and that is now
+  // only half of what is required — so nothing is minted, no cookie is set,
+  // and the caller gets a challenge to redeem at /2fa/verify instead. The
+  // guest draft is deliberately left alone until the second factor lands:
+  // discarding it now would let a stranger with a stolen password destroy
+  // work by getting halfway through a login.
+  const totp = await store.getTotpState(row.id);
+  if (totp?.enabled) {
+    return c.json({ mfaRequired: true, challenge: await issueMfaChallenge(c, row.id, "login") });
+  }
+
   // Whether the guest draft this session was carrying is about to be left
   // behind. The account's own profile wins — it is the one the person has
   // deliberately saved — but the UI should be able to say so rather than
@@ -212,9 +317,57 @@ auth.post("/login", async (c) => {
   const student = await store.getStudentByUserId(row.id);
 
   return c.json({
-    user: { id: row.id, email: row.email, guest: false, createdAt: row.created_at },
+    // From the store rather than hand-built from `row`: UserRecord has gained
+    // a field twice now, and an object assembled here silently omits it.
+    user: await store.getUser(row.id),
     studentId: student?.id ?? null,
     discardedGuestProfile: guestDraft != null && guestDraft.id !== student?.id,
+  });
+});
+
+/**
+ * The second half of a login.
+ *
+ * The challenge is spent whether or not the code was right. A challenge that
+ * survived a wrong code would turn the five-minute window into an unlimited
+ * guessing budget against six digits — the rate limiter would still be there,
+ * but relying on it alone to hold the line on a factor that is supposed to be
+ * independent is not a trade worth making. Getting it wrong costs a password
+ * retype, which is the correct price for a failed second factor.
+ */
+auth.post("/2fa/verify", async (c) => {
+  const body = await readJson<Record<string, unknown>>(c);
+  const challenge = typeof body.challenge === "string" ? body.challenge.trim() : "";
+  const code = typeof body.code === "string" ? body.code : "";
+
+  const store = c.get("store");
+  const found = challenge
+    ? await store.findMfaChallenge(await hashResetToken(challenge), "login")
+    : null;
+  if (!found) {
+    return c.json({ error: "This sign-in attempt has expired. Please sign in again." }, 400);
+  }
+
+  await store.deleteMfaChallenge(await hashResetToken(challenge));
+
+  const result = await verifySecondFactor(c, found.userId, code);
+  if (!result.ok) {
+    return c.json(
+      { error: "That code isn't right. Please sign in again to get a new attempt." },
+      401
+    );
+  }
+
+  const guestDraft = await ownedStudent(c);
+  await rotateSession(c, found.userId);
+  const student = await store.getStudentByUserId(found.userId);
+
+  return c.json({
+    user: await store.getUser(found.userId),
+    studentId: student?.id ?? null,
+    discardedGuestProfile: guestDraft != null && guestDraft.id !== student?.id,
+    usedRecoveryCode: result.usedRecoveryCode,
+    recoveryCodesRemaining: result.remaining,
   });
 });
 
@@ -420,6 +573,37 @@ auth.post("/reset", async (c) => {
 
   if (!reset) return invalid();
 
+  // WHY A RESET DOES NOT BYPASS THE SECOND FACTOR
+  //
+  // The user's call, and the secure one. The alternative — email alone is
+  // enough to set a new password — makes 2FA protect against a stolen password
+  // and nothing else, while leaving the inbox as a complete account-takeover
+  // path. Since email is *already* the recovery channel, that would reduce the
+  // second factor to decoration for the threat it most needs to cover.
+  //
+  // The cost is real and is why recovery codes are issued at enrollment and
+  // shown once: someone who loses their phone and their codes cannot get back
+  // in, and there is no support desk here to override it. Both the enrollment
+  // screen and the Security page say so in as many words.
+  //
+  // Checked *before* the password is hashed and the token spent, so a missing
+  // code costs neither the link nor 60ms of PBKDF2.
+  const totp = await store.getTotpState(reset.userId);
+  if (totp?.enabled) {
+    const code = typeof body.code === "string" ? body.code : "";
+    if (!code) {
+      // Not an error: the client cannot know a second factor is needed until
+      // it presents a valid token, so this is the flow telling it to ask.
+      // Deliberately reached only for a token that verified — an invalid one
+      // is refused above, so this reveals nothing about anybody else.
+      return c.json({ mfaRequired: true }, 200);
+    }
+    const result = await verifySecondFactor(c, reset.userId, code);
+    if (!result.ok) {
+      return c.json({ error: "That code isn't right.", mfaRequired: true }, 401);
+    }
+  }
+
   const passwordHash = await hashPassword(password);
   const spent = await store.resetPassword(
     await hashResetToken(token),
@@ -526,6 +710,182 @@ auth.delete("/account", async (c) => {
   // `hadProfile` is what lets it say "your profile and everything in it" only
   // when that is true. A body of nothing would make that a guess.
   return c.json({ deleted: true, hadProfile });
+});
+
+/* ------------------------------------------------- Enrollment and teardown */
+
+/**
+ * The signed-in, non-guest account behind this request, after re-checking its
+ * password.
+ *
+ * Every route below either switches a second factor on or off, and all of them
+ * ask for the password again for the same reason DELETE /account does: a valid
+ * session is not enough authority to change how the account is protected. A
+ * borrowed laptop has a session; it does not have the password.
+ *
+ * Returns a Response on failure so each caller is one `if` rather than five
+ * lines of the same branching.
+ */
+async function requirePasswordReauth(
+  c: Context<AppEnv>,
+  password: unknown
+): Promise<{ userId: number } | Response> {
+  const session = c.get("session");
+  if (!session) return c.json({ error: "You need to be signed in." }, 401);
+
+  const store = c.get("store");
+  const user = await store.getUser(session.userId);
+  if (!user || user.guest || !user.email) {
+    // A guest has no password to re-check and nothing to protect with a second
+    // factor — there is no account to sign in to.
+    return c.json({ error: "Create an account first." }, 403);
+  }
+
+  const row = await store.findUserForLogin(user.email);
+  const typed = typeof password === "string" ? password : "";
+  const ok = row ? await verifyPassword(typed, row.password_hash) : await fakeVerify(typed);
+  if (!ok || !row) return c.json({ error: "That password is not correct." }, 403);
+
+  return { userId: user.id };
+}
+
+/**
+ * Stage a secret and hand back what the user needs to enrol.
+ *
+ * Nothing is switched on here. The secret is stored unconfirmed and 2FA stays
+ * off until a code generated from it comes back at /2fa/enable — which is what
+ * stops a mistyped setup key from locking someone out of their own account,
+ * the single likeliest way to get this wrong.
+ *
+ * Calling it again replaces the staged secret, so an abandoned enrollment (or
+ * a new phone) is just a fresh start rather than a state to clean up.
+ */
+auth.post("/2fa/setup", async (c) => {
+  const body = await readJson<Record<string, unknown>>(c);
+  const auth_ = await requirePasswordReauth(c, body.password);
+  if (auth_ instanceof Response) return auth_;
+
+  const store = c.get("store");
+  const user = await store.getUser(auth_.userId);
+  const secret = generateTotpSecret();
+  await store.stageTotpSecret(auth_.userId, secret);
+
+  // The secret leaves the server exactly here, to the person enrolling, over
+  // an authenticated request they just re-proved a password for. The otpauth
+  // URI is the same secret in the form an app can consume — a tappable link on
+  // a phone, and the fallback for anyone whose app scans nothing.
+  return c.json({
+    secret,
+    otpauthUri: otpauthUri(secret, user?.email ?? "account"),
+  });
+});
+
+/**
+ * Confirm enrollment with a real code, and issue recovery codes.
+ *
+ * The recovery codes are returned once and never again — they are stored
+ * hashed, so this response is the only time they exist in readable form. That
+ * is deliberate and it is also why they are issued *here*, in the same
+ * transaction that switches 2FA on: password reset does not bypass the second
+ * factor in this app, so an account that had 2FA enabled without codes would
+ * be one lost phone away from being unrecoverable.
+ */
+auth.post("/2fa/enable", async (c) => {
+  const session = c.get("session");
+  if (!session) return c.json({ error: "You need to be signed in." }, 401);
+
+  const body = await readJson<Record<string, unknown>>(c);
+  const code = typeof body.code === "string" ? body.code : "";
+
+  const store = c.get("store");
+  const state = await store.getTotpState(session.userId);
+  if (!state?.secret) {
+    return c.json({ error: "Start the setup again — there's no pending secret." }, 400);
+  }
+  if (state.enabled) {
+    return c.json({ error: "Two-factor authentication is already on." }, 409);
+  }
+
+  const { valid, step } = await verifyTotp(state.secret, code);
+  if (!valid) {
+    return c.json(
+      { error: "That code isn't right. Check your authenticator app and try the current code." },
+      400
+    );
+  }
+
+  const codes = generateRecoveryCodes();
+  const hashes = await Promise.all(codes.map(hashRecoveryCode));
+  // `step` is banked as spent in the same write, so the code just used to
+  // prove the app works cannot also be used to sign in.
+  const enabled = await store.enableTotp(session.userId, step, hashes);
+  if (!enabled) {
+    return c.json({ error: "Two-factor authentication is already on." }, 409);
+  }
+
+  return c.json({ enabled: true, recoveryCodes: codes });
+});
+
+/**
+ * Turn it off. Needs the password *and* a current second factor.
+ *
+ * Both, because either alone is exactly the situation 2FA exists to survive: a
+ * stolen password should not be able to remove the factor that is blocking it,
+ * and neither should a borrowed phone.
+ */
+auth.post("/2fa/disable", async (c) => {
+  const body = await readJson<Record<string, unknown>>(c);
+  const auth_ = await requirePasswordReauth(c, body.password);
+  if (auth_ instanceof Response) return auth_;
+
+  const store = c.get("store");
+  const state = await store.getTotpState(auth_.userId);
+  if (!state?.enabled) return c.json({ error: "Two-factor authentication is not on." }, 409);
+
+  const code = typeof body.code === "string" ? body.code : "";
+  const result = await verifySecondFactor(c, auth_.userId, code);
+  if (!result.ok) return c.json({ error: "That code isn't right." }, 403);
+
+  await store.disableTotp(auth_.userId);
+  return c.json({ enabled: false });
+});
+
+/**
+ * A fresh batch of recovery codes, replacing every existing one.
+ *
+ * Same two proofs as disabling, for the same reason: a new batch silently
+ * invalidates the printout someone is relying on, so it must not be something
+ * a stolen session can do.
+ */
+auth.post("/2fa/recovery-codes", async (c) => {
+  const body = await readJson<Record<string, unknown>>(c);
+  const auth_ = await requirePasswordReauth(c, body.password);
+  if (auth_ instanceof Response) return auth_;
+
+  const store = c.get("store");
+  const state = await store.getTotpState(auth_.userId);
+  if (!state?.enabled) return c.json({ error: "Two-factor authentication is not on." }, 409);
+
+  const result = await verifySecondFactor(c, auth_.userId, typeof body.code === "string" ? body.code : "");
+  if (!result.ok) return c.json({ error: "That code isn't right." }, 403);
+
+  const codes = generateRecoveryCodes();
+  await store.replaceRecoveryCodes(auth_.userId, await Promise.all(codes.map(hashRecoveryCode)));
+  return c.json({ recoveryCodes: codes });
+});
+
+/** How many recovery codes are left, for the account page. */
+auth.get("/2fa", async (c) => {
+  const session = c.get("session");
+  if (!session) return c.json({ error: "You need to be signed in." }, 401);
+  const store = c.get("store");
+  const state = await store.getTotpState(session.userId);
+  const counts = await store.countRecoveryCodesLeft(session.userId);
+  return c.json({
+    enabled: state?.enabled ?? false,
+    recoveryCodesRemaining: counts.remaining,
+    recoveryCodesTotal: counts.total,
+  });
 });
 
 export default auth;

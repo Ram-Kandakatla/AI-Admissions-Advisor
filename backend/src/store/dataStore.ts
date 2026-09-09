@@ -90,6 +90,9 @@ interface UserRow {
   password_hash: string | null;
   created_at: string;
   updated_at: string | null;
+  totp_secret: string | null;
+  totp_enabled_at: string | null;
+  totp_last_step: number | null;
 }
 
 interface SessionRow {
@@ -171,6 +174,10 @@ function userFromRow(row: UserRow | null): UserRecord | null {
     email: row.email,
     guest: row.email === null,
     createdAt: row.created_at,
+    // Enrolled *and* confirmed. A secret that exists but was never proved
+    // against a real code is not protection, and reporting it as such would
+    // show a user 2FA is on when their app has never generated a working code.
+    twoFactorEnabled: row.totp_enabled_at !== null,
   };
 }
 
@@ -714,6 +721,44 @@ export function createStore(db: D1Database) {
     "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND email IS NOT NULL"
   );
   const deleteSessionsForUser = db.prepare("DELETE FROM sessions WHERE user_id = ?");
+
+  // ---- Two-factor ----
+  const setTotpSecretRow = db.prepare(
+    "UPDATE users SET totp_secret = ?, totp_enabled_at = NULL, totp_last_step = NULL, updated_at = ? WHERE id = ? AND email IS NOT NULL"
+  );
+  const enableTotpRow = db.prepare(
+    "UPDATE users SET totp_enabled_at = ?, totp_last_step = ?, updated_at = ? WHERE id = ? AND totp_secret IS NOT NULL AND totp_enabled_at IS NULL"
+  );
+  const disableTotpRow = db.prepare(
+    "UPDATE users SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL, updated_at = ? WHERE id = ?"
+  );
+  // The compare-and-set that makes replay impossible: the step only moves
+  // forward, so a code already spent cannot be spent again inside its window.
+  const advanceTotpStepRow = db.prepare(
+    "UPDATE users SET totp_last_step = ? WHERE id = ? AND (totp_last_step IS NULL OR totp_last_step < ?)"
+  );
+  const insertRecoveryCode = db.prepare(
+    "INSERT INTO recovery_codes (code_hash, user_id, created_at) VALUES (?, ?, ?)"
+  );
+  const selectLiveRecoveryCode = db.prepare(
+    "SELECT code_hash FROM recovery_codes WHERE code_hash = ? AND user_id = ? AND used_at IS NULL"
+  );
+  const spendRecoveryCode = db.prepare(
+    "UPDATE recovery_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL"
+  );
+  const clearRecoveryCodes = db.prepare("DELETE FROM recovery_codes WHERE user_id = ?");
+  const countRecoveryCodes = db.prepare(
+    "SELECT COUNT(*) AS total, SUM(CASE WHEN used_at IS NULL THEN 1 ELSE 0 END) AS remaining FROM recovery_codes WHERE user_id = ?"
+  );
+  const insertChallenge = db.prepare(
+    "INSERT INTO mfa_challenges (token_hash, user_id, created_at, expires_at, purpose) VALUES (?, ?, ?, ?, ?)"
+  );
+  const selectChallenge = db.prepare(
+    "SELECT user_id FROM mfa_challenges WHERE token_hash = ? AND purpose = ? AND expires_at > ?"
+  );
+  const deleteChallenge = db.prepare("DELETE FROM mfa_challenges WHERE token_hash = ?");
+  const clearChallengesForUser = db.prepare("DELETE FROM mfa_challenges WHERE user_id = ?");
+  const sweepChallengeRows = db.prepare("DELETE FROM mfa_challenges WHERE expires_at <= ?");
   const deleteUserRow = db.prepare("DELETE FROM users WHERE id = ?");
 
   /** Sessions last 30 days from creation. Not extended on use — a fixed life
@@ -912,6 +957,148 @@ export function createStore(db: D1Database) {
     return (results[0]?.meta?.changes ?? 0) > 0;
   }
 
+  /**
+   * The enrolled secret, for verification. The one place it leaves the table.
+   *
+   * Returns the raw column rather than putting it on UserRecord, deliberately:
+   * UserRecord is what /auth/me serialises to the browser, and a secret that
+   * rides along on the shape every route already returns is one careless
+   * `c.json(user)` away from being published. Naming the exception here keeps
+   * every other caller on a type that cannot leak it.
+   */
+  async function getTotpState(
+    userId: number
+  ): Promise<{ secret: string | null; enabled: boolean; lastStep: number | null } | null> {
+    const row = await selectUser.bind(userId).first<UserRow>();
+    if (!row) return null;
+    return {
+      secret: row.totp_secret,
+      enabled: row.totp_enabled_at !== null,
+      lastStep: row.totp_last_step,
+    };
+  }
+
+  /**
+   * Stage a secret, unconfirmed.
+   *
+   * Also clears any previous enrollment, which is what makes "set it up again
+   * on a new phone" work without a separate route: staging a new secret turns
+   * 2FA off until a code from the new device proves it works.
+   */
+  async function stageTotpSecret(userId: number, secret: string): Promise<void> {
+    await setTotpSecretRow.bind(secret, new Date().toISOString(), userId).run();
+  }
+
+  /**
+   * Confirm enrollment and issue recovery codes, atomically.
+   *
+   * The codes are the only thing standing between a lost phone and a lost
+   * account — password reset does not bypass 2FA here — so they must not be
+   * able to fail to exist after 2FA is switched on. One batch, all or nothing.
+   *
+   * `step` is recorded as spent in the same write: the code just used to prove
+   * the app works must not also be usable to log in with.
+   */
+  async function enableTotp(
+    userId: number,
+    step: number,
+    codeHashes: string[]
+  ): Promise<boolean> {
+    const now = new Date().toISOString();
+    const results = await db.batch([
+      enableTotpRow.bind(now, step, now, userId),
+      clearRecoveryCodes.bind(userId),
+      ...codeHashes.map((hash) => insertRecoveryCode.bind(hash, userId, now)),
+    ]);
+    return (results[0]?.meta?.changes ?? 0) > 0;
+  }
+
+  /** Turn it off and destroy every recovery code and pending challenge. */
+  async function disableTotp(userId: number): Promise<void> {
+    await db.batch([
+      disableTotpRow.bind(new Date().toISOString(), userId),
+      clearRecoveryCodes.bind(userId),
+      clearChallengesForUser.bind(userId),
+    ]);
+  }
+
+  /**
+   * Record a spent time-step. False means it was already spent — a replay.
+   *
+   * The guard is in the UPDATE rather than in a read-then-write, so two
+   * requests presenting the same code at the same moment cannot both win.
+   */
+  async function consumeTotpStep(userId: number, step: number): Promise<boolean> {
+    const { meta } = await advanceTotpStepRow.bind(step, userId, step).run();
+    return meta.changes > 0;
+  }
+
+  /** Spend a recovery code. False if it never existed or was already used. */
+  async function consumeRecoveryCode(userId: number, codeHash: string): Promise<boolean> {
+    const live = await selectLiveRecoveryCode.bind(codeHash, userId).first<{ code_hash: string }>();
+    if (!live) return false;
+    const { meta } = await spendRecoveryCode.bind(new Date().toISOString(), codeHash).run();
+    return meta.changes > 0;
+  }
+
+  /** How many codes are left, for the "3 of 10 remaining" line. */
+  async function countRecoveryCodesLeft(
+    userId: number
+  ): Promise<{ total: number; remaining: number }> {
+    const row = await countRecoveryCodes
+      .bind(userId)
+      .first<{ total: number; remaining: number | null }>();
+    return { total: row?.total ?? 0, remaining: row?.remaining ?? 0 };
+  }
+
+  /** Replace the whole batch — used by "generate new codes". */
+  async function replaceRecoveryCodes(userId: number, codeHashes: string[]): Promise<void> {
+    const now = new Date().toISOString();
+    await db.batch([
+      clearRecoveryCodes.bind(userId),
+      ...codeHashes.map((hash) => insertRecoveryCode.bind(hash, userId, now)),
+    ]);
+  }
+
+  /** Five minutes: the pause between two screens of one flow. */
+  const CHALLENGE_TTL_MINUTES = 5;
+
+  async function createMfaChallenge(
+    userId: number,
+    tokenHash: string,
+    purpose: string
+  ): Promise<void> {
+    const now = new Date();
+    const expiresAt = new Date(
+      now.getTime() + CHALLENGE_TTL_MINUTES * 60 * 1000
+    ).toISOString();
+    // Clearing first keeps one live challenge per user, so a stale one from an
+    // abandoned attempt cannot be completed later.
+    await db.batch([
+      clearChallengesForUser.bind(userId),
+      insertChallenge.bind(tokenHash, userId, now.toISOString(), expiresAt, purpose),
+    ]);
+  }
+
+  async function findMfaChallenge(
+    tokenHash: string,
+    purpose: string
+  ): Promise<{ userId: number } | null> {
+    const row = await selectChallenge
+      .bind(tokenHash, purpose, new Date().toISOString())
+      .first<{ user_id: number }>();
+    return row ? { userId: row.user_id } : null;
+  }
+
+  async function deleteMfaChallenge(tokenHash: string): Promise<void> {
+    await deleteChallenge.bind(tokenHash).run();
+  }
+
+  /** Housekeeping — expired rows are already unusable, this reclaims space. */
+  async function sweepMfaChallenges(): Promise<void> {
+    await sweepChallengeRows.bind(new Date().toISOString()).run();
+  }
+
   /** Housekeeping — expired tokens are already unusable, this reclaims space. */
   async function sweepPasswordResets(): Promise<void> {
     await sweepResetRows.bind(new Date().toISOString()).run();
@@ -950,6 +1137,18 @@ export function createStore(db: D1Database) {
     findPasswordReset,
     resetPassword,
     sweepPasswordResets,
+    getTotpState,
+    stageTotpSecret,
+    enableTotp,
+    disableTotp,
+    consumeTotpStep,
+    consumeRecoveryCode,
+    countRecoveryCodesLeft,
+    replaceRecoveryCodes,
+    createMfaChallenge,
+    findMfaChallenge,
+    deleteMfaChallenge,
+    sweepMfaChallenges,
     getConversation,
     appendMessage,
     getApplications,

@@ -27,6 +27,16 @@ export default function Account({
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  /**
+   * The challenge from a login that stopped at the second factor.
+   *
+   * Non-null means the password was accepted and this screen is now asking for
+   * a code. Held in state rather than pushed to its own route on purpose: the
+   * challenge is a short-lived credential, and a URL is the one place in a
+   * browser that gets bookmarked, shared, and kept in history.
+   */
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState("");
   const emailRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -49,8 +59,15 @@ export default function Account({
         const { user, studentId } = await api.signup(email, password);
         onSignedIn(user, studentId, false);
       } else {
-        const { user, studentId, discardedGuestProfile } = await api.login(email, password);
-        onSignedIn(user, studentId, discardedGuestProfile);
+        const result = await api.login(email, password);
+        if (result.mfaRequired) {
+          // Right password, not yet signed in. Nothing has been minted server
+          // side; this screen swaps to the code step.
+          setChallenge(result.challenge);
+          setBusy(false);
+          return;
+        }
+        onSignedIn(result.user, result.studentId, result.discardedGuestProfile);
       }
     } catch (err) {
       setErrors([err instanceof Error ? err.message : "Something went wrong."]);
@@ -58,6 +75,97 @@ export default function Account({
       setBusy(false);
     }
   };
+
+  /**
+   * The second step. A wrong code costs a whole new sign-in, because the
+   * server spends the challenge whether or not the code was right — otherwise
+   * the five-minute window becomes an unlimited guessing budget against six
+   * digits. Saying so on the screen is fairer than letting it surprise anyone.
+   */
+  const submitCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!challenge || busy) return;
+    setBusy(true);
+    setErrors([]);
+    try {
+      const result = await api.verifyTwoFactor(challenge, code);
+      onSignedIn(result.user, result.studentId, result.discardedGuestProfile);
+    } catch (err) {
+      setErrors([err instanceof Error ? err.message : "Something went wrong."]);
+      // Back to the password step: the challenge is gone, so the code box
+      // would have nothing to redeem against.
+      setChallenge(null);
+      setCode("");
+      setPassword("");
+      setBusy(false);
+    }
+  };
+
+  if (challenge) {
+    return (
+      <section className="acct">
+        <div className="panel acct-panel acct-mfa">
+          <h1 className="acct-hd">Enter your code</h1>
+          <p className="acct-sub">
+            Open your authenticator app and type the six-digit code for Compass. You can
+            also use one of your recovery codes.
+          </p>
+
+          {errors.length > 0 && (
+            <div className="form-error" role="alert">
+              {errors.join(" ")}
+            </div>
+          )}
+
+          <form onSubmit={submitCode} noValidate>
+            <div className="field">
+              <label htmlFor="mfa-code">Authentication code</label>
+              <input
+                id="mfa-code"
+                type="text"
+                value={code}
+                // `one-time-code` is what lets iOS and Android offer the code
+                // from the notification shade. inputMode numeric brings up the
+                // number pad without blocking a recovery code, which has
+                // letters in it — so this is deliberately not type="number".
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                autoCorrect="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                autoFocus
+                required
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="123456"
+              />
+              <span className="hint">
+                Lost your phone? Type a recovery code instead — each one works once.
+              </span>
+            </div>
+
+            <button type="submit" className="btn btn-primary acct-submit" disabled={busy || !code.trim()}>
+              {busy ? "Checking…" : "Verify and sign in"} <span className="btn-arrow">→</span>
+            </button>
+          </form>
+
+          <p className="acct-alt">
+            <button
+              type="button"
+              className="linkish"
+              onClick={() => {
+                setChallenge(null);
+                setCode("");
+                setPassword("");
+                setErrors([]);
+              }}
+            >
+              Start over
+            </button>
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="acct">

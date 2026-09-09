@@ -241,6 +241,22 @@ export default function Security() {
               text to keep it that way.
             </li>
             <li>
+              <strong>Two-factor authentication, if you switch it on.</strong> TOTP —
+              an authenticator app, not SMS, which a SIM swap defeats. Codes are single-use
+              even inside their validity window, so one read over your shoulder cannot be
+              replayed. Ten recovery codes are issued at enrollment and stored hashed, so
+              nobody here can look them up for you.
+            </li>
+            <li>
+              <strong>A password reset does not bypass your second factor.</strong> This is
+              the decision that makes 2FA meaningful here rather than decorative: email is
+              already the reset channel, so a reset that skipped the second factor would
+              leave anyone who can read your inbox holding a complete path into your
+              account. The cost is real and worth knowing before you enrol — lose your phone
+              <em>and</em> your recovery codes and the account cannot be recovered, by you
+              or by anyone else.
+            </li>
+            <li>
               <strong>A password reset revokes every session and every other pending reset
               token.</strong> Recovering an account is only recovery if it also evicts
               whoever prompted it — a password change that leaves an attacker signed in has
@@ -280,16 +296,16 @@ export default function Security() {
           </p>
           <ul className="legal-list">
             <li>
-              <strong>No two-factor authentication.</strong> A password is the only thing
-              standing between an attacker who knows your email and your account, so use a
-              password you have not used anywhere else.
+              <strong>TOTP secrets are not encrypted at rest.</strong> Anyone who could read
+              the database could generate second-factor codes. Encrypting them was
+              considered and rejected: the key would live in the same Cloudflare account as
+              the database, so it defends only a leaked backup — and it adds a failure mode
+              where losing or rotating that key locks every enrolled person out of their own
+              account at once, with nobody here to override it.
             </li>
             <li>
-              <strong>Password reset trusts your email provider completely.</strong> That is
-              true of essentially every website, and it is worth understanding rather than
-              glossing: anyone who can read your inbox can reset your Compass password. The
-              link is single-use and expires in an hour, which limits the window but does
-              not change who holds the keys.
+              <strong>Two-factor is opt-in, and off by default.</strong> Most accounts are
+              still protected by a password alone.
             </li>
             <li>
               <strong>Share links are bearer tokens.</strong> Anyone holding the URL can read
@@ -379,8 +395,8 @@ export default function Security() {
             iterations; logs are built so they cannot hold a student identifier.
           </li>
           <li>
-            <strong>Known gaps, stated plainly:</strong> no 2FA, no independent audit, and
-            share links are bearer tokens.
+            <strong>Known gaps, stated plainly:</strong> no independent audit, TOTP secrets
+            unencrypted at rest, and share links are bearer tokens.
           </li>
           <li>Everything here is checkable — the source is public.</li>
         </ul>
