@@ -647,92 +647,6 @@ before it.)*
 
 ---
 
-## Before Phase 7: what's still open
-
-Phase 7's own opening line asks whether everything above is "done — or done
-enough to demo." This section is that check, answered — every deferred,
-not-built, or blocked item from Phases 1–6, pulled out of five separate
-checklists into one place. Nothing here is a reason to *delay starting* Phase
-7 — none of it is a Hono/D1/Cloudflare-compatibility problem, the kind of
-thing this roadmap orders around — but several items only become real once
-there's a live domain, real traffic, or a paid tier, so they're worth
-resolving on the way through Phase 7 rather than discovering after.
-
-### Triggered by Phase 7's own steps
-
-- [ ] **Global 300/15min rate limit** is still a decision, not a rule. Create
-      the Cloudflare Rate Limiting Rule (or a `RateLimit` binding) once the
-      Worker has a real hostname to attach it to. *(Phase 1.3 —
-      [PHASE-1.md](PHASE-1.md#left-for-deploy-day-the-global-rate-limit))*
-- [ ] **PBKDF2's cost vs. the Workers free-plan CPU cap.** 100k iterations
-      costs ~40–60ms; the free plan allows 10ms. Fine on Workers Paid — on
-      free, lower `ITERATIONS` in
-      [`backend/src/auth/password.ts`](backend/src/auth/password.ts) before
-      going live. *(Phase 2.3 —
-      [PHASE-2.md](PHASE-2.md#left-for-deploy-day-the-free-plan-cpu-limit))*
-- [ ] **Placeholder Open Graph URLs.** Four absolute URLs in
-      [`frontend/index.html`](frontend/index.html) still point at
-      `https://compass.example.com` — swap them for the real domain the
-      moment §7.5 attaches one. *(Phase 5.3)*
-- [ ] **`public/_headers` `Referrer-Policy` for the shared plan page.**
-      Flagged when §6.7's share link shipped; `public/_headers` is a
-      Cloudflare Pages feature, so there was nothing to attach it to before
-      now. *(Phase 6.7 follow-up)*
-- [ ] **Sentry error tracking** (`@sentry/cloudflare` + `@sentry/react`) —
-      skipped while every user of the app was its author. The trigger named
-      at the time was exactly this: Phase 7 putting Compass on a public URL.
-      *(Phase 4.2 —
-      [PHASE-4.md](PHASE-4.md#42-sentry-deliberately-not-built))*
-
-### Blocked on a decision outside the codebase
-
-- [ ] **Branch protection on `main`.** The repo is private on a free GitHub
-      plan, and GitHub gates rulesets and classic branch protection behind
-      Pro. Needs a Pro subscription or a public repo — CI itself has been
-      green for a while. *(Phase 3.4 —
-      [PHASE-3.md](PHASE-3.md#left-for-later))*
-- [ ] **Deadline reminder emails (6.1).** Needs a paid email-sending provider
-      (MailChannels' free Workers integration is gone; Cloudflare's own
-      `send_email` binding only reaches addresses verified in your own
-      account), a verified sending domain, and email verification at signup.
-      Worth reconsidering before spending on any of that — §6.2's calendar
-      export already delivers the reminder itself, from the student's own
-      device, needing none of it. *(Phase 6.1 —
-      [PHASE-6.md](PHASE-6.md#61--deadline-reminder-emails))*
-- [ ] **Net price estimator (6.4).** Blocked on data, not code:
-      `universities.json` carries sticker tuition and nothing else
-      financial. Needs real IPEDS/College Scorecard aid figures per school
-      before this can be built honestly. *(Phase 6.4)*
-
-### Real open work, not blocked on anything
-
-- [ ] **Password reset / email verification.** Not built. Needs the same
-      email provider as 6.1 above, so it's worth deciding once rather than
-      twice. *(Phase 2)*
-- [ ] **A `manualChunks` vendor split.** ~182 kB of React/Router is
-      re-downloaded by returning visitors on every deploy. A few lines, not
-      yet done. *(Phase 5.2 follow-up)*
-- [ ] **Growing the scholarship dataset (6.6).** Still 45 entries — ongoing
-      curation on `scholarships.json`, not an engineering task.
-- [ ] **A `webcal://` subscription feed.** A natural extension of §6.2's
-      calendar export, reusing most of §6.7's token machinery, that would
-      make the calendar live instead of a snapshot. Not started. *(Phase 6
-      follow-up)*
-- [ ] **Flaky test:** `App.test.tsx > /majors > falls back to the default
-      for a slug nothing matches`. A pre-existing race, not something Phase
-      6 introduced, but still unfixed. *(Phase 6 follow-up)*
-
-### Considered and declined — listed for completeness, not a to-do
-
-- **PWA / offline shell (§5.5).** A service worker's caching interacts with
-  how Pages serves the app; easier to reason about once Phase 7's hosting
-  shape actually exists than before it.
-- **A coverage-threshold gate (§3.2).** A percentage gate rewards covering
-  whatever is cheapest to test; the priority order in §3.2 is the policy
-  instead, deliberately.
-
----
-
 ## Phase 7 — Hosting on Cloudflare Pages + Workers, step by step
 
 > **Code half built; account half is a runbook. See [PHASE-7.md](PHASE-7.md)
@@ -932,6 +846,143 @@ it's the one class of bug this order defers instead of catching early.
 
 ---
 
+## Still open, in one place
+
+Every deferred, not-built, or blocked item, pulled out of the per-phase
+checklists below into one list. Those checklists stay authoritative for their
+own phase; this is the cross-cutting view, for answering "what is actually
+left?" without reading eight of them.
+
+This started life as a gate to clear *before* Phase 7. It is not that any
+more. Phase 7's code half shipped, and five rounds landed after it — a
+dead-import audit, legal and trust pages with self-hosted fonts, self-serve
+account deletion, password reset, and TOTP two-factor auth. Two items this
+list used to carry are done as a result (the `_headers` `Referrer-Policy`,
+and password reset), and the email-provider question that was blocking both
+password reset and §6.1 has been answered: Resend, over HTTP, because a
+Worker has no raw sockets and SMTP libraries therefore do not run at all.
+
+### Deploy day — waiting on the Cloudflare account or a live domain
+
+Nothing here is a code problem. Each item needs an account, a hostname, or a
+paid plan that does not exist yet; [PHASE-7.md](PHASE-7.md) is the runbook.
+
+- [ ] **Wrangler login, both D1 databases created, the Pages project connected
+      to GitHub**, and migrations applied to each. *(Phase 7.2–7.3)*
+- [ ] **Four secrets on Production, not one.** `ANTHROPIC_API_KEY`, plus
+      `RESEND_API_KEY`, `EMAIL_FROM` and `APP_ORIGIN` for password reset —
+      without the last three, reset degrades to "cannot send" rather than
+      falling back, because there is no worse-but-useful way to deliver mail.
+      `APP_ORIGIN` is deliberately configuration and never a request header:
+      building the reset link from `Host` is host-header poisoning. Preview
+      gets none of them on purpose. *(Phase 7.4 + password reset)*
+- [ ] **Five placeholder `compass.example.com` URLs.** Three in
+      [`frontend/index.html`](frontend/index.html) — the canonical, `og:url`
+      and `og:image` — and two in
+      [`.well-known/security.txt`](frontend/public/.well-known/security.txt),
+      its `Policy` and `Canonical`. (The "four in `index.html`" that this
+      guide, PHASE-5 and PHASE-7 all quote is an overcount; there are three.)
+      The security.txt pair matters more than it looks: RFC 9116 only treats
+      `Canonical` as valid if the file is genuinely served from that exact
+      URL. *(Phase 5.3 + legal round)*
+- [ ] **Push `security.txt`'s `Expires` out from the deploy date.** It reads
+      `2027-08-31`, set just under a year deliberately — a strict RFC 9116
+      validator rejects exactly twelve months. Every scanner treats an expired
+      file as stale, so this wants a calendar reminder, not good intentions.
+- [ ] **Fill the three operator placeholders** in
+      [`frontend/src/legal.ts`](frontend/src/legal.ts) — `OPERATOR_NAME`,
+      `GOVERNING_LAW`, `CONTACT_EMAIL`. They render as a highlighted `<mark>`
+      so they cannot ship looking finished, and `legal.test.ts` enumerates
+      them as exactly this checklist.
+- [ ] **Enable "Private vulnerability reporting"** on the repository
+      (Settings → Code security and analysis; off by default). Both the
+      Security page and `security.txt` point a researcher at it, so until it
+      is on, the disclosure path they advertise does not exist.
+- [ ] **Post-deploy smoke test**, including the second-device data check.
+      *(Phase 7.7)*
+- [ ] **Blocked, not pending — the global 300/15min rate limit.** WAF rate
+      limiting rules are zone-scoped, so there is nothing to attach one to
+      before a custom domain exists, *and* a 15-minute counting period needs a
+      **Business** plan (Free and Pro cap it at 1 minute; Free allows one rule
+      total). Until then there is no global limit at all — LLM spend is still
+      capped by the in-code `/api/chat` limiter. *(Phase 1.3 —
+      [PHASE-1.md](PHASE-1.md#left-for-deploy-day-the-global-rate-limit))*
+- [ ] **Blocked, not pending — PBKDF2 vs. the plan.** Free caps CPU at 10ms
+      per invocation; 100k iterations costs 40–60ms, so signup and login
+      **fail outright** there. Settle before the first real signup, by paying
+      for Workers Paid or lowering `ITERATIONS` in
+      [`backend/src/auth/password.ts`](backend/src/auth/password.ts).
+      *(Phase 2.3 —
+      [PHASE-2.md](PHASE-2.md#left-for-deploy-day-the-free-plan-cpu-limit))*
+
+### Blocked on spend or a decision outside the codebase
+
+- [ ] **Branch protection on `main`.** CI has reported green for a while, so
+      the original reason (no check names to point a rule at) is long gone.
+      The real blocker is that the repo is private on a free GitHub plan, and
+      rulesets and classic branch protection are both gated behind Pro. Needs
+      Pro or a public repo. *(Phase 3.4 —
+      [PHASE-3.md](PHASE-3.md#left-for-later))*
+- [ ] **Deadline reminder emails (6.1) — partly unblocked.** The provider
+      question is settled; Resend is already wired up. What is left is a
+      **verified sending domain** (so §7.5 is still upstream of it) and
+      **email verification at signup**, since signup takes an address on trust
+      today. Worth re-examining the priority too: §6.2's calendar export
+      already delivers the reminder, from the student's own device, needing
+      neither. *(Phase 6.1 —
+      [PHASE-6.md](PHASE-6.md#61--deadline-reminder-emails))*
+- [ ] **Net price estimator (6.4).** Blocked on data, not code:
+      `universities.json` carries sticker tuition and nothing else financial.
+      Needs real IPEDS or College Scorecard aid figures per school before it
+      can be built honestly. *(Phase 6.4)*
+- [ ] **Sentry error tracking** (`@sentry/cloudflare` + `@sentry/react`).
+      Skipped while the app's only user was its author, and the trigger named
+      at the time was exactly Phase 7 putting Compass on a public URL — so
+      this comes due the moment the deploy items above are done. *(Phase 4.2 —
+      [PHASE-4.md](PHASE-4.md#42-sentry-deliberately-not-built))*
+
+### Real open work, not blocked on anything
+
+- [ ] **Email verification at signup.** Password reset shipped without it, and
+      it is the remaining half of 6.1 above. The provider is already there.
+- [ ] **A real CSP for the document.** `frontend/public/_headers` sends
+      `X-Frame-Options: DENY` instead and says why: a policy written carelessly
+      breaks first paint. One of its two stated complications has since
+      evaporated — the legal round self-hosted both font families, so the page
+      makes no third-party request at all — leaving only the inline theme
+      script that prevents the dark-mode flash, which a hash or a nonce covers.
+      *(Phase 7 follow-up)*
+- [ ] **A `manualChunks` vendor split.** ~182 kB of React/Router is
+      re-downloaded by returning visitors on every deploy. A few lines, and a
+      different kind of split than §5.2's route-level one. *(Phase 5.2)*
+- [ ] **A `webcal://` subscription feed.** A natural extension of §6.2's
+      calendar export, reusing most of §6.7's token machinery, that would make
+      the calendar live instead of a snapshot. *(Phase 6 follow-up)*
+- [ ] **Growing the scholarship dataset (6.6).** Still 45 entries — ongoing
+      curation on `scholarships.json`, not an engineering task.
+- [ ] **Flaky test:** `App.test.tsx > /majors > falls back to the default for
+      a slug nothing matches`. A pre-existing race that passes on most runs,
+      which is exactly what has kept it unfixed. *(Phase 6 follow-up)*
+
+### Considered and declined — listed for completeness, not a to-do
+
+- **PWA / offline shell (§5.5).** A service worker's caching interacts with
+  how Pages serves the app. Easier to reason about now that Phase 7's hosting
+  shape actually exists, but still not obviously worth it.
+- **A coverage-threshold gate (§3.2).** A percentage gate rewards covering
+  whatever is cheapest to test; the priority order in §3.2 is the policy
+  instead, deliberately.
+- **A QR code for 2FA enrolment.** A QR encoder is ~350 lines of
+  Reed–Solomon, against the project's zero-dependency rule. The `otpauth://`
+  link is tappable on a phone and opens the authenticator directly — fewer
+  steps than scanning — and the setup key in groups of four covers desktop.
+- **Encrypting TOTP secrets at rest.** The key would live in the same
+  Cloudflare account as the database, so it would defend only a leaked backup
+  while adding a key-loss mode that locks out every enrolled user at once.
+  Said plainly on the Security page rather than left implied.
+
+---
+
 ## Progress checklist
 
 Checked against the actual repo, not just intent — update this as phases
@@ -985,8 +1036,10 @@ land rather than trusting memory.
       over the Workers **free** plan's 10ms limit. Fine on Workers Paid; on free,
       lower `ITERATIONS` in `backend/src/auth/password.ts`. See
       [PHASE-2.md](PHASE-2.md#left-for-deploy-day-the-free-plan-cpu-limit).
-- [ ] *Not built:* password reset / email verification — both need an email
-      provider, which arrives with Phase 6.1
+- [x] Password reset — built after Phase 6 on Resend, rather than arriving
+      with 6.1 as this line predicted. See the post-Phase-6 block below
+- [ ] *Not built:* email verification at signup. Same provider, still open —
+      and it is what §6.1's reminder emails are now waiting on
 
 **Phase 3 — Testing & CI** — **done** apart from §3.4, written up in [PHASE-3.md](PHASE-3.md)
 - [x] Backend tests migrated to Vitest + `@cloudflare/vitest-pool-workers` *(done in Phase 1)*
@@ -1062,7 +1115,11 @@ land rather than trusting memory.
 - [x] 155 frontend tests (was 99), 320 total
 - [ ] **Deploy-day leftover:** every absolute URL in `index.html` is
       `https://compass.example.com`. Open Graph needs absolute URLs, so these
-      cannot be real until §7.5 attaches the domain. Four occurrences.
+      cannot be real until §7.5 attaches the domain. **Three** occurrences —
+      the canonical, `og:url` and `og:image`. (The "four" quoted here, in
+      `index.html`'s own comment and in PHASE-5/PHASE-7 is an overcount.) The
+      legal round later added two more of the same placeholder, in
+      `.well-known/security.txt`.
 - [ ] **Deliberately not done:** §5.5 PWA / offline shell. A service worker's
       caching interacts with how Pages serves the app; easier after Phase 7.
 - [ ] *Not built:* a `manualChunks` vendor split. ~182 kB of React/Router is
@@ -1092,20 +1149,70 @@ land rather than trusting memory.
 - [x] 465 tests (was 320), backend 165 → 217 and frontend 155 → 248. Three axe violations
       found and fixed, including a pre-existing `--txf`-for-prose contrast failure the
       Phase 5 audit could not see because the element is empty almost always
-- [ ] **Blocked, not deferred:** deadline reminder emails. Needs a paid provider
-      (MailChannels' free Workers integration is gone; Cloudflare's `send_email` only
-      reaches addresses verified in your own account), a verified sending domain from
-      §7.5, and email verification at signup. Revisit the *priority* too — §6.2 already
-      delivers the reminder. See [PHASE-6.md](PHASE-6.md#61--deadline-reminder-emails)
+- [ ] **Partly unblocked:** deadline reminder emails. The provider question is settled —
+      Resend went in with password reset after Phase 6 — so what remains is a verified
+      sending domain from §7.5 and email verification at signup. Revisit the *priority*
+      too: §6.2 already delivers the reminder from the student's own device, needing
+      neither. See [PHASE-6.md](PHASE-6.md#61--deadline-reminder-emails)
 - [ ] **Not built — needs data, not code:** net price estimator. `universities.json` has
       sticker tuition and nothing else financial. Building it on invented aid figures would
       contradict how this app behaves everywhere else about numbers it cannot source
 - [ ] *Not built:* growing the scholarship dataset. Still 45 entries; a curation task, as
       the section itself says
 - [ ] *Follow-ups:* a `webcal://` subscription feed (the §6.7 token machinery is most of
-      it, and would make the calendar live rather than a snapshot); a `public/_headers`
-      `Referrer-Policy` for the shared page in Phase 7; and one pre-existing flaky test in
-      `App.test.tsx` (`/majors` slug fallback)
+      it, and would make the calendar live rather than a snapshot); and one pre-existing
+      flaky test in `App.test.tsx` (`/majors` slug fallback). The `public/_headers`
+      `Referrer-Policy` for the shared page landed in Phase 7
+
+**After Phase 6 — hardening, account lifecycle, and legal** — five rounds that
+are not numbered phases in this guide, landed between Phase 7's code half and its
+account half
+- [x] **Dead imports caught by the backend checker**, and the four it found cleared
+      ([#10](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/10))
+- [x] **Legal and trust pages** — privacy, terms, and a security page, written from
+      the code rather than a template: they name `compass_session`, PBKDF2 100k, and
+      the `/api/students/:id` log patterns. Writing the limitations down is what got
+      two of them fixed — see the next two items ([#11](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/11))
+- [x] **A cookie notice that is a notice, not a consent gate.** Compass sets exactly
+      one strictly-necessary cookie, so an Accept/Reject pair would offer a choice
+      that does not exist. One button, and a test asserting there is exactly one.
+      **If analytics are ever added this must become a real gate that blocks the
+      script until opt-in** — a deliberate fork, not a prop on the current component
+- [x] **Self-hosted fonts** (`frontend/scripts/fetch-fonts.mjs`, `npm run fonts`).
+      The Google Fonts `<link>` was the app's only third-party request and handed
+      every visitor's IP to Google; it was removed rather than disclosed.
+      `legalPages.test.tsx` guards the "no third-party requests" claim by scanning
+      `index.html` itself, since one careless `<link>` would falsify a policy page
+      with nothing looking broken
+- [x] **Self-serve account deletion** — `DELETE /api/auth/account` and a deliberately
+      ungated `/account` page, because a guest wiping a shared computer is who it
+      matters most for. The delete order is load-bearing and counter-intuitive:
+      `students.user_id` is a bare `REFERENCES` with no cascade, so deleting the user
+      first fails on a constraint rather than orphaning anything. A member retypes
+      their password (**403** on a wrong one, not 401 — 401 would sign them out over
+      a typo); a guest has no password to retype. Offers a CSV export first, because
+      erasure and portability are different rights ([#12](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/12))
+- [x] **Password reset over Resend** — a Worker has no raw sockets, so SMTP libraries
+      do not run at all, and MailChannels' free Workers relay ended in 2024.
+      `/auth/forgot` answers 202 with byte-identical bodies for every case, at equal
+      speed via `executionCtx.waitUntil`, so it is not an enumeration oracle over
+      teenagers' addresses. Tokens are SHA-256, not PBKDF2 — iterating defends a
+      *low-entropy* secret, and there is no dictionary for 256 random bits. A
+      successful reset revokes every session ([#13](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/13))
+- [x] **TOTP two-factor auth**, hand-written in `backend/src/auth/totp.ts` to hold the
+      zero-dependency rule, and **verified against all six RFC 6238 Appendix B
+      vectors** — a hand-rolled standard tested only against itself agrees with
+      itself, not with Google Authenticator. Login stops at an `mfa_challenges` row
+      rather than a half-authenticated session, and password reset deliberately does
+      **not** bypass 2FA: email is already the reset channel, so bypassing would
+      leave the inbox a full takeover path ([#14](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/14))
+- [x] 666 tests passing, up from 465 at Phase 6 — backend 311, frontend 355
+- [ ] *Not built:* email verification at signup. The provider is in place now, so
+      this is the one thing still standing between §6.1 and its reminder emails
+- [ ] **Deploy-day leftovers these rounds added:** three more Production secrets
+      (`RESEND_API_KEY`, `EMAIL_FROM`, `APP_ORIGIN`), the three operator placeholders
+      in `frontend/src/legal.ts`, `security.txt`'s `Expires` and `Canonical`, and
+      "Private vulnerability reporting" switched on for the repo
 
 **Phase 7 — Cloudflare Pages + Workers hosting** — **code half done**, account
 half is a runbook in [PHASE-7.md](PHASE-7.md)
@@ -1131,9 +1238,12 @@ half is a runbook in [PHASE-7.md](PHASE-7.md)
       D1 reachable through the Function, deep SPA routes served, headers applied
 - [ ] Wrangler login, D1 databases created, Pages project connected to GitHub
 - [ ] Migrations applied to both databases
-- [ ] Secret set (`ANTHROPIC_API_KEY`) on Production; Preview deliberately none
-- [ ] Custom domain attached — also unblocks the four `compass.example.com`
-      placeholders in `index.html` and the WAF rule below
+- [ ] Secrets set on Production — `ANTHROPIC_API_KEY`, and since password reset
+      landed also `RESEND_API_KEY`, `EMAIL_FROM` and `APP_ORIGIN`; Preview
+      deliberately none
+- [ ] Custom domain attached — also unblocks the five `compass.example.com`
+      placeholders (three in `index.html`, two in `.well-known/security.txt`)
+      and the WAF rule below
 - [x] Naming convention picked — `compass-web`, `compass-db`, `compass-db-preview`
 - [ ] Post-deploy smoke test (incl. second-device data check)
 - [ ] **Blocked, not pending:** the global rate limit. WAF rate limiting rules
