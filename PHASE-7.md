@@ -273,12 +273,20 @@ If the domain's DNS is already on Cloudflare this is a dashboard toggle with
 automatic SSL. If it is elsewhere, add the CNAME the dashboard shows you.
 
 Do this **before** step 7 — see below for why that ordering is forced rather
-than preferred. Afterwards, two things need the real hostname:
+than preferred. Afterwards, three things need the real hostname:
 
 - `CORS_ORIGIN` in the root `wrangler.toml`
 - the three `https://compass.example.com` URLs in `frontend/index.html`
   (canonical, `og:url`, `og:image`). Open Graph requires absolute URLs, which
   is why they could not be filled in earlier.
+- `Policy` and `Canonical` in `frontend/public/.well-known/security.txt`,
+  which the legal round added after this runbook was written. `Canonical` is
+  the one with teeth: RFC 9116 treats it as valid only if the file is
+  genuinely served from that exact URL, so a stale value invalidates the file
+  rather than merely pointing somewhere wrong. While in there, push `Expires`
+  out from the deploy date — it is set just under a year deliberately, because
+  a strict validator reads exactly twelve months as out of range, and every
+  scanner treats an expired file as stale.
 
 ### 7. The global rate limit — read the blocker below first
 
