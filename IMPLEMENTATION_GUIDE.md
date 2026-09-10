@@ -945,11 +945,12 @@ paid plan that does not exist yet; [PHASE-7.md](PHASE-7.md) is the runbook.
 - [ ] **Email verification at signup.** Password reset shipped without it, and
       it is the remaining half of 6.1 above. The provider is already there.
 - [ ] **A real CSP for the document.** `frontend/public/_headers` sends
-      `X-Frame-Options: DENY` instead and says why: a policy written carelessly
-      breaks first paint. One of its two stated complications has since
-      evaporated — the legal round self-hosted both font families, so the page
-      makes no third-party request at all — leaving only the inline theme
-      script that prevents the dark-mode flash, which a hash or a nonce covers.
+      `X-Frame-Options: DENY` instead, and now defers the CSP on one
+      complication rather than two: the legal round self-hosted both font
+      families, so no third-party origin is left for a policy to enumerate.
+      What remains is the inline theme script that prevents the dark-mode
+      flash — a policy written carelessly there still breaks first paint —
+      and an inline script is exactly the case a hash or a nonce covers.
       *(Phase 7 follow-up)*
 - [ ] **A `manualChunks` vendor split.** ~182 kB of React/Router is
       re-downloaded by returning visitors on every deploy. A few lines, and a
