@@ -146,6 +146,16 @@ A real Content-Security-Policy is deferred, not forgotten. The document loads
 Google Fonts and runs the inline theme script that prevents the dark-mode
 flash, so a policy written carelessly breaks first paint.
 
+**Overtaken later the same day, and left standing anyway.** The legal round
+self-hosted both font families into `/fonts`, so the Google Fonts half of that
+sentence stopped being true about seventeen hours after this phase merged. The
+paragraph is kept as written because this document records what Phase 7 shipped
+against, not what is true now — but nothing else here says so, and a reader has
+no way to tell a deliberate record from a line nobody revisited. For the current
+position: `frontend/public/_headers` now defers the CSP on the inline theme
+script alone, which a hash or a nonce covers, and the "Still open, in one place"
+list in `IMPLEMENTATION_GUIDE.md` tracks it as live work.
+
 ### Remote migrations moved to the root
 
 `backend`'s `db:migrate:remote` could only ever have failed — it resolves
