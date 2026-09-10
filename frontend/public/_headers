@@ -14,16 +14,24 @@
   # framed and clickjacked. Nothing legitimately embeds this app.
   #
   # This is the legacy header rather than a CSP `frame-ancestors`. A real CSP
-  # is worth doing and is not a one-liner: the document loads Google Fonts and
-  # runs the inline theme script that prevents the dark-mode flash, so a policy
-  # written carelessly here breaks first paint. Deferred deliberately.
+  # is worth doing, and is a smaller job than it was when this file was
+  # written: the document loaded Google Fonts then, and the legal round has
+  # since self-hosted both families into /fonts, so there is no third-party
+  # origin left for a policy to have to enumerate. What remains is the inline
+  # theme script that prevents the dark-mode flash — a policy written
+  # carelessly here still breaks first paint — and an inline script is exactly
+  # the case a hash or a nonce covers. Still deferred, but on one complication
+  # now rather than two.
   X-Frame-Options: DENY
   # Stops a browser from second-guessing Content-Type — the defense against an
   # asset being coaxed into executing as script.
   X-Content-Type-Options: nosniff
   # The modern browser default, stated rather than assumed: full URL to our own
-  # origin, bare origin to anyone else. It is what keeps the path out of the
-  # Referer on the Google Fonts request every page makes.
+  # origin, bare origin to anyone else. Nothing exercises it today — self-hosting
+  # the fonts removed the last cross-origin request the app made, so there is no
+  # Referer going anywhere but here. It is set anyway, because a default is
+  # something browsers get to change, and because whatever third-party request
+  # someone adds later should arrive under a policy that was already decided.
   Referrer-Policy: strict-origin-when-cross-origin
 
 /shared/*
