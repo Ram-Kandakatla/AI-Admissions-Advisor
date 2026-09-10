@@ -880,8 +880,7 @@ paid plan that does not exist yet; [PHASE-7.md](PHASE-7.md) is the runbook.
       [`frontend/index.html`](frontend/index.html) — the canonical, `og:url`
       and `og:image` — and two in
       [`.well-known/security.txt`](frontend/public/.well-known/security.txt),
-      its `Policy` and `Canonical`. (The "four in `index.html`" that this
-      guide, PHASE-5 and PHASE-7 all quote is an overcount; there are three.)
+      its `Policy` and `Canonical`.
       The security.txt pair matters more than it looks: RFC 9116 only treats
       `Canonical` as valid if the file is genuinely served from that exact
       URL. *(Phase 5.3 + legal round)*
@@ -1116,10 +1115,9 @@ land rather than trusting memory.
 - [ ] **Deploy-day leftover:** every absolute URL in `index.html` is
       `https://compass.example.com`. Open Graph needs absolute URLs, so these
       cannot be real until §7.5 attaches the domain. **Three** occurrences —
-      the canonical, `og:url` and `og:image`. (The "four" quoted here, in
-      `index.html`'s own comment and in PHASE-5/PHASE-7 is an overcount.) The
-      legal round later added two more of the same placeholder, in
-      `.well-known/security.txt`.
+      the canonical, `og:url` and `og:image`. The legal round later added two
+      more of the same placeholder, in `.well-known/security.txt`, so the
+      deploy-day total is five across two files.
 - [ ] **Deliberately not done:** §5.5 PWA / offline shell. A service worker's
       caching interacts with how Pages serves the app; easier after Phase 7.
 - [ ] *Not built:* a `manualChunks` vendor split. ~182 kB of React/Router is

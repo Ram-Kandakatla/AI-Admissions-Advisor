@@ -276,9 +276,9 @@ Do this **before** step 7 — see below for why that ordering is forced rather
 than preferred. Afterwards, two things need the real hostname:
 
 - `CORS_ORIGIN` in the root `wrangler.toml`
-- the four `https://compass.example.com` URLs in `frontend/index.html`
-  (canonical, `og:url`, `og:image`, and the `og:url` duplicate). Open Graph
-  requires absolute URLs, which is why they could not be filled in earlier.
+- the three `https://compass.example.com` URLs in `frontend/index.html`
+  (canonical, `og:url`, `og:image`). Open Graph requires absolute URLs, which
+  is why they could not be filled in earlier.
 
 ### 7. The global rate limit — read the blocker below first
 
@@ -368,7 +368,7 @@ should be a deliberate choice, not a reaction to a 500 during the smoke test.
 
 ## Left for later
 
-- **The placeholder origin.** Four `https://compass.example.com` URLs in
+- **The placeholder origin.** Three `https://compass.example.com` URLs in
   `frontend/index.html`, waiting on §7.5. Sharing a link before then produces a
   broken Open Graph card — the tags are otherwise correct.
 - **A Content-Security-Policy** on the document, per `_headers` above.

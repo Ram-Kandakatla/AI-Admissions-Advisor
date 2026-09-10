@@ -221,7 +221,8 @@ else in Compass.
 
 - **Every absolute URL is `https://compass.example.com`.** Open Graph requires
   absolute URLs — a relative `og:image` is ignored by most scrapers — so these
-  cannot be real until Phase 7.5 attaches the domain. Four occurrences.
+  cannot be real until Phase 7.5 attaches the domain. Three occurrences: the
+  canonical, `og:url` and `og:image`.
 - **The tags are static, so `/matches` shares the same card as the homepage.**
   Per-route cards need the HTML to differ per URL, which means prerendering: a
   Pages concern, and not worth it for an app whose pages are all behind a login.
@@ -370,7 +371,7 @@ Two things the suite caught that a human would not have:
   every deploy invalidates the whole thing for returning visitors. Four lines
   would cut the re-download to the app half. Left out because it is a different
   kind of split than §5.2 asks for, not because it is a bad idea.
-- **The placeholder origin.** `compass.example.com` in four places in
+- **The placeholder origin.** `compass.example.com` in three places in
   `index.html`, to be replaced when Phase 7.5 attaches the real domain.
 - **`ClaudeWebDesign.md` is untracked but not ignored.** It is one `git add -A`
   from a commit. A line in `.gitignore` would make that durable rather than
