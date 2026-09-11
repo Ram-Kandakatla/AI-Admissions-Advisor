@@ -244,6 +244,29 @@ describe("chips and tags", () => {
     expect(screen.getByText("Robotics")).toBeInTheDocument();
   });
 
+  it("stops at the activity cap the API enforces, and says so", async () => {
+    // The server truncates past thirty. Stopping here is what keeps a student
+    // from adding a thirty-first that would silently vanish on save.
+    const user = userEvent.setup();
+    const full = Array.from({ length: 30 }, (_, i) => `Activity ${i + 1}`);
+    render(
+      <ProfileForm meta={meta} existing={student({ extracurriculars: full })} onSaved={vi.fn()} />
+    );
+
+    const input = screen.getByLabelText(/Extracurriculars/);
+    expect(input).toHaveAttribute("maxlength", "100");
+    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
+    expect(screen.getByText(/limit of 30/)).toBeInTheDocument();
+
+    await user.type(input, "One too many{Enter}");
+    expect(screen.queryByText("One too many")).not.toBeInTheDocument();
+    // Kept in the box, so freeing a slot does not mean typing it again.
+    expect(input).toHaveValue("One too many");
+
+    await user.click(screen.getByRole("button", { name: "Remove Activity 1" }));
+    expect(screen.getByRole("button", { name: "Add" })).toBeEnabled();
+  });
+
   it("picks one financial-need option at a time", async () => {
     const user = userEvent.setup();
     render(<ProfileForm meta={meta} existing={null} onSaved={vi.fn()} />);

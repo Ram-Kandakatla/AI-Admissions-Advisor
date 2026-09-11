@@ -877,9 +877,9 @@ export function createStore(db: D1Database) {
    *
    * WHAT IS DELIBERATELY LEFT BEHIND
    *
-   * Rows in `rate_limits`. They are keyed by a hash of the client address
-   * rather than by a user, they hold nothing about the person, and they expire
-   * on their own within the window. Deleting them would also hand anyone a
+   * Rows in `rate_limits`. They are keyed by a SHA-256 of the client address,
+   * or for a signed-in chat by the numeric user id — which names nothing once
+   * this delete has run — and they expire on their own within the window. Deleting them would also hand anyone a
    * free way to reset their own limit by making and destroying an account.
    *
    * Returns whether a profile was among the deleted rows — the caller uses it

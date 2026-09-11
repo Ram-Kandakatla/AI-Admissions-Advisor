@@ -63,7 +63,7 @@ describe("signup", () => {
     const b = await body(await post("/api/auth/signup", { email, password: PASSWORD }), 201);
     expect(b.user.email).toBe(email);
     expect(b.user.guest).toBe(false);
-    expect(currentCookie()).toMatch(/^compass_session=/);
+    expect(currentCookie()).toMatch(/^__Host-compass_session=/);
 
     const me = await body(await get("/api/auth/me"), 200);
     expect(me.user.email).toBe(email);
@@ -107,7 +107,7 @@ describe("guest profiles", () => {
     // that "no account" no longer means "no owner".
     resetSession();
     const id = await newStudent({ name: "Guest" });
-    expect(currentCookie()).toMatch(/^compass_session=/);
+    expect(currentCookie()).toMatch(/^__Host-compass_session=/);
 
     const me = await body(await get("/api/auth/me"), 200);
     expect(me.user.guest).toBe(true);

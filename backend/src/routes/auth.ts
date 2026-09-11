@@ -89,10 +89,16 @@ auth.use(
 // unlimited version of it is a spam cannon pointed at other people's inboxes
 // and a fast way to burn a provider quota. Tighter than login: nobody needs
 // five reset emails in a quarter of an hour.
+//
+// Its own bucket, unlike every other route in this file. Sharing "auth" meant
+// this limit of 5 was drawn down by sign-in attempts too, so the fifth wrong
+// password locked the caller out of the reset request — refusing the way out
+// at exactly the moment someone needs it. Nothing here checks a password, so
+// nothing is gained by pooling it with the routes that do.
 auth.use(
   "/forgot",
   rateLimit({
-    bucket: "auth",
+    bucket: "forgot",
     limit: 5,
     windowMs: 15 * 60 * 1000,
     message: "Too many reset requests. Please wait a few minutes and try again.",
@@ -454,7 +460,13 @@ auth.post("/forgot", async (c) => {
   // A shallow shape check only. Reporting "that isn't a valid email" is a
   // usability win and not an enumeration risk — it says nothing about who has
   // an account — but anything past this point must be silent.
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  //
+  // The length test comes first, and the order is the fix, not a tidiness
+  // choice. This pattern backtracks quadratically on a long run of dots, and
+  // the body cap still lets through ~100k characters of them: measured in V8,
+  // 40k took 0.7s, so a full-size body is seconds of CPU per request.
+  // validateCredentials already checks length before shape; this route did not.
+  if (!email || email.length > MAX_EMAIL || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return c.json({ error: "Enter a valid email address." }, 400);
   }
 

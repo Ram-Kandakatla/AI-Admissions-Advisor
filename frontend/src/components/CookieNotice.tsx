@@ -35,7 +35,7 @@ function alreadySeen(): boolean {
  *
  * WHY THIS IS A NOTICE AND NOT A CONSENT GATE
  *
- * Compass sets exactly one cookie, compass_session, and it is what being
+ * Compass sets exactly one cookie, __Host-compass_session, and it is what being
  * signed in *is*. Strictly-necessary storage is exempt from the consent
  * requirement in the ePrivacy Directive and the GDPR, so there is nothing here
  * to consent to — and offering Accept / Reject buttons for a cookie the app

@@ -8,7 +8,7 @@ import { CONTACT_EMAIL, OPERATOR_NAME, REPO_URL } from "../../legal";
  * WRITTEN FROM THE CODE, NOT FROM A TEMPLATE
  *
  * Every factual claim below was checked against the thing that implements it,
- * and the specific ones are deliberate: "one cookie named compass_session"
+ * and the specific ones are deliberate: "one cookie named __Host-compass_session"
  * rather than "we may use cookies", "the log records /api/students/:id and
  * never the id" rather than "we log limited technical data". A generic policy
  * is unfalsifiable, which sounds safe and is the opposite — it can neither be
@@ -19,6 +19,8 @@ import { CONTACT_EMAIL, OPERATOR_NAME, REPO_URL } from "../../legal";
  *   - middleware/auth.ts        the session cookie and its attributes
  *   - log.ts, middleware/requestLog.ts   what a log line may and may not hold
  *   - services/llmService.ts    what leaves for a model provider
+ *   - services/emailService.ts  what leaves for the mail provider
+ *   - middleware/rateLimit.ts   the one place an IP address is used, and how
  *   - models/studentProfile.ts  the profile fields, exhaustively
  *   - migrations/*.sql          everything that is stored at all
  *   - index.html                what a page load fetches, which since the
@@ -90,10 +92,13 @@ export default function Privacy() {
             record of the app carries no identifier for the student who generated it.
           </p>
           <p>
-            Your IP address is visible to Cloudflare, which serves the app, and is used
-            in one place in Compass's own code: a hashed form of it keys the rate limiter
-            that caps chat requests at 30 per fifteen minutes. That counter row is deleted
-            as its window ages out.
+            Your IP address is visible to Cloudflare, which serves the app. Compass&apos;s
+            own code uses it for one thing: rate limiting. Signing in or up, password
+            resets, two-factor codes, deleting an account, starting a profile, and chat for
+            anyone not signed in are each counted per address, so one machine cannot guess
+            passwords or run up costs without limit. The counter stores a SHA-256 hash of the address, never
+            the address itself, and the row is cleared once its fifteen-minute window has
+            passed.
           </p>
         </>
       ),
@@ -215,7 +220,7 @@ export default function Privacy() {
       title: "Who else can see your data",
       body: (
         <>
-          <p>Three parties, and nobody else.</p>
+          <p>Four parties, and nobody else.</p>
           <ul className="legal-list">
             <li>
               <strong>Cloudflare</strong> — hosts the app, the API, and the D1 database
@@ -225,6 +230,11 @@ export default function Privacy() {
             <li>
               <strong>Anthropic or OpenAI</strong> — receives your chat messages and
               profile summary, as described above, and only when you use the chat.
+            </li>
+            <li>
+              <strong>Resend</strong> — delivers password-reset emails. It receives your
+              email address and the one-time reset link, and only when you ask for a
+              reset. Nothing else about your account or your plan goes with it.
             </li>
             <li>
               <strong>Anyone you hand a share link to.</strong> See below.
@@ -275,7 +285,7 @@ export default function Privacy() {
       body: (
         <>
           <p>
-            Compass sets one cookie, <code>compass_session</code>, which is what keeps you
+            Compass sets one cookie, <code>__Host-compass_session</code>, which is what keeps you
             signed in. It is strictly necessary, so there is no consent banner asking you
             to approve something the app cannot work without and you cannot meaningfully
             decline. There are no advertising or analytics cookies to consent to, because

@@ -11,16 +11,46 @@
 //
 // The cookie is httpOnly, so no injected script can read it, and SameSite=Lax,
 // so another site cannot make an authenticated request on the visitor's behalf
-// while still allowing an ordinary top-level link into the app to work.
+// while still allowing an ordinary top-level link into the app to work. "Site"
+// is wider than it sounds on pages.dev — every preview deployment is the same
+// site as production — which is what middleware/crossOrigin.ts and the
+// `__Host-` prefix below are for.
 
 import { createMiddleware } from "hono/factory";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { Context } from "hono";
 import type { AppEnv, SessionRecord, StudentRecord } from "../types.js";
 
+/**
+ * The cookie's base name. Over https it is sent as `__Host-compass_session` —
+ * see cookiePrefix below — so this is the name only on plain-http local dev.
+ */
 export const SESSION_COOKIE = "compass_session";
 
 const THIRTY_DAYS_SECONDS = 30 * 24 * 60 * 60;
+
+function isHttps(c: Context<AppEnv>): boolean {
+  return new URL(c.req.url).protocol === "https:";
+}
+
+/**
+ * `__Host-` over https, no prefix over http.
+ *
+ * The prefix is a promise the browser enforces: a `__Host-` cookie must be
+ * Secure, have Path=/, and carry no Domain, so it can only have been set by
+ * this exact host. That matters on Pages, where every preview deployment is a
+ * subdomain of the production host. Without it, a preview page could set a
+ * `Domain=compass-web.pages.dev` cookie holding a session id it already knows,
+ * and a visitor would go on to build their guest profile inside the attacker's
+ * session. With it, a cookie planted that way has the wrong name and is never
+ * read.
+ *
+ * Browsers reject a `__Host-` cookie that is not Secure, so plain-http local
+ * dev keeps the bare name — the same reasoning `secure` follows below.
+ */
+function cookiePrefix(c: Context<AppEnv>): "host" | undefined {
+  return isHttps(c) ? "host" : undefined;
+}
 
 /**
  * Cookie attributes.
@@ -40,10 +70,11 @@ const THIRTY_DAYS_SECONDS = 30 * 24 * 60 * 60;
 function cookieOptions(c: Context<AppEnv>) {
   return {
     httpOnly: true,
-    secure: new URL(c.req.url).protocol === "https:",
+    secure: isHttps(c),
     sameSite: "Lax" as const,
     path: "/",
     maxAge: THIRTY_DAYS_SECONDS,
+    prefix: cookiePrefix(c),
   };
 }
 
@@ -52,7 +83,11 @@ export function issueSessionCookie(c: Context<AppEnv>, session: SessionRecord): 
 }
 
 export function clearSessionCookie(c: Context<AppEnv>): void {
-  deleteCookie(c, SESSION_COOKIE, { path: "/" });
+  deleteCookie(c, SESSION_COOKIE, {
+    path: "/",
+    secure: isHttps(c),
+    prefix: cookiePrefix(c),
+  });
 }
 
 /**
@@ -65,7 +100,9 @@ export function clearSessionCookie(c: Context<AppEnv>): void {
  * at the first moment the caller actually needs to own something.
  */
 export const sessionContext = createMiddleware<AppEnv>(async (c, next) => {
-  const sessionId = getCookie(c, SESSION_COOKIE);
+  // Over https only the prefixed name is read. Falling back to the bare one
+  // would reopen exactly the hole the prefix closes.
+  const sessionId = getCookie(c, SESSION_COOKIE, cookiePrefix(c));
   const store = c.get("store");
   c.set("session", sessionId ? await store.getSession(sessionId) : null);
 

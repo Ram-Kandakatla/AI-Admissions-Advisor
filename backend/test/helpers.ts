@@ -10,6 +10,9 @@ import { expect } from "vitest";
 
 const BASE = "https://compass.test";
 
+/** The session cookie as a browser sees it over https. */
+export const SESSION_COOKIE_NAME = "__Host-compass_session";
+
 /**
  * A one-slot cookie jar.
  *
@@ -51,7 +54,8 @@ function captureCookies(res: Response): void {
     if (eq < 0) continue;
     const name = pair.slice(0, eq).trim();
     const value = pair.slice(eq + 1).trim();
-    if (name !== "compass_session") continue;
+    // BASE is https, so the session arrives under its `__Host-` name.
+    if (name !== SESSION_COOKIE_NAME) continue;
     // An empty value is the delete-cookie form the logout route sends.
     jar = value === "" ? null : `${name}=${value}`;
   }
