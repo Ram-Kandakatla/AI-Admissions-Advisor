@@ -163,8 +163,9 @@ export default function Terms() {
             account is treated as done by you.
           </p>
           <p>
-            Give a real email address you can actually receive mail at — it is the only way
-            to reach you about your account, and there is no other recovery path.
+            Give a real email address you can actually receive mail at. The account is only
+            created once you open the link sent to it, and after that it is the only way to
+            reach you about your account — there is no other recovery path.
           </p>
         </>
       ),

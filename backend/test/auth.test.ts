@@ -4,7 +4,8 @@
 // apps like this: a route that silently drops its auth check on a future edit.
 // The 401/403 paths are therefore tested per route in security.test.ts; this
 // suite covers the machinery those checks rest on — that a session is issued,
-// revoked, and scoped correctly, and that a guest profile survives signup.
+// revoked, and scoped correctly. Signup itself, and the guest profile it keeps,
+// are in signup.test.ts.
 
 import { beforeEach, describe, expect, test } from "vitest";
 import { env } from "cloudflare:test";
@@ -57,50 +58,6 @@ describe("password hashing", () => {
   });
 });
 
-describe("signup", () => {
-  test("creates an account and starts a session", async () => {
-    const email = freshEmail();
-    const b = await body(await post("/api/auth/signup", { email, password: PASSWORD }), 201);
-    expect(b.user.email).toBe(email);
-    expect(b.user.guest).toBe(false);
-    expect(currentCookie()).toMatch(/^__Host-compass_session=/);
-
-    const me = await body(await get("/api/auth/me"), 200);
-    expect(me.user.email).toBe(email);
-  });
-
-  test("never returns the password hash", async () => {
-    const res = await post("/api/auth/signup", { email: freshEmail(), password: PASSWORD });
-    // Checked as raw text rather than on the parsed object, so a hash nested
-    // anywhere in the response would still trip it.
-    expect(await res.text()).not.toContain("pbkdf2");
-  });
-
-  test("normalises the email and rejects a duplicate", async () => {
-    const email = freshEmail();
-    await signUp(email);
-
-    resetSession();
-    const dup = await post("/api/auth/signup", {
-      // Case and surrounding space must not be enough to register twice.
-      email: `  ${email.toUpperCase()}  `,
-      password: PASSWORD,
-    });
-    expect(dup.status).toBe(409);
-  });
-
-  test("rejects a malformed email and a short password", async () => {
-    const bad = await body(await post("/api/auth/signup", { email: "nope", password: "x" }), 400);
-    expect(bad.errors).toHaveLength(2);
-  });
-
-  test("refuses a second account from a session that already has one", async () => {
-    await signUp(freshEmail());
-    const res = await post("/api/auth/signup", { email: freshEmail(), password: PASSWORD });
-    expect(res.status).toBe(409);
-  });
-});
-
 describe("guest profiles", () => {
   test("a profile can be built with no account, and is owned from the start", async () => {
     // The product's front door: no signup required. The point of Phase 2 is
@@ -113,20 +70,6 @@ describe("guest profiles", () => {
     expect(me.user.guest).toBe(true);
     expect(me.user.email).toBeNull();
     expect(me.studentId).toBe(id);
-  });
-
-  test("signing up keeps the profile the guest already built", async () => {
-    const id = await newStudent({ name: "Ada" });
-    const res = await body(
-      await post("/api/auth/signup", { email: freshEmail(), password: PASSWORD }),
-      201
-    );
-
-    // The whole reason guests get a users row: signup fills in the email and
-    // password on the row that already owns the profile, so nothing is
-    // reparented and there is no claim-time migration to get wrong.
-    expect(res.studentId).toBe(id);
-    expect((await body(await get(`/api/students/${id}`), 200)).name).toBe("Ada");
   });
 
   test("one profile per account", async () => {
@@ -147,7 +90,7 @@ describe("login", () => {
   test("returns the account's profile and rotates the session", async () => {
     const email = freshEmail();
     const id = await newStudent({ name: "Rae" });
-    await post("/api/auth/signup", { email, password: PASSWORD });
+    await signUp(email, PASSWORD);
     const beforeLogout = currentCookie();
 
     await post("/api/auth/logout", {});
@@ -189,7 +132,7 @@ describe("login", () => {
   test("says so when logging in leaves a guest draft behind", async () => {
     const email = freshEmail();
     const saved = await newStudent({ name: "Saved" });
-    await post("/api/auth/signup", { email, password: PASSWORD });
+    await signUp(email, PASSWORD);
 
     // A new visitor builds a draft, then signs into the account above.
     resetSession();

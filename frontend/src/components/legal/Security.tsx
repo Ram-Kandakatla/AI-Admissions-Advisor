@@ -241,6 +241,20 @@ export default function Security() {
               never true, so no credential can ever match one.
             </li>
             <li>
+              <strong>Nothing tells a stranger whether an address has an account.</strong>{" "}
+              A wrong password and an unknown address get the same answer in the same time,
+              a reset request gets the same answer for every address, and signing up always
+              says to check your inbox. A new address is sent a link to finish; one that
+              already has an account is sent a note saying someone tried. Only the owner of
+              the inbox can see which.
+            </li>
+            <li>
+              <strong>Nobody can set up an account with your address and have you confirm
+              it.</strong> A sign-up link finishes by itself only in the browser that signed
+              up. Opened anywhere else it asks for the password chosen at sign-up, so a link
+              you never asked for does nothing.
+            </li>
+            <li>
               <strong>Logs cannot hold student data.</strong> The request log records the
               route pattern <code>/api/students/:id</code>, never the concrete id, and no
               call site passes a body, a query string, an email, or a password. This is a
@@ -277,7 +291,9 @@ export default function Security() {
               distributed runtime. Per 15 minutes: 30 chat requests per account (per
               network for guests); 15 attempts per network shared across signing in,
               signing up, setting a new password, two-factor codes, and deleting an account;
-              5 requests for a reset email; and 50 new guest profiles per network.
+              5 requests for a reset email; and 50 new guest profiles per network. Separately,
+              any one email address is sent at most 3 sign-up emails an hour, however many
+              networks ask.
             </li>
             <li>
               <strong>Request bodies are capped at 100 KB</strong>, rejected on the declared

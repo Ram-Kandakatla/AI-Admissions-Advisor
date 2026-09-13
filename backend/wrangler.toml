@@ -54,12 +54,12 @@ LOG_LEVEL = "info"
 # ANTHROPIC_API_KEY / OPENAI_API_KEY are secrets, never vars — set them in
 # .dev.vars locally (gitignored) and with `wrangler secret put` in production.
 #
-# ---- Password reset (Phase 8) ----
+# ---- Email: password reset and signup confirmation (Phase 8) ----
 #
 # RESEND_API_KEY is likewise a secret. EMAIL_FROM and APP_ORIGIN are ordinary
 # configuration and could live below as vars, but they are kept alongside the
-# key because all three are useless apart: without any one of them a reset
-# email either cannot be sent or arrives pointing at the wrong host.
+# key because all three are useless apart: without any one of them an email
+# either cannot be sent or arrives pointing at the wrong host.
 #
 #   wrangler secret put RESEND_API_KEY     # re_...
 #   wrangler secret put EMAIL_FROM         # Compass <noreply@yourdomain>
@@ -72,11 +72,13 @@ LOG_LEVEL = "info"
 # controls. See the binding's note in src/types.ts.
 #
 # The From address must be a sender Resend has verified for your domain, or
-# every send is rejected with a 403 the user never sees. Unset, password reset
-# reports itself unavailable rather than silently failing.
+# every send is rejected with a 403 the user never sees. Unset, no email leaves:
+# reset and signup still answer as usual, the failure is logged, and no link
+# arrives — and since an account is only created from its emailed link, that
+# means nobody can sign up. Configure it before the first real user.
 #
-# DEV_LOG_RESET_LINKS = "true" writes the reset link to the log so the flow can
-# be exercised with no provider. LOCAL ONLY — a reset link in a log is a live
-# credential sitting in Cloudflare's retention. Put it in .dev.vars, never here
-# and never in a deployed environment.
+# DEV_LOG_EMAIL_LINKS = "true" writes reset and signup links to the log so both
+# flows can be finished with no provider. LOCAL ONLY — either link in a log is a
+# live credential sitting in Cloudflare's retention. Put it in .dev.vars, never
+# here and never in a deployed environment.
 # With neither set the chatbot runs its offline fallback, same as before.

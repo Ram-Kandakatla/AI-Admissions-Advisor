@@ -13,7 +13,15 @@
 import { env } from "cloudflare:test";
 import { afterEach, describe, expect, test, vi, type MockInstance } from "vitest";
 import { createLogger, errorFields, resolveLevel } from "../src/log.js";
-import { body, currentCookie, get, newStudent, post } from "./helpers.js";
+import {
+  body,
+  confirmationTokenFor,
+  currentCookie,
+  get,
+  newStudent,
+  post,
+  resetSession,
+} from "./helpers.js";
 
 interface LogLine {
   level: string;
@@ -274,13 +282,21 @@ describe("request logging", () => {
 
     captureAt("debug"); // the most verbose setting, so nothing is hidden by level
     await post("/api/auth/signup", { email, password });
+    // Confirmed from another browser, so the password travels a second time —
+    // alongside the token, the other credential a careless log call would leak.
+    const token = await confirmationTokenFor(email);
+    resetSession();
+    await post("/api/auth/verify", { token, password });
 
     const everything = rawLines.join("\n");
     expect(everything).not.toContain(email);
     expect(everything).not.toContain(password);
+    expect(everything).not.toContain(token);
     // Confirms the assertions above are meaningful rather than passing because
     // nothing was logged at all.
-    expect(withMsg("request")[0]).toMatchObject({ route: "/api/auth/signup", status: 201 });
+    const requests = withMsg("request");
+    expect(requests[0]).toMatchObject({ route: "/api/auth/signup", status: 202 });
+    expect(requests[1]).toMatchObject({ route: "/api/auth/verify", status: 200 });
   });
 
   test("a malformed body logs a client error and keeps its 400", async () => {

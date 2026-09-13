@@ -53,6 +53,22 @@ function fromJson<T>(text: unknown, fallback: T): T {
 // the JSON the API emits keeps the shape the client already expects.
 const bool = (v: unknown): number => (v ? 1 : 0);
 
+// D1 reports a constraint violation only through the error's message, so this
+// is a string match — kept narrow on purpose, since anything else is rethrown.
+function isUniqueViolation(err: unknown): boolean {
+  return err instanceof Error && /UNIQUE constraint failed/i.test(err.message);
+}
+
+/**
+ * A signup waiting on its link. It carries the password hash, so it belongs to
+ * the store and the verify route only — never to a response body.
+ */
+export interface PendingSignup {
+  email: string;
+  passwordHash: string;
+  guestUserId: number;
+}
+
 // ---- Row shapes as D1 hands them back ----
 
 interface StudentRow {
@@ -678,6 +694,20 @@ export function createStore(db: D1Database) {
     RETURNING *
   `);
 
+  // ---- Pending signups ----
+  const insertPendingSignup = db.prepare(
+    "INSERT INTO pending_signups (token_hash, email, password_hash, guest_user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
+  );
+  // Expiry in the WHERE clause, as for sessions and resets: a stale link is
+  // indistinguishable from a missing one to everything that reads it.
+  const selectLivePendingSignup = db.prepare(
+    "SELECT email, password_hash, guest_user_id FROM pending_signups WHERE token_hash = ? AND expires_at > ?"
+  );
+  const clearPendingSignupsFor = db.prepare(
+    "DELETE FROM pending_signups WHERE email = ? OR guest_user_id = ?"
+  );
+  const sweepPendingSignupRows = db.prepare("DELETE FROM pending_signups WHERE expires_at <= ?");
+
   const insertSession = db.prepare(
     "INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)"
   );
@@ -792,22 +822,76 @@ export function createStore(db: D1Database) {
     return (await selectUserByEmail.bind(email).first<UserRow>()) != null;
   }
 
-  /**
-   * Turn a guest row into a real account.
-   *
-   * Null when the row already has an email — either a genuine race between two
-   * signups on one session, or a bug. Either way the caller must not treat it
-   * as success, which is why it is a null rather than a silent no-op.
-   */
-  async function claimUser(
-    userId: number,
+  /** Hold a signup until its emailed link is opened. */
+  async function createPendingSignup(
+    tokenHash: string,
     email: string,
-    passwordHash: string
-  ): Promise<UserRecord | null> {
-    const row = await claimUserRow
-      .bind(email, passwordHash, new Date().toISOString(), userId)
-      .first<UserRow>();
-    return userFromRow(row);
+    passwordHash: string,
+    guestUserId: number,
+    ttlMinutes: number
+  ): Promise<void> {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString();
+    await insertPendingSignup
+      .bind(tokenHash, email, passwordHash, guestUserId, now.toISOString(), expiresAt)
+      .run();
+  }
+
+  /** The live signup this token names — or null for every other case. */
+  async function findPendingSignup(tokenHash: string): Promise<PendingSignup | null> {
+    const row = await selectLivePendingSignup
+      .bind(tokenHash, new Date().toISOString())
+      .first<{ email: string; password_hash: string; guest_user_id: number }>();
+    return row
+      ? { email: row.email, passwordHash: row.password_hash, guestUserId: row.guest_user_id }
+      : null;
+  }
+
+  /**
+   * Turn a confirmed signup into an account by filling in the guest row that
+   * asked.
+   *
+   * Still a claim rather than a create: the row keeps its id, so the profile it
+   * owns needs no reparenting. Three outcomes, and only one is success —
+   *
+   *   - "created": the guest row now holds the email and password.
+   *   - "email-taken": the address got an account after this link went out,
+   *     because another pending signup for it was confirmed first. users.email
+   *     is UNIQUE, so two confirmations racing each other end here too, rather
+   *     than in two accounts.
+   *   - "stale": the guest row is no longer a guest. One guest can start several
+   *     signups but only one can win, and this is a loser arriving at the same
+   *     instant as the winner.
+   *
+   * On success every pending signup for the address, and every other one the
+   * same guest started, is cleared: one inbox gets one account, and one guest
+   * profile becomes one account rather than two.
+   */
+  async function completeSignup(
+    pending: PendingSignup
+  ): Promise<
+    { status: "created"; user: UserRecord } | { status: "email-taken" } | { status: "stale" }
+  > {
+    if (await emailTaken(pending.email)) return { status: "email-taken" };
+
+    let row: UserRow | null;
+    try {
+      row = await claimUserRow
+        .bind(pending.email, pending.passwordHash, new Date().toISOString(), pending.guestUserId)
+        .first<UserRow>();
+    } catch (err) {
+      if (isUniqueViolation(err)) return { status: "email-taken" };
+      throw err;
+    }
+    if (!row) return { status: "stale" };
+
+    await clearPendingSignupsFor.bind(pending.email, pending.guestUserId).run();
+    return { status: "created", user: userFromRow(row)! };
+  }
+
+  /** Housekeeping — expired signups are already unusable, this reclaims space. */
+  async function sweepPendingSignups(): Promise<void> {
+    await sweepPendingSignupRows.bind(new Date().toISOString()).run();
   }
 
   async function createSession(userId: number): Promise<SessionRecord> {
@@ -873,7 +957,8 @@ export function createStore(db: D1Database) {
    *            -> share_links     (so a shared URL dies with the account)
    *
    * then users -> sessions, which signs the person out of every device at
-   * once rather than only the one they clicked in.
+   * once rather than only the one they clicked in, and users -> pending_signups,
+   * so an address typed into a signup form and never confirmed goes as well.
    *
    * WHAT IS DELIBERATELY LEFT BEHIND
    *
@@ -1127,7 +1212,10 @@ export function createStore(db: D1Database) {
     getUser,
     findUserForLogin,
     emailTaken,
-    claimUser,
+    createPendingSignup,
+    findPendingSignup,
+    completeSignup,
+    sweepPendingSignups,
     createSession,
     getSession,
     deleteSession,

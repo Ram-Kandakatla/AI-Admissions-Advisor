@@ -62,6 +62,19 @@ export type LoginResult =
       recoveryCodesRemaining?: number;
     };
 
+/**
+ * Redeeming a signup link. Disjoint for the same reason LoginResult is: a
+ * caller has to handle "the password is needed" before it can read a user.
+ */
+export type VerifySignupResult =
+  | { passwordRequired: true }
+  | {
+      passwordRequired?: false;
+      user: AuthUser;
+      studentId: string | null;
+      discardedGuestProfile: boolean;
+    };
+
 export interface AuthState {
   user: AuthUser | null;
   studentId: string | null;
