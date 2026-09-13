@@ -52,12 +52,13 @@ import {
 } from "./models/application.js";
 import { CHAT_MODES, parseChatMode } from "./models/chatMode.js";
 import { createStore } from "./store/dataStore.js";
-import { loadUniversities, universityIndex } from "./store/staticData.js";
+import { knownMajors, loadUniversities, universityIndex } from "./store/staticData.js";
 import { recommendUniversities } from "./services/recommendationEngine.js";
 import { recommendScholarships } from "./services/scholarshipEngine.js";
 import { majorCatalog, majorInsights } from "./services/majorInsights.js";
 import { createLlmService } from "./services/llmService.js";
 import { bodyLimit } from "./middleware/bodyLimit.js";
+import { allowedOrigins, crossOriginGuard } from "./middleware/crossOrigin.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 import { matchedRoute, requestLog } from "./middleware/requestLog.js";
 import { createLogger, errorFields } from "./log.js";
@@ -122,10 +123,7 @@ app.use(
 // Requests with no Origin at all (curl, health checks, server-to-server) are
 // unaffected — the header is a browser mechanism, not a firewall.
 app.use("*", async (c, next) => {
-  const allowed = (c.env.CORS_ORIGIN || "http://localhost:5173")
-    .split(",")
-    .map((o) => o.trim())
-    .filter(Boolean);
+  const allowed = allowedOrigins(c.env);
   return cors({
     origin: (origin) => (allowed.includes(origin) ? origin : null),
     // On since Phase 2: the session cookie is not sent on a cross-origin
@@ -135,6 +133,12 @@ app.use("*", async (c, next) => {
     credentials: true,
   })(c, next);
 });
+
+// CORS above decides who may *read* a response; this decides who may *send* a
+// write with the visitor's cookie attached. They are different questions, and
+// on a pages.dev host SameSite alone does not answer the second one — see
+// middleware/crossOrigin.ts. After CORS so a preflight is still answered.
+app.use("*", crossOriginGuard);
 
 // 100kb, the same cap express.json() enforced.
 app.use("*", bodyLimit());
@@ -157,17 +161,13 @@ app.use("*", sessionContext);
 // ---- Accounts ----
 app.route("/auth", authRoutes);
 
-// Derive the list of majors/regions actually present in the dataset.
+// Derive the list of majors/regions actually present in the dataset. The
+// majors come from the same set validateProfile checks against, so the form
+// can never offer a major the API would then refuse.
 function buildMeta() {
-  const unis = loadUniversities();
-  const majors = new Set<string>();
-  const regions = new Set<string>();
-  for (const u of unis) {
-    u.majors.forEach((m) => majors.add(m));
-    regions.add(u.region);
-  }
+  const regions = new Set(loadUniversities().map((u) => u.region));
   return {
-    majors: [...majors].sort(),
+    majors: [...knownMajors()].sort(),
     regions: [...regions].sort(),
     financialNeed: ["high", "medium", "low"],
   };
@@ -255,6 +255,28 @@ app.get("/majors/:major", async (c) => {
 // most common one in apps like this.
 app.use("/students/:id", requireOwner);
 app.use("/students/:id/*", requireOwner);
+
+// Creating a profile with no session mints a user, a session and a student in
+// one request, with no account and no email. That makes it the one write in
+// the API a script can repeat from a cold start, so it is the one that could
+// fill the database for everybody — and until PHASE-7's WAF rule exists there
+// is no global limit in front of it.
+//
+// Only cookieless requests are counted: a caller who already has a session is
+// not minting anything, and the route answers them 409 or 201 on their own
+// row. The budget is generous because the realistic false positive is a
+// classroom behind one school NAT, all opening Compass for the first time in
+// the same lesson.
+const guestCreationLimit = rateLimit({
+  bucket: "guest",
+  limit: 50,
+  windowMs: 15 * 60 * 1000,
+  message: "Too many new profiles from this network. Please wait a few minutes and try again.",
+});
+app.use("/students", async (c, next) => {
+  if (c.req.method !== "POST" || c.get("session")) return next();
+  return guestCreationLimit(c, next);
+});
 
 /**
  * Create the caller's profile.
@@ -756,8 +778,8 @@ app.get("/shared/:token", async (c) => {
 
 // ---- Chat ----
 //
-// The only route with a limiter in code. See middleware/rateLimit.ts for why
-// this one and not the others.
+// Limited in code because it is the route that spends real money per call.
+// See middleware/rateLimit.ts for the full list of limited routes and why.
 
 app.use(
   "/chat",

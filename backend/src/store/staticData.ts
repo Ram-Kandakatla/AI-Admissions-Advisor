@@ -32,3 +32,19 @@ export function loadScholarships(): Scholarship[] {
 export function universityIndex(): Map<number, University> {
   return new Map(universities.map((u) => [u.id, u]));
 }
+
+// Built once: the dataset is part of the bundle, so the set cannot change
+// while an isolate is alive.
+const majors = new Set(universities.flatMap((u) => u.majors));
+
+/**
+ * Every major some school in the dataset offers.
+ *
+ * The profile form only ever offers these (it reads them from /api/meta), and
+ * validateProfile uses the same set to refuse anything else — a major no school
+ * here teaches matches nothing, and an unbounded free-text list was the one
+ * profile field that flowed uncapped into the chatbot's prompt.
+ */
+export function knownMajors(): ReadonlySet<string> {
+  return majors;
+}

@@ -11,6 +11,12 @@ const FALLBACK_MAJORS = [
 ];
 const FALLBACK_REGIONS = ["Northeast", "South", "Midwest", "West"];
 
+// The same two caps backend/src/models/studentProfile.ts enforces. Stopping
+// here means the form says so, rather than the server quietly truncating the
+// overflow on save.
+const MAX_ACTIVITIES = 30;
+const MAX_ACTIVITY_LENGTH = 100;
+
 const NEED_LABELS: Record<FinancialNeed, string> = {
   high: "High need",
   medium: "Some need",
@@ -53,7 +59,12 @@ export default function ProfileForm({
       return { ...f, [key]: has ? f[key].filter((v) => v !== value) : [...f[key], value] };
     });
 
+  const ecFull = form.extracurriculars.length >= MAX_ACTIVITIES;
+
   const addEc = () => {
+    // A full list keeps what was typed, so removing a tag and pressing Add
+    // again does not mean typing it twice.
+    if (ecFull) return;
     const v = ecInput.trim();
     if (v && !form.extracurriculars.includes(v)) {
       set("extracurriculars", [...form.extracurriculars, v]);
@@ -192,12 +203,18 @@ export default function ProfileForm({
 
           <div className="field full">
             <label htmlFor="ec">
-              Extracurriculars &amp; coursework <span className="hint">— clubs, sports, AP/IB classes, jobs</span>
+              Extracurriculars &amp; coursework{" "}
+              <span className="hint">
+                {ecFull
+                  ? `— that's the limit of ${MAX_ACTIVITIES}; remove one to add another`
+                  : "— clubs, sports, AP/IB classes, jobs"}
+              </span>
             </label>
             <div className="tag-input-row">
               <input
                 id="ec"
                 type="text"
+                maxLength={MAX_ACTIVITY_LENGTH}
                 value={ecInput}
                 onChange={(e) => setEcInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -208,7 +225,7 @@ export default function ProfileForm({
                 }}
                 placeholder="e.g. Robotics captain, AP Calculus, part-time job"
               />
-              <button type="button" className="btn btn-ghost" onClick={addEc}>
+              <button type="button" className="btn btn-ghost" onClick={addEc} disabled={ecFull}>
                 Add
               </button>
             </div>

@@ -213,7 +213,15 @@ export default function Security() {
               <strong>The session cookie is <code>httpOnly</code>, <code>SameSite=Lax</code>,
               and <code>Secure</code> over HTTPS</strong> — unreadable by injected script,
               unusable by another site, and it expires 30 days from sign-in without being
-              extended by use.
+              extended by use. Over HTTPS it is named with the <code>__Host-</code> prefix,
+              so the browser will only accept it from this exact host, never from a
+              subdomain.
+            </li>
+            <li>
+              <strong>Writes from another origin are refused.</strong> A browser request that
+              changes anything must come from Compass itself. This goes further than
+              SameSite does on purpose: every preview deployment of Compass shares its site,
+              and a cookie setting alone would let one of them act on your account.
             </li>
             <li>
               <strong>Passwords are PBKDF2-HMAC-SHA-256, 100,000 iterations</strong>, with a
@@ -265,8 +273,11 @@ export default function Security() {
               an hour.
             </li>
             <li>
-              <strong>Chat is rate limited</strong> to 30 requests per 15 minutes per client,
-              counted in the database so it works across a distributed runtime.
+              <strong>Rate limits are counted in the database</strong>, so they hold across a
+              distributed runtime. Per 15 minutes: 30 chat requests per account (per
+              network for guests); 15 attempts per network shared across signing in,
+              signing up, setting a new password, two-factor codes, and deleting an account;
+              5 requests for a reset email; and 50 new guest profiles per network.
             </li>
             <li>
               <strong>Request bodies are capped at 100 KB</strong>, rejected on the declared

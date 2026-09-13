@@ -177,7 +177,9 @@ describe("the no-third-parties claim, checked against index.html", () => {
 describe("Cookies — the inventory", () => {
   it("names the one cookie and its lifetime", () => {
     renderPage(CookiePolicy);
-    expect(screen.getAllByText("compass_session").length).toBeGreaterThan(0);
+    // The name as a browser shows it over HTTPS — middleware/auth.ts adds the
+    // prefix — since this page promises it can be checked in devtools.
+    expect(screen.getAllByText("__Host-compass_session").length).toBeGreaterThan(0);
     expect(screen.getByText(/30 days from sign-in/i)).toBeInTheDocument();
   });
 

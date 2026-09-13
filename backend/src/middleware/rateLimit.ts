@@ -8,13 +8,15 @@
 //
 // WHAT IS AND ISN'T LIMITED HERE
 //
-// Only /api/chat. That is the route that spends real money per call, and the
-// one worth paying a D1 write to protect. The old global 300/15min limiter is
-// deliberately NOT reimplemented in code — as a Cloudflare Rate Limiting Rule
-// it runs at the edge, in front of the Worker, costs nothing per request, and
-// needs no counter of its own. See PHASE-1.md for the rule to create at deploy
-// time; until then the global limit genuinely does not exist locally, which is
-// fine on a laptop and is the reason it is written down rather than assumed.
+// Routes where one caller can do outsized damage, each worth a D1 write to
+// protect: /api/chat (real money per call), the auth routes (password and
+// second-factor guessing, and mail sent to addresses the caller names), and
+// guest profile creation (the one write that needs no account, so the one a
+// script could repeat until the database is full). The old global 300/15min
+// limiter is deliberately NOT reimplemented in code — as a Cloudflare Rate
+// Limiting Rule it runs at the edge, in front of the Worker, costs nothing per
+// request, and needs no counter of its own. See PHASE-7.md for why that rule
+// is blocked on a custom domain; until then there is no global limit at all.
 
 import { createMiddleware } from "hono/factory";
 import type { Context } from "hono";
@@ -22,7 +24,11 @@ import { createLogger, errorFields } from "../log.js";
 import type { AppEnv } from "../types.js";
 
 export interface RateLimitOptions {
-  /** Names the counter, so two limited routes never share a budget. */
+  /**
+   * Names the counter. Routes with different names never share a budget; the
+   * same name on two routes pools them, which routes/auth.ts does on purpose
+   * for everything that checks a password or a second factor.
+   */
   bucket: string;
   /** Requests allowed per window. */
   limit: number;
@@ -49,15 +55,26 @@ export interface RateLimitOptions {
  * `wrangler dev` does set the header locally. The fallback exists only so a
  * request that somehow arrives without one is still counted — as a single
  * shared bucket, which is stricter than letting it through uncounted.
+ *
+ * The address is hashed before it is stored, because the privacy page says so
+ * and the table is the only place Compass's own code keeps one. Be clear about
+ * what this buys: an unkeyed hash of an IPv4 address can be reversed by trying
+ * all four billion, so it keeps the address out of plain sight in a row, a
+ * query result, or a backup — it is not anonymisation. The rows live for one
+ * fifteen-minute window, which is the stronger half of the protection.
  */
-function clientKey(headers: Headers): string {
-  return headers.get("CF-Connecting-IP") ?? "unknown";
+async function clientKey(headers: Headers): Promise<string> {
+  const ip = headers.get("CF-Connecting-IP");
+  if (!ip) return "unknown";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ip));
+  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `ip:${hex}`;
 }
 
 export function rateLimit({ bucket, limit, windowMs, message, key }: RateLimitOptions) {
   return createMiddleware<AppEnv>(async (c, next) => {
     const db = c.env.DB;
-    const client = (key ? await key(c) : null) ?? clientKey(c.req.raw.headers);
+    const client = (key ? await key(c) : null) ?? (await clientKey(c.req.raw.headers));
     // Fixed windows rather than a sliding log: the window id is part of the
     // primary key, so a new window is a new row and nothing has to be expired
     // on a timer for the count to reset.

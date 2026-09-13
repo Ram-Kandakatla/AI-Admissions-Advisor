@@ -99,6 +99,39 @@ describe("requesting a reset tells you nothing about who has an account", () => 
     expect((await post("/api/auth/forgot", { email: "not-an-email" })).status).toBe(400);
   });
 
+  test("an address over the length cap is refused before the shape check runs", async () => {
+    // The shape pattern backtracks quadratically on a long run of dots, and
+    // before the length check moved in front of it this body cost seconds of
+    // CPU per request. The status alone cannot show the order; the boundary
+    // pair below is what pins the cap to this route.
+    resetSession();
+    const hostile = "a@" + ".".repeat(90_000) + " x";
+    expect((await post("/api/auth/forgot", { email: hostile })).status).toBe(400);
+
+    const local = "a".repeat(254 - "@example.com".length);
+    expect((await post("/api/auth/forgot", { email: `${local}@example.com` })).status).toBe(202);
+    expect((await post("/api/auth/forgot", { email: `${local}a@example.com` })).status).toBe(400);
+  });
+
+  test("failed sign-ins do not use up the reset-request budget", async () => {
+    // /forgot used to share the "auth" counter with login, so the fifth wrong
+    // password left the reset request answering 429 — refusing the way out at
+    // the moment someone needs it.
+    resetSession();
+    for (let i = 0; i < 6; i++) {
+      await post("/api/auth/login", { email: "forgetful@example.com", password: "not my password" });
+    }
+    expect((await post("/api/auth/forgot", { email: "forgetful@example.com" })).status).toBe(202);
+  });
+
+  test("reset requests keep their own, tighter limit", async () => {
+    resetSession();
+    for (let i = 0; i < 5; i++) {
+      expect((await post("/api/auth/forgot", { email: "spam@example.com" })).status).toBe(202);
+    }
+    expect((await post("/api/auth/forgot", { email: "spam@example.com" })).status).toBe(429);
+  });
+
   test("writes exactly one live token, and stores it hashed", async () => {
     await newStudent();
     const { userId } = await signUp("hashed@example.com", PASSWORD);

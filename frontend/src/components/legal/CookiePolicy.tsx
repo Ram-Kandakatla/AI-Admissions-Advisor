@@ -21,7 +21,7 @@ import { REPO_URL } from "../../legal";
  * Explained in §3 for the reader, and worth stating here for whoever edits
  * this next: under the ePrivacy Directive and the GDPR, storage that is
  * strictly necessary to deliver a service the user asked for does not require
- * consent. compass_session is that; without it there is no sign-in. Offering a
+ * consent. __Host-compass_session is that; without it there is no sign-in. Offering a
  * Reject button for a cookie the app cannot function without would be a choice
  * that is not a choice, and the consent record it produced would be worthless.
  * The banner (components/CookieNotice.tsx) is therefore a notice, not a gate.
@@ -48,7 +48,7 @@ export default function CookiePolicy() {
             head={["Name", "What it holds", "Why", "How long"]}
             rows={[
               [
-                <code key="n">compass_session</code>,
+                <code key="n">__Host-compass_session</code>,
                 "A random session identifier. Nothing about you — the identifier points at a row on the server, and carries no information itself.",
                 "Keeps you signed in, and tells the server which account a request belongs to. Without it, every page load would be a stranger arriving.",
                 "30 days from sign-in, or until you sign out. Not extended by use, so a stolen cookie has a definite expiry rather than an indefinite one.",
@@ -76,6 +76,13 @@ export default function CookiePolicy() {
                 <code>Secure</code>
               </strong>{" "}
               — sent only over HTTPS whenever the app is served over HTTPS.
+            </li>
+            <li>
+              <strong>
+                <code>__Host-</code> prefix
+              </strong>{" "}
+              — the browser accepts the cookie only from this exact host, never from a
+              subdomain, so no other page can plant a session of its own choosing on you.
             </li>
             <li>
               <strong>First-party.</strong> It is set by Compass, readable only by Compass,
@@ -142,7 +149,7 @@ export default function CookiePolicy() {
             exempt.
           </p>
           <p>
-            <code>compass_session</code> is exactly that: it <em>is</em> being signed in.
+            <code>__Host-compass_session</code> is exactly that: it <em>is</em> being signed in.
             A banner offering you a Reject button for it would be offering a choice that
             does not exist, and a consent record produced that way would mean nothing.
           </p>
@@ -229,7 +236,7 @@ export default function CookiePolicy() {
       summary={
         <ul className="legal-tldr">
           <li>
-            <strong>One cookie</strong> — <code>compass_session</code>, which is what keeps
+            <strong>One cookie</strong> — <code>__Host-compass_session</code>, which is what keeps
             you signed in.
           </li>
           <li>
