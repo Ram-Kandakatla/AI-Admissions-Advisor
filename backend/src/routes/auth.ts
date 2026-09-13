@@ -1,7 +1,9 @@
 // Account routes.
 //
-//   POST /api/auth/signup   { email, password }  → claims the caller's guest
-//                                                  row, or makes a new account
+//   POST /api/auth/signup   { email, password }  → "check your inbox", for every
+//                                                  address alike
+//   POST /api/auth/verify   { token, password? } → confirms it: claims the
+//                                                  caller's guest row, signs in
 //   POST /api/auth/login    { email, password }  → new session for that account
 //   POST /api/auth/logout                        → revokes the session
 //   GET  /api/auth/me                            → who the caller is, if anyone
@@ -15,11 +17,12 @@
 //   POST /api/auth/2fa/recovery-codes { password, code } → a fresh batch
 //   POST /api/auth/2fa/verify  { challenge, code }  → finishes a login
 //
-// Signup is a *claim*, not a create: the caller almost always already has an
-// anonymous user row holding the profile they just built, and signing up fills
-// in that row's email and password rather than making a second one. That is
-// what lets the product keep its no-account front door without leaving
-// unowned profiles behind.
+// Signup is a *claim*, not a create — it just completes at /verify now, once
+// the emailed link is opened. The caller almost always already has an anonymous
+// user row holding the profile they just built, and confirming fills in that
+// row's email and password rather than making a second one. That is what lets
+// the product keep its no-account front door without leaving unowned profiles
+// behind.
 
 import { Hono } from "hono";
 import {
@@ -43,11 +46,11 @@ import {
   ownedStudent,
   rotateSession,
 } from "../middleware/auth.js";
-import { rateLimit } from "../middleware/rateLimit.js";
+import { countHit, hashedKey, rateLimit } from "../middleware/rateLimit.js";
 import { readJson } from "../http.js";
 import { createLogger, errorFields } from "../log.js";
 import type { Context } from "hono";
-import type { AppEnv } from "../types.js";
+import type { AppEnv, Env } from "../types.js";
 
 const auth = new Hono<AppEnv>();
 
@@ -65,6 +68,18 @@ auth.use(
 );
 auth.use(
   "/signup",
+  rateLimit({
+    bucket: "auth",
+    limit: 15,
+    windowMs: 15 * 60 * 1000,
+    message: "Too many attempts. Please wait a few minutes and try again.",
+  })
+);
+// Opening a signup link can ask for the password chosen at signup, which makes
+// it one more place a password can be guessed. Only by someone already holding
+// the inbox, so unlikely — but pooling it with the others costs nothing.
+auth.use(
+  "/verify",
   rateLimit({
     bucket: "auth",
     limit: 15,
@@ -148,7 +163,7 @@ interface Credentials {
  * The email check is deliberately shallow — one @, something either side, no
  * spaces. Stricter regexes reject valid addresses far more often than they
  * catch invalid ones, and the only real proof an address works is sending to
- * it, which this app does not do yet.
+ * it — which signup now does, and is where a mistyped address is caught.
  */
 function validateCredentials(body: Record<string, unknown>): {
   errors: string[];
@@ -174,6 +189,66 @@ function validateCredentials(body: Record<string, unknown>): {
   return { errors, credentials: { email, password } };
 }
 
+/**
+ * How long a signup link lives: a day. Longer than a reset link's hour
+ * because nothing is at stake while it waits — no account exists yet to take
+ * over — and a link that dies before a student checks their school inbox after
+ * last period is a signup that quietly never happened.
+ */
+const SIGNUP_TTL_HOURS = 24;
+
+/**
+ * At most this many signup emails to one address an hour, however many
+ * networks the requests come from. /signup mails whatever address it is given,
+ * so the per-network limit alone would let a pool of IPs fill a stranger's
+ * inbox through Compass.
+ */
+const SIGNUP_MAIL_PER_ADDRESS = 3;
+const SIGNUP_MAIL_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * An absolute link into the app, for an email.
+ *
+ * Built from configuration, never from a request header. Building it out of
+ * the Host or Origin the caller sent is host-header poisoning: an attacker
+ * requests a reset — or a signup — for someone else's address and points the
+ * link that lands in that person's inbox at a server they control.
+ */
+function linkTo(env: Env, path: string): string {
+  return `${(env.APP_ORIGIN ?? "").replace(/\/+$/, "")}${path}`;
+}
+
+/**
+ * Local development only: write emailed links to the log, so the flows can be
+ * finished with no email provider. Gated on an explicit opt-in rather than on
+ * "no provider configured" — a deployment that lost its API key must not start
+ * writing live credentials to a log it did not before. See the binding's note
+ * in types.ts.
+ */
+function devLogsEmailLinks(env: Env): boolean {
+  return env.DEV_LOG_EMAIL_LINKS === "true";
+}
+
+/**
+ * Start creating an account. Nothing is created here.
+ *
+ * WHY EVERY ADDRESS GETS THE SAME ANSWER
+ *
+ * This route used to create the account on the spot, so an address with an
+ * account answered 409 and a new one answered 201 — the membership oracle
+ * /forgot refuses to be, one route over. The only answer that can be the same
+ * for both is "check your inbox", so that is the answer, and the difference
+ * moves into the inbox, where only its owner sees it:
+ *
+ *   - a new address gets a link, and the account is created when it is opened
+ *     (POST /verify);
+ *   - an address that already has an account gets a note saying someone tried,
+ *     with the way to sign in or reset. No link, so nothing can be created.
+ *
+ * Everything that differs between those two happens after the response, in
+ * waitUntil, for the stopwatch reason /forgot gives: a password hash and a row
+ * write that only one branch performs would otherwise show up as latency.
+ */
 auth.post("/signup", async (c) => {
   const store = c.get("store");
   const { errors, credentials } = validateCredentials(
@@ -192,26 +267,165 @@ auth.post("/signup", async (c) => {
     }
   }
 
-  if (await store.emailTaken(credentials.email)) {
-    return c.json({ error: "An account with that email already exists." }, 409);
-  }
-
-  // Creates the anonymous row if this is a cold visitor; returns the row
-  // already holding their guest profile if it isn't.
+  // The guest row the confirmed account will claim, minted now for a visitor
+  // who has none. It keeps a guest's profile, and it is how /verify recognises
+  // the browser that asked. Done for every address alike and before the
+  // response, which is why it says nothing about any of them.
   const session = await ensureSession(c);
-  const passwordHash = await hashPassword(credentials.password);
-  const user = await store.claimUser(session.userId, credentials.email, passwordHash);
+  const { email, password } = credentials;
+  const log = createLogger(c.env);
+  const mail = createEmailService(c.env);
 
-  // Null means the row stopped being a guest between the check above and the
-  // write — two signups racing on one session. Reporting it as the conflict it
-  // is beats overwriting whichever one lost.
-  if (!user) {
-    return c.json({ error: "That account was just created. Try signing in." }, 409);
+  c.executionCtx.waitUntil(
+    (async () => {
+      try {
+        // A cap per recipient, on top of the per-network limit on the route.
+        // Past it the send is skipped silently: the response was identical
+        // either way, so there is nobody to tell.
+        const { count } = await countHit(
+          c,
+          "signup-mail",
+          await hashedKey("email", email),
+          SIGNUP_MAIL_WINDOW_MS
+        );
+        if (count > SIGNUP_MAIL_PER_ADDRESS) {
+          log.warn("signup email skipped — that address has had its share this hour");
+          return;
+        }
+
+        if (await store.emailTaken(email)) {
+          if (devLogsEmailLinks(c.env)) {
+            log.warn("DEV_LOG_EMAIL_LINKS is on — address already has an account, notice sent");
+          }
+          const sent = await mail.sendSignupNotice(
+            email,
+            linkTo(c.env, "/signin"),
+            linkTo(c.env, "/forgot")
+          );
+          if (!sent.delivered) {
+            log.error("signup notice requested but not delivered", { provider: sent.provider });
+          }
+          return;
+        }
+
+        const token = generateResetToken();
+        await store.createPendingSignup(
+          await hashResetToken(token),
+          email,
+          await hashPassword(password),
+          session.userId,
+          SIGNUP_TTL_HOURS * 60
+        );
+        const confirmUrl = linkTo(c.env, `/verify?token=${token}`);
+
+        if (devLogsEmailLinks(c.env)) {
+          log.warn("DEV_LOG_EMAIL_LINKS is on — signup link written to the log", { confirmUrl });
+        }
+
+        const sent = await mail.sendSignupConfirmation(email, confirmUrl, SIGNUP_TTL_HOURS);
+        if (!sent.delivered) {
+          // The person has already been told to check their inbox, so this
+          // line is the only place the failure surfaces. No address in it.
+          log.error("signup confirmation requested but not delivered", {
+            provider: sent.provider,
+          });
+        }
+      } catch (err) {
+        log.error("signup request failed", errorFields(err));
+      }
+    })()
+  );
+
+  // One in a hundred requests also tidies expired signups, as /forgot does
+  // for resets.
+  if (Math.random() < 0.01) {
+    c.executionCtx.waitUntil(
+      store.sweepPendingSignups().catch(() => {
+        /* housekeeping — never worth failing a request over */
+      })
+    );
   }
 
-  await rotateSession(c, user.id);
-  const student = await ownedStudent(c);
-  return c.json({ user, studentId: student?.id ?? null }, 201);
+  return c.json(
+    {
+      message:
+        "Check your inbox to finish creating your account. If that address already has an account, a note saying so is on its way instead.",
+    },
+    202
+  );
+});
+
+/**
+ * Confirm a signup and create the account.
+ *
+ * WHEN THE LINK IS ENOUGH, AND WHEN IT IS NOT
+ *
+ * Holding the link proves someone controls the inbox. It does not prove they
+ * filled in the form, and that gap is an attack with a name — account
+ * pre-hijacking. Request a signup for someone else's address with a password
+ * you chose; if they open the link and are signed straight in, they are now
+ * building a college list inside an account you can sign in to.
+ *
+ * So the link finishes by itself only for the session that asked — the one
+ * whose guest row the pending signup names, where the person clicking is the
+ * person who chose the password. Anywhere else (a phone's mail app, another
+ * computer, a stranger's browser) it asks for that password, which the owner of
+ * an inbox someone else typed in does not have. The page cannot know in advance
+ * which case it is in, so its first call carries no password and
+ * `passwordRequired` is the answer that asks for one. That answer is only ever
+ * given for a live token, so it reveals nothing about anyone else.
+ *
+ * A wrong password does not spend the link. The only people able to guess
+ * against it already hold the inbox, and the auth limiter caps them regardless.
+ */
+auth.post("/verify", async (c) => {
+  const body = await readJson<Record<string, unknown>>(c);
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+
+  // One message for expired, already-used, and never-existed, for the reason
+  // /reset gives: telling them apart confirms that a link was once real.
+  const invalid = () =>
+    c.json(
+      { error: "This link has expired or has already been used. Sign up again to get a new one." },
+      400
+    );
+  if (!token) return invalid();
+
+  const store = c.get("store");
+  const pending = await store.findPendingSignup(await hashResetToken(token));
+  if (!pending) return invalid();
+
+  if (c.get("session")?.userId !== pending.guestUserId) {
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!password) return c.json({ passwordRequired: true });
+    if (!(await verifyPassword(password, pending.passwordHash))) {
+      return c.json(
+        { error: "That isn't the password this account was set up with.", passwordRequired: true },
+        401
+      );
+    }
+  }
+
+  // Read before the session changes hands, for the reason login reads it: a
+  // different unsaved list in this browser is about to be left behind.
+  const guestDraft = await ownedStudent(c);
+
+  const result = await store.completeSignup(pending);
+  if (result.status === "email-taken") {
+    // Safe to say here, and nowhere before this point: the caller has just
+    // redeemed a link that only that inbox was sent.
+    return c.json({ error: "This email already has a Compass account. Sign in instead." }, 409);
+  }
+  if (result.status === "stale") return invalid();
+
+  await rotateSession(c, result.user.id);
+  const student = await store.getStudentByUserId(result.user.id);
+
+  return c.json({
+    user: await store.getUser(result.user.id),
+    studentId: student?.id ?? null,
+    discardedGuestProfile: guestDraft != null && guestDraft.id !== student?.id,
+  });
 });
 
 /**
@@ -297,7 +511,16 @@ auth.post("/login", async (c) => {
     : await fakeVerify(credentials.password);
 
   if (!ok || !row) {
-    return c.json({ error: "That email and password don't match an account." }, 401);
+    // The second sentence is for someone who signed up minutes ago and has
+    // not opened the link yet — the one person certain to land here with the
+    // right password. Everyone gets it, so it says nothing about anyone.
+    return c.json(
+      {
+        error:
+          "That email and password don't match an account. If you've just signed up, open the link we emailed you first.",
+      },
+      401
+    );
   }
 
   // WHERE 2FA INTERRUPTS THE LOGIN
@@ -491,21 +714,11 @@ auth.post("/forgot", async (c) => {
             RESET_TTL_MINUTES
           );
 
-          // Configuration, never a request header. Building this URL out of
-          // the Host or Origin the caller sent is host-header poisoning: an
-          // attacker requests a reset for someone else's address and points
-          // the link in that person's inbox at a server they control.
-          const origin = (c.env.APP_ORIGIN ?? "").replace(/\/+$/, "");
-          const resetUrl = `${origin}/reset?token=${token}`;
+          // Configuration, never a request header — see linkTo.
+          const resetUrl = linkTo(c.env, `/reset?token=${token}`);
 
-          if (c.env.DEV_LOG_RESET_LINKS === "true") {
-            // Local development only, and gated on an explicit opt-in rather
-            // than on "no provider configured" — a deployment that lost its
-            // API key must not start writing live credentials to a log it
-            // did not before. See the binding's note in types.ts.
-            log.warn("DEV_LOG_RESET_LINKS is on — reset link written to the log", {
-              resetUrl,
-            });
+          if (devLogsEmailLinks(c.env)) {
+            log.warn("DEV_LOG_EMAIL_LINKS is on — reset link written to the log", { resetUrl });
           }
 
           const sent = await email_service.sendPasswordReset(

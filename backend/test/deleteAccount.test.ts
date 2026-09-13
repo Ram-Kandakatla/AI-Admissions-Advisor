@@ -157,7 +157,7 @@ describe("what actually gets deleted", () => {
 
   test("reports hadProfile: false for an account that never built one", async () => {
     resetSession();
-    await post("/api/auth/signup", { email: "never-started@example.com", password: PASSWORD });
+    await signUp("never-started@example.com", PASSWORD);
     expect(await body(await deleteAccount({ confirm: "DELETE", password: PASSWORD }), 200))
       .toEqual({ deleted: true, hadProfile: false });
   });

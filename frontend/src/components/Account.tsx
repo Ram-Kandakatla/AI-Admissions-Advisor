@@ -37,6 +37,13 @@ export default function Account({
    */
   const [challenge, setChallenge] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  /**
+   * The address a signup was just requested for. Non-null swaps the form for
+   * "check your email". Signing up no longer signs anyone in — the account is
+   * created from the emailed link, see VerifySignup — and this screen cannot
+   * say whether one will be, because the server will not say either.
+   */
+  const [sentTo, setSentTo] = useState<string | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -46,6 +53,7 @@ export default function Account({
   useEffect(() => {
     emailRef.current?.focus();
     setErrors([]);
+    setSentTo(null);
   }, [mode]);
 
   const signingUp = mode === "signup";
@@ -56,8 +64,11 @@ export default function Account({
     setErrors([]);
     try {
       if (signingUp) {
-        const { user, studentId } = await api.signup(email, password);
-        onSignedIn(user, studentId, false);
+        await api.signup(email, password);
+        // The password has done its job — it waits server-side with the
+        // pending signup — so it does not linger in this component's state.
+        setPassword("");
+        setSentTo(email.trim());
       } else {
         const result = await api.login(email, password);
         if (result.mfaRequired) {
@@ -167,6 +178,45 @@ export default function Account({
     );
   }
 
+  if (signingUp && sentTo) {
+    return (
+      <section className="acct">
+        <div className="panel acct-panel acct-sent">
+          <h1 className="acct-hd">Check your email</h1>
+          {/* True whichever of the two emails is on its way. The server will
+              not say which, and this page must not guess: "we've sent your
+              link" to an address that already has an account would hand back
+              exactly what the server refused to reveal. */}
+          <p>
+            A message is on its way to <strong>{sentTo}</strong>. If it&apos;s a new address,
+            it has a link to finish creating your account. The link works once and expires in
+            24 hours.
+          </p>
+          <p className="acct-sent-note">
+            If that address already has a Compass account, the email says so instead — sign
+            in, or reset the password if you&apos;ve forgotten it.
+          </p>
+          {guestProfile && (
+            <p className="acct-sent-note">
+              {guestProfile.name}&apos;s profile stays in this browser until you open the link, and
+              is saved to the account when you do.
+            </p>
+          )}
+          <p className="acct-sent-note">
+            No email after a few minutes? Check your spam folder, then{" "}
+            <button type="button" className="linkish" onClick={() => setSentTo(null)}>
+              try again
+            </button>
+            .
+          </p>
+          <Link className="btn btn-ghost" to="/signin">
+            Go to sign in
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="acct">
       <div className="acct-grid">
@@ -226,7 +276,7 @@ export default function Account({
           {guestProfile && (
             <p className={`banner ${signingUp ? "" : "banner-warn"} acct-draft`}>
               {signingUp
-                ? `${guestProfile.name}'s profile will be saved to this account.`
+                ? `${guestProfile.name}'s profile will be saved to your account once you confirm your email.`
                 : `You have an unsaved profile for ${guestProfile.name}. Signing in loads the list already on that account instead.`}
             </p>
           )}
@@ -281,7 +331,7 @@ export default function Account({
             <button type="submit" className="btn btn-primary acct-submit" disabled={busy}>
               {busy
                 ? signingUp
-                  ? "Creating your account…"
+                  ? "Sending…"
                   : "Signing you in…"
                 : signingUp
                   ? "Create my account"

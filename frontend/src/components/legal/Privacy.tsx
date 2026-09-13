@@ -75,6 +75,11 @@ export default function Privacy() {
             per-account salt, which cannot be reversed back into your password.
           </p>
           <p>
+            Creating one starts with an email to that address. Until you open the link in
+            it, the address and the password hash wait as an unconfirmed sign-up, which is
+            deleted when you confirm — or after 24 hours, if you never do.
+          </p>
+          <p>
             You do not need an account to use Compass. Without one you get an anonymous
             session, which owns your work until the session expires.
           </p>
@@ -96,9 +101,11 @@ export default function Privacy() {
             own code uses it for one thing: rate limiting. Signing in or up, password
             resets, two-factor codes, deleting an account, starting a profile, and chat for
             anyone not signed in are each counted per address, so one machine cannot guess
-            passwords or run up costs without limit. The counter stores a SHA-256 hash of the address, never
-            the address itself, and the row is cleared once its fifteen-minute window has
-            passed.
+            passwords or run up costs without limit. The counter stores a SHA-256 hash of
+            the address, never the address itself, and the row is cleared once its
+            fifteen-minute window has passed. Sign-up emails are capped the same way per
+            email address: a hash of the address being signed up is counted for an hour, so
+            nobody can use Compass to flood someone&apos;s inbox.
           </p>
         </>
       ),
@@ -232,9 +239,11 @@ export default function Privacy() {
               profile summary, as described above, and only when you use the chat.
             </li>
             <li>
-              <strong>Resend</strong> — delivers password-reset emails. It receives your
-              email address and the one-time reset link, and only when you ask for a
-              reset. Nothing else about your account or your plan goes with it.
+              <strong>Resend</strong> — delivers Compass&apos;s emails: password-reset links,
+              sign-up confirmation links, and the note sent when someone tries to sign up
+              with an address that already has an account. It receives the address and that
+              one message, only when one of those is requested for the address, and nothing
+              else about your account or your plan.
             </li>
             <li>
               <strong>Anyone you hand a share link to.</strong> See below.
@@ -316,8 +325,12 @@ export default function Privacy() {
               browser politely forgetting a token that would still work.
             </li>
             <li>
-              <strong>Rate-limit counters</strong> — swept once their fifteen-minute window
-              has passed.
+              <strong>Rate-limit counters</strong> — swept once their window has passed:
+              fifteen minutes, or an hour for the sign-up email cap.
+            </li>
+            <li>
+              <strong>Unconfirmed sign-ups</strong> — deleted when the emailed link is opened,
+              or after 24 hours if it never is.
             </li>
             <li>
               <strong>Request logs</strong> — retained by Cloudflare under its own

@@ -55,6 +55,7 @@ describe("titleFor", () => {
       "/account",
       "/forgot",
       "/reset",
+      "/verify",
       "/terms",
       "/privacy",
       "/cookies",

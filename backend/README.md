@@ -73,7 +73,8 @@ first student who asks a question.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/auth/signup` | Create an account — claims the caller's guest profile |
+| POST | `/api/auth/signup` | Start an account — answers "check your inbox" for every address |
+| POST | `/api/auth/verify` | Confirm it from the emailed link — claims the caller's guest profile, signs in |
 | POST | `/api/auth/login` | Start a session |
 | POST | `/api/auth/logout` | Revoke the session |
 | GET | `/api/auth/me` | Current user + their student id |

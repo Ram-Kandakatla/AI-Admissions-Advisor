@@ -20,6 +20,7 @@ import type {
   StudentRecord,
   TwoFactorStatus,
   University,
+  VerifySignupResult,
 } from "./types";
 
 // Every path here is origin-relative, which is what let this file survive
@@ -61,10 +62,31 @@ export const api = {
 
   me: () => request<AuthState>("/auth/me"),
 
+  /**
+   * Start creating an account.
+   *
+   * Resolves the same way for every well-formed address and signs nobody in:
+   * the account is created later, from the emailed link. Whether the address
+   * already had an account is exactly what the server refuses to say, and a
+   * caller must not try to infer it — the same rule as forgotPassword below.
+   */
   signup: (email: string, password: string) =>
-    request<{ user: AuthUser; studentId: string | null }>("/auth/signup", {
+    request<{ message: string }>("/auth/signup", {
       method: "POST",
       body: JSON.stringify({ email, password }),
+    }),
+
+  /**
+   * Redeem a signup link.
+   *
+   * Called first with no password. In the browser that signed up, that
+   * finishes it; anywhere else the answer is `passwordRequired`, and the page
+   * asks for the password chosen at signup and calls again.
+   */
+  verifySignup: (token: string, password?: string) =>
+    request<VerifySignupResult>("/auth/verify", {
+      method: "POST",
+      body: JSON.stringify({ token, ...(password ? { password } : {}) }),
     }),
 
   login: (email: string, password: string) =>

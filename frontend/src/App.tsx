@@ -46,6 +46,7 @@ const ShareSettings = lazy(() => import("./components/ShareSettings"));
 const AccountSettings = lazy(() => import("./components/AccountSettings"));
 const ForgotPassword = lazy(() => import("./components/ForgotPassword"));
 const ResetPassword = lazy(() => import("./components/ResetPassword"));
+const VerifySignup = lazy(() => import("./components/VerifySignup"));
 const SharedPlanView = lazy(() => import("./components/SharedPlanView"));
 
 // The legal and trust pages. Lazy like everything else behind a click, and
@@ -343,6 +344,12 @@ export default function App() {
             />
           }
         />
+        {/* Where a signup's emailed link lands. It ends signed in, so it uses
+            the login handler — guest-draft notice included, which really can
+            arise here: the link may be opened in a browser holding a different
+            unsaved list. Ungated, like the two routes above: the person arriving
+            may have no session in this browser at all. */}
+        <Route path="/verify" element={<VerifySignup onSignedIn={onSignedIn} />} />
 
         <Route
           path="/account"

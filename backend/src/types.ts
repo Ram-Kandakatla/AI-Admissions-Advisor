@@ -39,20 +39,23 @@ export interface Env {
    *  Resend has verified for your domain, or every send is rejected. */
   EMAIL_FROM?: string;
   /**
-   * Origin the reset link points at, e.g. "https://compass.example.com". The
-   * API has no reliable way to know the origin the *frontend* is served from —
-   * the Origin header is absent on some requests and attacker-controlled on
-   * others, and building a password-reset URL out of either is how host-header
-   * poisoning turns a reset into an account takeover. So it is configuration.
+   * Origin every emailed link points at — password reset, signup
+   * confirmation — e.g. "https://compass.example.com". The API has no reliable
+   * way to know the origin the *frontend* is served from: the Origin header is
+   * absent on some requests and attacker-controlled on others, and building an
+   * emailed URL out of either is how host-header poisoning turns a reset into
+   * an account takeover. So it is configuration.
    */
   APP_ORIGIN?: string;
   /**
-   * Development escape hatch: writes the reset link to the log so the flow can
-   * be exercised with no email provider. NEVER set this in production — a
-   * reset link in a log is a valid credential sitting in Cloudflare's log
-   * retention. Off unless it is exactly the string "true".
+   * Development escape hatch: writes emailed links — password reset and signup
+   * confirmation — to the log, so both flows can be exercised with no email
+   * provider. Since signup needs its link to finish, local signup depends on
+   * this unless RESEND_API_KEY is set. NEVER set it in production: either link
+   * in a log is a live credential sitting in Cloudflare's log retention. Off
+   * unless it is exactly the string "true".
    */
-  DEV_LOG_RESET_LINKS?: string;
+  DEV_LOG_EMAIL_LINKS?: string;
 }
 
 /**

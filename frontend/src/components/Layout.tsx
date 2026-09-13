@@ -163,7 +163,9 @@ export default function Layout({
   // A guest with a profile has work that dies with this browser. Everyone else
   // — signed in, or not started yet — has nothing to warn about.
   const unsaved = user?.guest === true && student !== null;
-  const onAccountPage = pathname === "/signin" || pathname === "/signup";
+  // /verify counts: a "this list isn't saved yet" banner above the page that is
+  // in the middle of saving it would be telling the person the opposite.
+  const onAccountPage = pathname === "/signin" || pathname === "/signup" || pathname === "/verify";
 
   const renderItem = (item: NavItem) => {
     // Anchors have no disabled state, and faking one with pointer-events
