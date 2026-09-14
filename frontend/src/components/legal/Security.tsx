@@ -267,7 +267,11 @@ export default function Security() {
               an authenticator app, not SMS, which a SIM swap defeats. Codes are single-use
               even inside their validity window, so one read over your shoulder cannot be
               replayed. Ten recovery codes are issued at enrollment and stored hashed, so
-              nobody here can look them up for you.
+              nobody here can look them up for you. After five wrong codes, each further
+              code has to wait — a minute, then two, doubling up to a day — counted per
+              account, so switching networks buys nothing. Signing in and resetting a
+              password keep separate counts, so someone who learns your password cannot
+              also lock you out of recovering the account.
             </li>
             <li>
               <strong>A password reset does not bypass your second factor.</strong> This is
@@ -293,7 +297,7 @@ export default function Security() {
               signing up, setting a new password, two-factor codes, and deleting an account;
               5 requests for a reset email; and 50 new guest profiles per network. Separately,
               any one email address is sent at most 3 sign-up emails an hour, however many
-              networks ask.
+              networks ask. Two-factor codes are also limited per account, as above.
             </li>
             <li>
               <strong>Request bodies are capped at 100 KB</strong>, rejected on the declared

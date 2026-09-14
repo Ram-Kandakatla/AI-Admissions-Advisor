@@ -23,6 +23,24 @@ import type {
   VerifySignupResult,
 } from "./types";
 
+/**
+ * A failed API call: the server's message, and the status it came with.
+ *
+ * Still an Error, so every caller that only shows the message is unchanged.
+ * The status is for the few that act on the kind of failure — ResetPassword
+ * stops offering a new link after a 429, because a limit is not something a
+ * new link lifts.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 // Every path here is origin-relative, which is what let this file survive
 // Phase 7 unchanged. In local development the Vite proxy forwards /api to the
 // backend Worker on :8787; deployed, Compass is one Cloudflare Pages origin
@@ -50,7 +68,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     } catch {
       /* ignore parse errors */
     }
-    throw new Error(message);
+    throw new ApiError(message, res.status);
   }
   // DELETE replies 204 with no body — calling .json() on that throws.
   if (res.status === 204) return undefined as T;

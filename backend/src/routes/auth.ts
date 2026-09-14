@@ -41,6 +41,12 @@ import {
   verifyTotp,
 } from "../auth/totp.js";
 import {
+  CLAIM_HOLD_MS,
+  describeWait,
+  waitAfter,
+  type FirstFactor,
+} from "../auth/secondFactorLimit.js";
+import {
   clearSessionCookie,
   ensureSession,
   ownedStudent,
@@ -133,8 +139,9 @@ auth.use(
 );
 
 // Every route under /2fa either checks a password or guesses at a six-digit
-// code, and the second is the one that matters: 15 attempts per 15 minutes
-// against a million possibilities is what keeps brute force out of reach.
+// code. This is the cheap first line against both, and it counts per network,
+// so it stops one machine rather than many: what bounds code guessing from a
+// pool of addresses is the per-account count in verifySecondFactor.
 // Hono matches this prefix for the nested paths too.
 auth.use(
   "/2fa/*",
@@ -446,21 +453,20 @@ auth.post("/verify", async (c) => {
  * A six-digit string is never tried as a recovery code and vice versa: the
  * formats do not overlap, and attempting both would double the work and let a
  * failed TOTP attempt silently consume a recovery code.
+ *
+ * Only ever called through verifySecondFactor, which decides whether this
+ * account may have a code checked at all.
  */
-async function verifySecondFactor(
+async function checkCode(
   c: Context<AppEnv>,
   userId: number,
-  code: string
+  secret: string,
+  typed: string
 ): Promise<{ ok: boolean; usedRecoveryCode: boolean; remaining?: number }> {
   const store = c.get("store");
-  const typed = code.trim();
-  if (!typed) return { ok: false, usedRecoveryCode: false };
-
-  const state = await store.getTotpState(userId);
-  if (!state?.secret) return { ok: false, usedRecoveryCode: false };
 
   if (/^[\d\s-]{6,10}$/.test(typed)) {
-    const { valid, step } = await verifyTotp(state.secret, typed);
+    const { valid, step } = await verifyTotp(secret, typed);
     if (!valid) return { ok: false, usedRecoveryCode: false };
     // Valid, but possibly already spent — see the replay note above.
     const fresh = await store.consumeTotpStep(userId, step);
@@ -471,6 +477,80 @@ async function verifySecondFactor(
   if (!spent) return { ok: false, usedRecoveryCode: false };
   const { remaining } = await store.countRecoveryCodesLeft(userId);
   return { ok: true, usedRecoveryCode: true, remaining };
+}
+
+/**
+ * Check a second factor, within the account's budget of wrong codes.
+ *
+ * WHY THE ACCOUNT HAS A BUDGET
+ *
+ * Every route that takes a code is also rate limited per network, and that
+ * stops one machine, not a pool of them. So each attempt is charged to the
+ * account as well: five wrong codes free, then a wait that doubles up to a day
+ * (auth/secondFactorLimit.ts; the full reasoning is in
+ * migrations/0011_mfa_attempts.sql).
+ *
+ * The charge goes to one of two counts, named for the first factor that got
+ * the caller to the code prompt. `factor` is required rather than defaulted so
+ * that a new call site has to choose: with one shared count, someone holding
+ * only the password could keep the owner locked out of the reset that takes
+ * it back.
+ *
+ * `retryAfterMs` means the account was locked and nothing was checked. An
+ * empty code, or an account with no second factor, is not an attempt: nothing
+ * was guessed, so nothing is counted.
+ */
+async function verifySecondFactor(
+  c: Context<AppEnv>,
+  userId: number,
+  code: string,
+  factor: FirstFactor
+): Promise<{ ok: boolean; usedRecoveryCode: boolean; remaining?: number; retryAfterMs?: number }> {
+  const store = c.get("store");
+  const typed = code.trim();
+  if (!typed) return { ok: false, usedRecoveryCode: false };
+
+  const state = await store.getTotpState(userId);
+  if (!state?.secret) return { ok: false, usedRecoveryCode: false };
+
+  // Claimed before anything is checked or consumed: a locked attempt must not
+  // test a TOTP code, and must not spend a recovery code.
+  const claim = await store.claimSecondFactorAttempt(userId, factor, CLAIM_HOLD_MS);
+  if (!claim.claimed) {
+    return { ok: false, usedRecoveryCode: false, retryAfterMs: claim.retryAfterMs };
+  }
+
+  const result = await checkCode(c, userId, state.secret, typed);
+  if (result.ok) await store.clearSecondFactorAttempts(userId);
+  else await store.recordSecondFactorFailure(userId, factor, waitAfter(claim.failures + 1));
+  return result;
+}
+
+/**
+ * The answer when an account's wrong-code budget is spent. The same on every
+ * route that takes a code, apart from what a route adds to keep its page on
+ * the right step.
+ */
+function tooManyCodes(
+  c: Context<AppEnv>,
+  retryAfterMs: number,
+  factor: FirstFactor,
+  extra: Record<string, unknown> = {}
+) {
+  c.header("Retry-After", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+  // Only ever shown to someone past the password, so it tells an attacker
+  // nothing they do not already know.
+  const hint =
+    factor === "password"
+      ? " If these weren't your attempts, someone may know your password — reset it from the sign-in page."
+      : "";
+  return c.json(
+    {
+      error: `Too many incorrect codes. For this account's protection, try again in ${describeWait(retryAfterMs)}.${hint}`,
+      ...extra,
+    },
+    429
+  );
 }
 
 /**
@@ -579,7 +659,10 @@ auth.post("/2fa/verify", async (c) => {
 
   await store.deleteMfaChallenge(await hashResetToken(challenge));
 
-  const result = await verifySecondFactor(c, found.userId, code);
+  const result = await verifySecondFactor(c, found.userId, code, "password");
+  // The challenge above is already spent, as it is for a wrong code, so the
+  // person signs in again once the wait is over.
+  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
   if (!result.ok) {
     return c.json(
       { error: "That code isn't right. Please sign in again to get a new attempt." },
@@ -823,8 +906,16 @@ auth.post("/reset", async (c) => {
       // is refused above, so this reveals nothing about anybody else.
       return c.json({ mfaRequired: true }, 200);
     }
-    const result = await verifySecondFactor(c, reset.userId, code);
+    const result = await verifySecondFactor(c, reset.userId, code, "reset");
+    if (result.retryAfterMs !== undefined) {
+      // mfaRequired keeps the page on the code step for when the wait is over.
+      return tooManyCodes(c, result.retryAfterMs, "reset", { mfaRequired: true });
+    }
     if (!result.ok) {
+      // The link survives a wrong code, deliberately. The per-account count is
+      // what bounds guessing; burning the link would add a trip to the inbox to
+      // every typo without bounding anything, since whoever holds the inbox can
+      // simply ask for another.
       return c.json({ error: "That code isn't right.", mfaRequired: true }, 401);
     }
   }
@@ -1068,7 +1159,8 @@ auth.post("/2fa/disable", async (c) => {
   if (!state?.enabled) return c.json({ error: "Two-factor authentication is not on." }, 409);
 
   const code = typeof body.code === "string" ? body.code : "";
-  const result = await verifySecondFactor(c, auth_.userId, code);
+  const result = await verifySecondFactor(c, auth_.userId, code, "password");
+  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
   if (!result.ok) return c.json({ error: "That code isn't right." }, 403);
 
   await store.disableTotp(auth_.userId);
@@ -1091,7 +1183,9 @@ auth.post("/2fa/recovery-codes", async (c) => {
   const state = await store.getTotpState(auth_.userId);
   if (!state?.enabled) return c.json({ error: "Two-factor authentication is not on." }, 409);
 
-  const result = await verifySecondFactor(c, auth_.userId, typeof body.code === "string" ? body.code : "");
+  const code = typeof body.code === "string" ? body.code : "";
+  const result = await verifySecondFactor(c, auth_.userId, code, "password");
+  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
   if (!result.ok) return c.json({ error: "That code isn't right." }, 403);
 
   const codes = generateRecoveryCodes();

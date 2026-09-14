@@ -16,6 +16,7 @@
 // Reference data (universities, scholarships) moved to ./staticData.ts — it
 // never lived in SQLite and has no reason to touch this file.
 
+import type { FirstFactor } from "../auth/secondFactorLimit.js";
 import { DEFAULT_CHAT_MODE, type ChatMode } from "../models/chatMode.js";
 import type {
   ApplicationInput,
@@ -789,6 +790,26 @@ export function createStore(db: D1Database) {
   const deleteChallenge = db.prepare("DELETE FROM mfa_challenges WHERE token_hash = ?");
   const clearChallengesForUser = db.prepare("DELETE FROM mfa_challenges WHERE user_id = ?");
   const sweepChallengeRows = db.prepare("DELETE FROM mfa_challenges WHERE expires_at <= ?");
+
+  // ---- Two-factor attempt limit ----
+  // Succeeds only if the account is not locked, and pushes the lock ahead while
+  // one code is checked. A locked account updates nothing, so RETURNING is empty.
+  const claimAttemptRow = db.prepare(`
+    INSERT INTO mfa_attempts (user_id, factor, failures, locked_until)
+    VALUES (?, ?, 0, ?)
+    ON CONFLICT (user_id, factor) DO UPDATE SET locked_until = excluded.locked_until
+    WHERE mfa_attempts.locked_until <= ?
+    RETURNING failures
+  `);
+  const selectAttemptLock = db.prepare(
+    "SELECT locked_until FROM mfa_attempts WHERE user_id = ? AND factor = ?"
+  );
+  const recordAttemptFailureRow = db.prepare(
+    "UPDATE mfa_attempts SET failures = failures + 1, locked_until = ? WHERE user_id = ? AND factor = ?"
+  );
+  // Both factors' rows: a right code through either clears the other as well.
+  const clearAttemptRows = db.prepare("DELETE FROM mfa_attempts WHERE user_id = ?");
+
   const deleteUserRow = db.prepare("DELETE FROM users WHERE id = ?");
 
   /** Sessions last 30 days from creation. Not extended on use — a fixed life
@@ -1093,17 +1114,20 @@ export function createStore(db: D1Database) {
     const results = await db.batch([
       enableTotpRow.bind(now, step, now, userId),
       clearRecoveryCodes.bind(userId),
+      // A new secret starts from a clean count; an old one never carries over.
+      clearAttemptRows.bind(userId),
       ...codeHashes.map((hash) => insertRecoveryCode.bind(hash, userId, now)),
     ]);
     return (results[0]?.meta?.changes ?? 0) > 0;
   }
 
-  /** Turn it off and destroy every recovery code and pending challenge. */
+  /** Turn it off and destroy every recovery code, pending challenge and wrong-code count. */
   async function disableTotp(userId: number): Promise<void> {
     await db.batch([
       disableTotpRow.bind(new Date().toISOString(), userId),
       clearRecoveryCodes.bind(userId),
       clearChallengesForUser.bind(userId),
+      clearAttemptRows.bind(userId),
     ]);
   }
 
@@ -1184,6 +1208,55 @@ export function createStore(db: D1Database) {
     await sweepChallengeRows.bind(new Date().toISOString()).run();
   }
 
+  /**
+   * Claim the right to check one code for this account and factor.
+   *
+   * The claim is the upsert above, and it is what stops two guesses sent
+   * together from both being checked: whichever lands first pushes the lock
+   * ahead by `holdMs`, and the other finds the account locked. The caller then
+   * settles it — a failure recorded, or the rows cleared — which replaces the
+   * hold with the real lock. If the Worker dies in between, the hold runs out
+   * by itself and the attempt is not counted.
+   *
+   * Refused, it reports how long until the lock lifts, for Retry-After.
+   */
+  async function claimSecondFactorAttempt(
+    userId: number,
+    factor: FirstFactor,
+    holdMs: number
+  ): Promise<{ claimed: true; failures: number } | { claimed: false; retryAfterMs: number }> {
+    const now = Date.now();
+    const row = await claimAttemptRow
+      .bind(userId, factor, new Date(now + holdMs).toISOString(), new Date(now).toISOString())
+      .first<{ failures: number }>();
+    if (row) return { claimed: true, failures: row.failures };
+
+    const lock = await selectAttemptLock.bind(userId, factor).first<{ locked_until: string }>();
+    const until = lock ? Date.parse(lock.locked_until) : now;
+    return { claimed: false, retryAfterMs: Math.max(0, until - now) };
+  }
+
+  /**
+   * Count a wrong code, and set the wait before the next one.
+   *
+   * The caller computes the wait from the count its claim returned. That is
+   * safe because the claim has already serialised attempts on this account and
+   * factor, so nothing else can have moved the count in between.
+   */
+  async function recordSecondFactorFailure(
+    userId: number,
+    factor: FirstFactor,
+    waitMs: number
+  ): Promise<void> {
+    const lockedUntil = new Date(Date.now() + waitMs).toISOString();
+    await recordAttemptFailureRow.bind(lockedUntil, userId, factor).run();
+  }
+
+  /** A right code: both counts go, whichever factor it came through. */
+  async function clearSecondFactorAttempts(userId: number): Promise<void> {
+    await clearAttemptRows.bind(userId).run();
+  }
+
   /** Housekeeping — expired tokens are already unusable, this reclaims space. */
   async function sweepPasswordResets(): Promise<void> {
     await sweepResetRows.bind(new Date().toISOString()).run();
@@ -1237,6 +1310,9 @@ export function createStore(db: D1Database) {
     findMfaChallenge,
     deleteMfaChallenge,
     sweepMfaChallenges,
+    claimSecondFactorAttempt,
+    recordSecondFactorFailure,
+    clearSecondFactorAttempts,
     getConversation,
     appendMessage,
     getApplications,

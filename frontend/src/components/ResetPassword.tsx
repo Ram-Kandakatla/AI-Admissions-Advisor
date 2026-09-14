@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import type { AuthUser } from "../types";
 
 /** Matches the server's MIN_PASSWORD. Checked here so a too-short password is
@@ -39,6 +39,13 @@ export default function ResetPassword({
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Whether a new link would fix the error on screen. Not after a 429: that is
+   * a limit — too many wrong codes on this account, or too many attempts from
+   * this network — and a new link belongs to the same account on the same
+   * network.
+   */
+  const [offerNewLink, setOfferNewLink] = useState(true);
   /**
    * Set once the server says this account has a second factor.
    *
@@ -92,6 +99,7 @@ export default function ResetPassword({
       onSignedIn(result.user, result.studentId);
     } catch (err) {
       setError((err as Error).message);
+      setOfferNewLink(!(err instanceof ApiError && err.status === 429));
       setBusy(false);
     }
   };
@@ -110,10 +118,12 @@ export default function ResetPassword({
             {error}
             {/* A dead link is the most likely failure, and the fix is a new
                 one — so offer it rather than leaving them at a dead end. */}
-            <span className="reset-retry">
-              {" "}
-              <Link to="/forgot">Ask for a new link</Link>
-            </span>
+            {offerNewLink && (
+              <span className="reset-retry">
+                {" "}
+                <Link to="/forgot">Ask for a new link</Link>
+              </span>
+            )}
           </div>
         )}
 
