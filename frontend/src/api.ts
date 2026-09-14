@@ -123,6 +123,10 @@ export const api = {
   /**
    * Stage a secret. Nothing is switched on until a code confirms it, which is
    * what stops a mistyped setup key from locking someone out.
+   *
+   * A 409 means two-factor is already on. Setting it up again then takes a
+   * current code as well, which this never sends: the account page's way to a
+   * new phone is turning it off and on again.
    */
   startTwoFactor: (password: string) =>
     request<{ secret: string; otpauthUri: string }>("/auth/2fa/setup", {

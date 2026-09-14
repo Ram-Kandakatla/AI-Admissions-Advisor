@@ -4,10 +4,12 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Account from "./Account";
 import TwoFactorPanel from "./TwoFactorPanel";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import type { AuthUser } from "../types";
 
-vi.mock("../api", () => ({
+vi.mock("../api", async (importOriginal) => ({
+  // The real ApiError, so the panel can tell "already on" from a wrong password.
+  ...(await importOriginal<typeof import("../api")>()),
   api: {
     login: vi.fn(),
     signup: vi.fn(),
@@ -246,6 +248,59 @@ describe("enrolling", () => {
       expect(screen.getByRole("alert")).toHaveTextContent("That password is not correct.")
     );
     expect(screen.queryByLabelText(/six-digit code/i)).toBeNull();
+  });
+
+  it("offers nothing until it knows whether it is already on", () => {
+    // Not knowing is not "off". Offering to turn it on before the answer is in
+    // is how an account that already had 2FA could be sent into setup.
+    mockApi.twoFactorStatus.mockReturnValue(new Promise<never>(() => {}));
+    renderPanel();
+
+    expect(screen.getByText(/checking/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Off\.$/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /turn on two-factor/i })).toBeNull();
+  });
+
+  it("says when it could not find out, rather than showing Off", async () => {
+    const user = userEvent.setup();
+    mockApi.twoFactorStatus
+      .mockRejectedValueOnce(new Error("Request failed (500)"))
+      .mockResolvedValueOnce({ enabled: true, recoveryCodesRemaining: 10, recoveryCodesTotal: 10 });
+    renderPanel();
+
+    expect(await screen.findByText(/couldn't check/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Off\.$/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /turn on two-factor/i })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+    expect(await screen.findByText(/^On\.$/)).toBeInTheDocument();
+  });
+
+  it("if it was switched on after the page loaded, changes nothing and catches up", async () => {
+    // Say another tab finished enrolling. Setting up again now needs a current
+    // code, which this form does not ask for, so the server refuses with a 409.
+    const user = userEvent.setup();
+    mockApi.twoFactorStatus
+      .mockResolvedValueOnce({ enabled: false, recoveryCodesRemaining: 0, recoveryCodesTotal: 0 })
+      .mockResolvedValueOnce({ enabled: true, recoveryCodesRemaining: 10, recoveryCodesTotal: 10 });
+    mockApi.startTwoFactor.mockRejectedValue(
+      new ApiError(
+        "Two-factor authentication is already on. Setting it up again needs a current code as well as your password.",
+        409
+      )
+    );
+    const { onChanged } = renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: /turn on two-factor/i }));
+    await user.type(screen.getByLabelText(/your password/i), "correct horse battery");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(await screen.findByText(/^On\.$/)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/already on.*nothing was changed/i);
+    // No secret was handed out, and nothing reads as a failure.
+    expect(screen.queryByText(/setup key/i)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onChanged).toHaveBeenCalled();
   });
 });
 

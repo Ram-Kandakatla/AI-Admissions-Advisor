@@ -3,7 +3,8 @@
 // totp.test.ts proves the algorithm matches RFC 6238. This proves the *flow*:
 // that enrollment cannot switch 2FA on without a working code, that a login
 // stops halfway, that a code cannot be replayed, that recovery codes are the
-// way back from a lost phone, and that a password reset does not quietly walk
+// way back from a lost phone, that nothing short of a current code switches it
+// off or sets it up again, and that a password reset does not quietly walk
 // around the whole thing.
 //
 // The tests generate their own TOTP codes from the enrolled secret, the same
@@ -15,12 +16,14 @@ import { env } from "cloudflare:test";
 import {
   api,
   body,
+  currentCookie,
   get,
   newStudent,
   post,
   resetRateLimits,
   resetSession,
   signUp,
+  useSession,
 } from "./helpers.js";
 import {
   PASSWORD,
@@ -30,6 +33,7 @@ import {
   secretFor,
 } from "./twoFactorHelpers.js";
 import { hashResetToken } from "../src/auth/password.js";
+import { createStore } from "../src/store/dataStore.js";
 
 beforeEach(async () => {
   await resetRateLimits();
@@ -400,6 +404,134 @@ describe("turning it off", () => {
     );
     expect(b.mfaRequired).toBeUndefined();
     expect(b.user.email).toBe("back-to-normal@example.com");
+  });
+});
+
+describe("setting it up again", () => {
+  // With 2FA on, setting up again swaps the secret and switches 2FA off until
+  // the new phone is confirmed. That removes the factor as surely as disabling
+  // does, so it takes the same password *and* current code.
+
+  test("before it is on, the password alone starts over", async () => {
+    // An abandoned enrollment is a fresh start, not a state to clean up.
+    await newStudent();
+    const { userId } = await signUp("start-over@example.com", PASSWORD);
+    const first = await body<{ secret: string }>(
+      await post("/api/auth/2fa/setup", { password: PASSWORD }),
+      200
+    );
+    const second = await body<{ secret: string }>(
+      await post("/api/auth/2fa/setup", { password: PASSWORD }),
+      200
+    );
+    expect(second.secret).not.toBe(first.secret);
+    expect(await secretFor(userId)).toBe(second.secret);
+  });
+
+  test("once it is on, the password alone switches nothing off and replaces nothing", async () => {
+    // The borrowed laptop: a signed-in session, and someone who knows the password.
+    const email = "resetup-password-only@example.com";
+    const { userId } = await enrolled(email);
+    const secret = await secretFor(userId);
+
+    const refused = await body<{ error: string }>(
+      await post("/api/auth/2fa/setup", { password: PASSWORD }),
+      409
+    );
+    expect(refused.error).toMatch(/already on/i);
+    expect(refused).not.toHaveProperty("secret");
+
+    expect((await body<{ user: { twoFactorEnabled: boolean } }>(await get("/api/auth/me"), 200))
+      .user.twoFactorEnabled).toBe(true);
+    expect(await secretFor(userId)).toBe(secret);
+    expect(await body(await get("/api/auth/2fa"), 200)).toMatchObject({
+      enabled: true,
+      recoveryCodesRemaining: 10,
+    });
+
+    // And signing in still stops for a code.
+    resetSession();
+    const login = await post("/api/auth/login", { email, password: PASSWORD });
+    expect((await body<{ mfaRequired: boolean }>(login, 200)).mfaRequired).toBe(true);
+    expect(await body(await get("/api/auth/me"), 200)).toEqual({ user: null, studentId: null });
+  });
+
+  test("a wrong code is refused and replaces nothing", async () => {
+    const { userId } = await enrolled("resetup-wrong-code@example.com");
+    const secret = await secretFor(userId);
+
+    expect((await post("/api/auth/2fa/setup", { password: PASSWORD, code: "000000" })).status)
+      .toBe(403);
+    expect(await secretFor(userId)).toBe(secret);
+    expect((await body<{ enabled: boolean }>(await get("/api/auth/2fa"), 200)).enabled).toBe(true);
+  });
+
+  test("with a current code it starts over on a new phone, retiring what the old one had", async () => {
+    const email = "new-phone@example.com";
+    const { userId, recoveryCodes } = await enrolled(email);
+    const oldSecret = await secretFor(userId);
+    const owner = currentCookie();
+
+    // A sign-in somewhere else, still waiting for its code when the secret changes.
+    resetSession();
+    const { challenge } = await body<{ challenge: string }>(
+      await post("/api/auth/login", { email, password: PASSWORD }),
+      200
+    );
+    useSession(owner);
+
+    const { secret } = await body<{ secret: string }>(
+      await post("/api/auth/2fa/setup", { password: PASSWORD, code: await codeFor(userId, 1) }),
+      200
+    );
+    expect(secret).not.toBe(oldSecret);
+    expect(await secretFor(userId)).toBe(secret);
+    // Off until the new phone proves itself, as on first enrollment, and the old
+    // batch of recovery codes is gone.
+    expect(await body(await get("/api/auth/2fa"), 200)).toMatchObject({
+      enabled: false,
+      recoveryCodesRemaining: 0,
+    });
+
+    // The waiting sign-in went with the old secret: not even a code from the new one finishes it.
+    resetSession();
+    expect((await post("/api/auth/2fa/verify", { challenge, code: await codeFor(userId) })).status)
+      .toBe(400);
+    useSession(owner);
+
+    const enabled = await body<{ recoveryCodes: string[] }>(
+      await post("/api/auth/2fa/enable", { code: await codeFor(userId) }),
+      200
+    );
+    expect(enabled.recoveryCodes).toHaveLength(10);
+
+    // On again, and a code from the old printout no longer signs anyone in.
+    resetSession();
+    const again = await body<{ challenge: string }>(
+      await post("/api/auth/login", { email, password: PASSWORD }),
+      200
+    );
+    expect(
+      (await post("/api/auth/2fa/verify", { challenge: again.challenge, code: recoveryCodes[0]! }))
+        .status
+    ).toBe(401);
+  });
+
+  test("a recovery code will do, so a lost phone can still be replaced", async () => {
+    const { recoveryCodes } = await enrolled("resetup-lost-phone@example.com");
+    const res = await post("/api/auth/2fa/setup", { password: PASSWORD, code: recoveryCodes[0]! });
+    expect((await body<{ secret: string }>(res, 200)).secret).toMatch(/^[A-Z2-7]{32}$/);
+  });
+
+  test("the store will not stage over a second factor that is on, whatever a route checked", async () => {
+    // The guard for a race the routes cannot pin down in time: 2FA switched on
+    // in another tab between setup reading the state and writing the secret.
+    const { userId } = await enrolled("stage-guard@example.com");
+    const secret = await secretFor(userId);
+
+    expect(await createStore(env.DB).stageTotpSecret(userId, "A".repeat(32))).toBe(false);
+    expect(await secretFor(userId)).toBe(secret);
+    expect((await body<{ enabled: boolean }>(await get("/api/auth/2fa"), 200)).enabled).toBe(true);
   });
 });
 

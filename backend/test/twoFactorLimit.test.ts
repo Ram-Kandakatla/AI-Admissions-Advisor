@@ -360,9 +360,42 @@ describe("signing in and resetting keep separate counts", () => {
     expect(res.status).toBe(429);
     expect((await body<{ enabled: boolean }>(await get("/api/auth/2fa"), 200)).enabled).toBe(true);
   });
+
+  test("setting it up again spends the sign-in count too, and a lock replaces nothing", async () => {
+    // With 2FA on, setting up again replaces the secret — so a code guessed
+    // right here would put someone else's phone where the owner's was.
+    const { userId } = await enrolled("resetup-limit@example.com");
+    const secret = await secretFor(userId);
+    const wrong = await wrongCodeFor(userId);
+
+    for (let n = 0; n < FREE_FAILURES; n++) {
+      expect(
+        (await postFrom(n, "/api/auth/2fa/setup", { password: PASSWORD, code: wrong })).status
+      ).toBe(403);
+    }
+    await expectLock(userId, "password", FREE_FAILURES, 1 * MINUTE);
+
+    const res = await postFrom(FREE_FAILURES, "/api/auth/2fa/setup", {
+      password: PASSWORD,
+      code: await codeFor(userId, 1),
+    });
+    expect(res.status).toBe(429);
+    expect(await body(res)).not.toHaveProperty("secret");
+    expect(await secretFor(userId)).toBe(secret);
+    expect((await body<{ enabled: boolean }>(await get("/api/auth/2fa"), 200)).enabled).toBe(true);
+  });
 });
 
 describe("what is not a guess", () => {
+  test("setting it up again with no code counts nothing", async () => {
+    // Refused for what is missing, not charged as a wrong code: nothing was guessed.
+    const { userId } = await enrolled("resetup-no-code@example.com");
+    expect((await postFrom(0, "/api/auth/2fa/setup", { password: PASSWORD })).status).toBe(409);
+    expect((await postFrom(1, "/api/auth/2fa/setup", { password: PASSWORD, code: "  " })).status)
+      .toBe(409);
+    expect(await countFor(userId, "password")).toBeNull();
+  });
+
   test("asking for the code prompt, or sending a blank code, counts nothing", async () => {
     const email = "asking@example.com";
     const { userId } = await enrolled(email);
