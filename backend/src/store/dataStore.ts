@@ -754,6 +754,10 @@ export function createStore(db: D1Database) {
   const deleteSessionsForUser = db.prepare("DELETE FROM sessions WHERE user_id = ?");
 
   // ---- Two-factor ----
+  // Only while 2FA is off — see stageTotpSecret for why the guard is in the UPDATE.
+  const stageTotpSecretRow = db.prepare(
+    "UPDATE users SET totp_secret = ?, totp_last_step = NULL, updated_at = ? WHERE id = ? AND email IS NOT NULL AND totp_enabled_at IS NULL"
+  );
   const setTotpSecretRow = db.prepare(
     "UPDATE users SET totp_secret = ?, totp_enabled_at = NULL, totp_last_step = NULL, updated_at = ? WHERE id = ? AND email IS NOT NULL"
   );
@@ -1085,14 +1089,38 @@ export function createStore(db: D1Database) {
   }
 
   /**
-   * Stage a secret, unconfirmed.
+   * Stage a secret, unconfirmed, on an account with 2FA off.
    *
-   * Also clears any previous enrollment, which is what makes "set it up again
-   * on a new phone" work without a separate route: staging a new secret turns
-   * 2FA off until a code from the new device proves it works.
+   * False, with nothing written, if 2FA is on: replacing a second factor that
+   * works takes a current code first, and then it is replaceTotpSecret. The
+   * guard is in the UPDATE rather than only in the route's earlier read, so 2FA
+   * switched on in another tab between the two is refused, not overwritten.
    */
-  async function stageTotpSecret(userId: number, secret: string): Promise<void> {
-    await setTotpSecretRow.bind(secret, new Date().toISOString(), userId).run();
+  async function stageTotpSecret(userId: number, secret: string): Promise<boolean> {
+    const { meta } = await stageTotpSecretRow
+      .bind(secret, new Date().toISOString(), userId)
+      .run();
+    return meta.changes > 0;
+  }
+
+  /**
+   * Set it up again on a new phone: 2FA off and a new secret staged, in one write.
+   *
+   * Only once the route has checked a current second factor. This removes the
+   * factor as surely as disableTotp does, so it needs the same proofs — without
+   * them a password alone could switch 2FA off and enrol another phone. It also
+   * clears what disableTotp clears: the recovery codes and wrong-code counts
+   * belonged to the old secret, and a sign-in left waiting for a code must not
+   * become one that a code from the new phone can finish. 2FA stays off until
+   * /2fa/enable confirms the new secret, exactly as on first enrollment.
+   */
+  async function replaceTotpSecret(userId: number, secret: string): Promise<void> {
+    await db.batch([
+      setTotpSecretRow.bind(secret, new Date().toISOString(), userId),
+      clearRecoveryCodes.bind(userId),
+      clearChallengesForUser.bind(userId),
+      clearAttemptRows.bind(userId),
+    ]);
   }
 
   /**
@@ -1300,6 +1328,7 @@ export function createStore(db: D1Database) {
     sweepPasswordResets,
     getTotpState,
     stageTotpSecret,
+    replaceTotpSecret,
     enableTotp,
     disableTotp,
     consumeTotpStep,

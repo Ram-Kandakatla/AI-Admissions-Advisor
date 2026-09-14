@@ -11,7 +11,8 @@
 //                                                     everything it owns
 //   POST /api/auth/forgot   { email }               → mails a reset link
 //   POST /api/auth/reset    { token, password, code? } → sets a new password
-//   POST /api/auth/2fa/setup   { password }         → stages a TOTP secret
+//   POST /api/auth/2fa/setup   { password, code? }  → stages a TOTP secret —
+//                                                     a code too, if 2FA is on
 //   POST /api/auth/2fa/enable  { code }             → confirms it, issues codes
 //   POST /api/auth/2fa/disable { password, code }   → turns it off
 //   POST /api/auth/2fa/recovery-codes { password, code } → a fresh batch
@@ -1073,8 +1074,17 @@ async function requirePasswordReauth(
  * stops a mistyped setup key from locking someone out of their own account,
  * the single likeliest way to get this wrong.
  *
- * Calling it again replaces the staged secret, so an abandoned enrollment (or
- * a new phone) is just a fresh start rather than a state to clean up.
+ * Calling it again before then replaces the staged secret, so an abandoned
+ * enrollment is just a fresh start rather than a state to clean up.
+ *
+ * WHY SETTING IT UP AGAIN NEEDS A CODE ONCE IT IS ON
+ *
+ * With 2FA on, staging a new secret does everything /2fa/disable does — it
+ * switches 2FA off, retires the owner's authenticator and destroys their
+ * recovery codes — and one call to /2fa/enable later, someone else's phone is
+ * the second factor. So it takes what disable takes: the password *and* a
+ * current second factor, charged to the same count. A recovery code will do,
+ * which keeps a lost phone replaceable.
  */
 auth.post("/2fa/setup", async (c) => {
   const body = await readJson<Record<string, unknown>>(c);
@@ -1084,7 +1094,30 @@ auth.post("/2fa/setup", async (c) => {
   const store = c.get("store");
   const user = await store.getUser(auth_.userId);
   const secret = generateTotpSecret();
-  await store.stageTotpSecret(auth_.userId, secret);
+  const alreadyOn = () =>
+    c.json(
+      {
+        error:
+          "Two-factor authentication is already on. Setting it up again needs a current code as well as your password.",
+      },
+      409
+    );
+
+  const state = await store.getTotpState(auth_.userId);
+  if (state?.enabled) {
+    const code = typeof body.code === "string" ? body.code : "";
+    // No code is not a wrong code: nothing was guessed, so nothing is counted,
+    // and the answer says what is missing instead.
+    if (!code.trim()) return alreadyOn();
+    const result = await verifySecondFactor(c, auth_.userId, code, "password");
+    if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
+    if (!result.ok) return c.json({ error: "That code isn't right." }, 403);
+    await store.replaceTotpSecret(auth_.userId, secret);
+  } else if (!(await store.stageTotpSecret(auth_.userId, secret))) {
+    // Switched on since the read above, by an enrollment finishing in another
+    // tab. The store refuses to stage over it, for the same reason as the code.
+    return alreadyOn();
+  }
 
   // The secret leaves the server exactly here, to the person enrolling, over
   // an authenticated request they just re-proved a password for. The otpauth

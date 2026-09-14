@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import type { TwoFactorStatus } from "../types";
 
 /**
@@ -26,7 +26,14 @@ import type { TwoFactorStatus } from "../types";
  * into a password manager. Every authenticator app supports manual entry.
  */
 export default function TwoFactorPanel({ onChanged }: { onChanged: () => void }) {
+  /**
+   * `null` until the server answers, and again if asking fails — and neither
+   * means "off". Only an answer saying it is off gets the offer to turn it on:
+   * offering it on a guess is how an account that already had 2FA could be
+   * sent into setup.
+   */
   const [status, setStatus] = useState<TwoFactorStatus | null>(null);
+  const [statusFailed, setStatusFailed] = useState(false);
   const [stage, setStage] = useState<"idle" | "password" | "confirm" | "codes" | "off">("idle");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -34,6 +41,8 @@ export default function TwoFactorPanel({ onChanged }: { onChanged: () => void })
   const [codes, setCodes] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Shown on the summary when a step ended without changing anything. */
+  const [notice, setNotice] = useState<string | null>(null);
   /**
    * Whether the password step is on its way to a fresh batch of codes rather
    * than to enrollment. Both need the same two proofs, so they share the form
@@ -41,11 +50,20 @@ export default function TwoFactorPanel({ onChanged }: { onChanged: () => void })
    */
   const [regenerating, setRegenerating] = useState(false);
 
+  const loadStatus = async () => {
+    setStatusFailed(false);
+    try {
+      setStatus(await api.twoFactorStatus());
+    } catch {
+      setStatus(null);
+      setStatusFailed(true);
+    }
+  };
+
   useEffect(() => {
-    api
-      .twoFactorStatus()
-      .then(setStatus)
-      .catch(() => setStatus(null));
+    void loadStatus();
+    // Once, on mount — loadStatus only calls state setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const reset = () => {
@@ -54,12 +72,13 @@ export default function TwoFactorPanel({ onChanged }: { onChanged: () => void })
     setCode("");
     setSecret(null);
     setError(null);
+    setNotice(null);
     setBusy(false);
     setRegenerating(false);
   };
 
   const refresh = async () => {
-    setStatus(await api.twoFactorStatus().catch(() => null));
+    await loadStatus();
     onChanged();
   };
 
@@ -239,7 +258,24 @@ export default function TwoFactorPanel({ onChanged }: { onChanged: () => void })
                 const { recoveryCodes } = await api.regenerateRecoveryCodes(password, code);
                 setCodes(recoveryCodes);
               } else {
-                setSecret(await api.startTwoFactor(password));
+                try {
+                  setSecret(await api.startTwoFactor(password));
+                } catch (err) {
+                  if (!(err instanceof ApiError && err.status === 409)) throw err;
+                  // Already on: it was switched on somewhere else after this
+                  // page loaded. The server changed nothing, and setting it up
+                  // again would need a code this form doesn't ask for — so
+                  // back to a summary that has caught up. The stale answer is
+                  // dropped first, or "Off." and its button would sit under
+                  // this notice until the new one arrived.
+                  reset();
+                  setNotice(
+                    "Two-factor authentication was already on — it was switched on after this page loaded — so nothing was changed."
+                  );
+                  setStatus(null);
+                  await refresh();
+                  return;
+                }
                 setPassword("");
                 setStage("confirm");
               }
@@ -306,7 +342,25 @@ export default function TwoFactorPanel({ onChanged }: { onChanged: () => void })
   return (
     <div className="panel acct-2fa">
       <h2 className="acct-hd">Two-factor authentication</h2>
-      {status?.enabled ? (
+      {notice && (
+        <p role="status">
+          <strong>{notice}</strong>
+        </p>
+      )}
+      {!status ? (
+        statusFailed ? (
+          <>
+            <p>Couldn&apos;t check whether two-factor authentication is on.</p>
+            <div className="acct-2fa-actions">
+              <button className="btn btn-ghost btn-sm" onClick={() => void loadStatus()}>
+                Try again
+              </button>
+            </div>
+          </>
+        ) : (
+          <p>Checking…</p>
+        )
+      ) : status.enabled ? (
         <>
           <p className="acct-2fa-on">
             <span className="acct-2fa-dot" aria-hidden="true" />

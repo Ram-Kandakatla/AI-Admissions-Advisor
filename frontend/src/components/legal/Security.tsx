@@ -267,11 +267,14 @@ export default function Security() {
               an authenticator app, not SMS, which a SIM swap defeats. Codes are single-use
               even inside their validity window, so one read over your shoulder cannot be
               replayed. Ten recovery codes are issued at enrollment and stored hashed, so
-              nobody here can look them up for you. After five wrong codes, each further
-              code has to wait — a minute, then two, doubling up to a day — counted per
-              account, so switching networks buys nothing. Signing in and resetting a
-              password keep separate counts, so someone who learns your password cannot
-              also lock you out of recovering the account.
+              nobody here can look them up for you. Switching it off, issuing new recovery
+              codes, or setting it up again on a new phone all take your password and a
+              current code, so someone signed in on a borrowed laptop who also knows your
+              password cannot remove it or swap in their own phone. After five wrong codes,
+              each further code has to wait — a minute, then two, doubling up to a day —
+              counted per account, so switching networks buys nothing. Signing in and
+              resetting a password keep separate counts, so someone who learns your
+              password cannot also lock you out of recovering the account.
             </li>
             <li>
               <strong>A password reset does not bypass your second factor.</strong> This is
