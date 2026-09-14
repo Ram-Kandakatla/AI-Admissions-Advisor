@@ -7,7 +7,8 @@
 // around the whole thing.
 //
 // The tests generate their own TOTP codes from the enrolled secret, the same
-// way a phone would.
+// way a phone would (see twoFactorHelpers.ts). The limit on wrong codes around
+// all of this has a file of its own, twoFactorLimit.test.ts.
 
 import { beforeEach, describe, expect, test } from "vitest";
 import { env } from "cloudflare:test";
@@ -21,42 +22,18 @@ import {
   resetSession,
   signUp,
 } from "./helpers.js";
-import { totpCode, timeStep } from "../src/auth/totp.js";
+import {
+  PASSWORD,
+  codeFor,
+  enrolled,
+  resetTokenFor,
+  secretFor,
+} from "./twoFactorHelpers.js";
 import { hashResetToken } from "../src/auth/password.js";
-
-const PASSWORD = "correct horse battery";
 
 beforeEach(async () => {
   await resetRateLimits();
 });
-
-/** The secret as the database holds it — what the user's phone would have. */
-async function secretFor(userId: number): Promise<string> {
-  const row = await env.DB.prepare("SELECT totp_secret FROM users WHERE id = ?")
-    .bind(userId)
-    .first<{ totp_secret: string | null }>();
-  return row!.totp_secret!;
-}
-
-/** A code for right now, exactly as an authenticator app would produce it. */
-async function codeFor(userId: number, offsetSteps = 0): Promise<string> {
-  return totpCode(await secretFor(userId), timeStep() + offsetSteps);
-}
-
-/**
- * A signed-up account with 2FA switched on, plus its recovery codes.
- *
- * Goes through the real routes rather than writing rows, so every test starts
- * from a state the application can actually produce.
- */
-async function enrolled(email: string) {
-  await newStudent();
-  const { userId } = await signUp(email, PASSWORD);
-  await post("/api/auth/2fa/setup", { password: PASSWORD });
-  const res = await post("/api/auth/2fa/enable", { code: await codeFor(userId) });
-  const { recoveryCodes } = await body<{ recoveryCodes: string[] }>(res, 200);
-  return { userId, recoveryCodes };
-}
 
 describe("enrolling", () => {
   test("setup stages a secret but does not switch anything on", async () => {
@@ -427,22 +404,6 @@ describe("turning it off", () => {
 });
 
 describe("password reset does not walk around 2FA", () => {
-  /** Issue a reset token directly, standing in for the emailed link. */
-  async function resetTokenFor(userId: number): Promise<string> {
-    const token = crypto.randomUUID() + crypto.randomUUID();
-    await env.DB.prepare(
-      "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)"
-    )
-      .bind(
-        await hashResetToken(token),
-        userId,
-        new Date().toISOString(),
-        new Date(Date.now() + 3600_000).toISOString()
-      )
-      .run();
-    return token;
-  }
-
   test("a valid link alone is not enough — it asks for the second factor", async () => {
     // The whole point of the decision: email is already the recovery channel,
     // so a reset that skipped 2FA would leave the inbox as a complete takeover
@@ -510,6 +471,17 @@ describe("password reset does not walk around 2FA", () => {
 describe("interaction with account deletion", () => {
   test("deleting an account takes its 2FA state with it", async () => {
     const { userId } = await enrolled("delete-2fa@example.com");
+    // One wrong code first, so there is a count for the delete to take — a zero
+    // below would otherwise prove nothing.
+    expect((await post("/api/auth/2fa/disable", { password: PASSWORD, code: "000000" })).status)
+      .toBe(403);
+    const attemptsBefore = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM mfa_attempts WHERE user_id = ?"
+    )
+      .bind(userId)
+      .first<{ n: number }>();
+    expect(attemptsBefore?.n).toBe(1);
+
     const deleted = await api("/api/auth/account", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -527,7 +499,13 @@ describe("interaction with account deletion", () => {
     )
       .bind(userId)
       .first<{ n: number }>();
+    const attempts = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM mfa_attempts WHERE user_id = ?"
+    )
+      .bind(userId)
+      .first<{ n: number }>();
     expect(codes?.n).toBe(0);
     expect(challenges?.n).toBe(0);
+    expect(attempts?.n).toBe(0);
   });
 });

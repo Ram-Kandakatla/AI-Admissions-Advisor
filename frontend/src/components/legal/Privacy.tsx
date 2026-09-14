@@ -329,6 +329,10 @@ export default function Privacy() {
               fifteen minutes, or an hour for the sign-up email cap.
             </li>
             <li>
+              <strong>Counts of wrong two-factor codes</strong> — kept until a right code is
+              entered, two-factor is switched off or set up again, or the account is deleted.
+            </li>
+            <li>
               <strong>Unconfirmed sign-ups</strong> — deleted when the emailed link is opened,
               or after 24 hours if it never is.
             </li>

@@ -4,10 +4,12 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ForgotPassword from "./ForgotPassword";
 import ResetPassword from "./ResetPassword";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import type { AuthUser } from "../types";
 
-vi.mock("../api", () => ({
+vi.mock("../api", async (importOriginal) => ({
+  // The real ApiError, so the page can tell a limit from a dead link.
+  ...(await importOriginal<typeof import("../api")>()),
   api: { forgotPassword: vi.fn(), resetPassword: vi.fn() },
 }));
 const mockApi = vi.mocked(api);
@@ -252,6 +254,32 @@ describe("choosing a new password", () => {
       "/forgot"
     );
     expect(onSignedIn).not.toHaveBeenCalled();
+  });
+
+  it("does not offer a new link when the account is locked, since one would not help", async () => {
+    // The wrong-code count belongs to the account, not the link.
+    const user = userEvent.setup();
+    mockApi.resetPassword.mockResolvedValueOnce({ mfaRequired: true });
+    renderReset("?token=tok_2fa");
+
+    await user.type(screen.getByLabelText(/new password/i), "a long enough one");
+    await user.type(screen.getByLabelText(/type it again/i), "a long enough one");
+    await user.click(screen.getByRole("button", { name: /set my password/i }));
+
+    mockApi.resetPassword.mockRejectedValueOnce(
+      new ApiError(
+        "Too many incorrect codes. For this account's protection, try again in 32 minutes.",
+        429
+      )
+    );
+    await user.type(await screen.findByLabelText(/two-factor code/i), "123456");
+    await user.click(screen.getByRole("button", { name: /set my password/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/try again in 32 minutes/i);
+    expect(within(alert).queryByRole("link", { name: /ask for a new link/i })).toBeNull();
+    // Still on the code step, for when the wait is over.
+    expect(screen.getByLabelText(/two-factor code/i)).toBeInTheDocument();
   });
 
   it("does not fire twice on a double click", async () => {
