@@ -906,12 +906,16 @@ paid plan that does not exist yet; [PHASE-7.md](PHASE-7.md) is the runbook.
       total). Until then there is no global limit at all — LLM spend is still
       capped by the in-code `/api/chat` limiter. *(Phase 1.3 —
       [PHASE-1.md](PHASE-1.md#left-for-deploy-day-the-global-rate-limit))*
-- [ ] **Blocked, not pending — PBKDF2 vs. the plan.** Free caps CPU at 10ms
-      per invocation; 100k iterations costs 40–60ms, so signup and login
-      **fail outright** there. Settle before the first real signup, by paying
-      for Workers Paid or lowering `ITERATIONS` in
-      [`backend/src/auth/password.ts`](backend/src/auth/password.ts).
-      *(Phase 2.3 —
+- [x] **PBKDF2 vs. the plan — settled 2026-09-17 by staying on Free.**
+      `ITERATIONS` in [`backend/src/auth/password.ts`](backend/src/auth/password.ts)
+      is now **25,000**, not 100k. The old "40–60ms" figure was an estimate and
+      measured wrong: 100k costs ~7.6ms and 25k ~2.1ms on an M-series laptop,
+      so the squeeze was real but smaller than written. Lowering it also added a
+      rehash-on-login path — `fakeVerify` burns the configured cost while
+      `verifyPassword` burns the stored one, so the two must be kept converged
+      or login becomes an enumeration oracle by stopwatch. **Confirm the real
+      Workers CPU cost during the smoke test**; 25k has only been measured on a
+      laptop. *(Phase 2.3 —
       [PHASE-2.md](PHASE-2.md#left-for-deploy-day-the-free-plan-cpu-limit))*
 
 ### Blocked on spend or a decision outside the codebase
@@ -1032,10 +1036,10 @@ land rather than trusting memory.
 - [x] Chat rate limiter re-keyed from IP to account — the follow-up PHASE-1.md
       left open. Guests still key on IP, deliberately.
 - [x] 143 tests passing (was 111), incl. per-route 401 *and* 403 coverage
-- [ ] **Deploy-day leftover:** PBKDF2 at 100k iterations costs ~40-60ms CPU,
-      over the Workers **free** plan's 10ms limit. Fine on Workers Paid; on free,
-      lower `ITERATIONS` in `backend/src/auth/password.ts`. See
-      [PHASE-2.md](PHASE-2.md#left-for-deploy-day-the-free-plan-cpu-limit).
+- [x] **Deploy-day leftover — done 2026-09-17.** `ITERATIONS` lowered to 25,000
+      to fit the Workers free plan's 10ms CPU limit, with rehash-on-login added
+      so stored hashes converge on the configured cost. See the Phase 7 entry
+      below and [PHASE-2.md](PHASE-2.md#left-for-deploy-day-the-free-plan-cpu-limit).
 - [x] Password reset — built after Phase 6 on Resend, rather than arriving
       with 6.1 as this line predicted. See the post-Phase-6 block below
 - [ ] *Not built:* email verification at signup. Same provider, still open —
@@ -1251,9 +1255,10 @@ half is a runbook in [PHASE-7.md](PHASE-7.md)
       plan (Free and Pro cap it at 1 minute; Free allows one rule total). Until
       then there is no global limit at all. LLM spend is still capped by the
       in-code `/api/chat` limiter
-- [ ] **Blocked, not pending:** PBKDF2 vs. the plan. Free caps CPU at 10ms per
-      invocation (confirmed current); 100k iterations costs 40–60ms, so signup
-      and login **fail outright** on Free. Settle before the first real signup
+- [x] **PBKDF2 vs. the plan — settled 2026-09-17.** Stayed on Free and lowered
+      `ITERATIONS` to 25,000 (the "40–60ms" estimate measured ~7.6ms). Carries a
+      rehash-on-login path so `verifyPassword` and `fakeVerify` stay converged;
+      the real Workers CPU cost is still unmeasured outside a laptop
 
 **Phase 8 — Post-launch operations**
 - [ ] Backup plan beyond D1's Time Travel window confirmed

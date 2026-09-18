@@ -192,9 +192,14 @@ write to real profiles, and get no LLM key, so they run the offline fallback and
 nothing.
 
 The account setup — sign-in, creating the databases, connecting the repo, secrets, the
-domain — is a step-by-step runbook in [PHASE-7.md](PHASE-7.md), along with two things
-that are **blocked rather than pending**: the global rate limit needs both a custom
-domain and a paid plan, and PBKDF2's cost exceeds the Workers free plan's CPU limit.
+domain — is a step-by-step runbook in [PHASE-7.md](PHASE-7.md). Both databases now exist
+and carry every migration; what is left there starts at connecting the repo to Pages.
+
+One item remains **blocked rather than pending**: the global rate limit needs both a
+custom domain and a paid plan. The other, PBKDF2's cost against the free plan's 10ms CPU
+limit, was settled by lowering `ITERATIONS` to 25,000 — see
+[`backend/src/auth/password.ts`](backend/src/auth/password.ts), which also explains why
+a later change to that number has to keep the login upgrade path alongside it.
 
 ## Observability
 
