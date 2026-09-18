@@ -22,7 +22,7 @@
 # That is the intended direction for anything that should be reviewed, and it
 # is the reason LOG_LEVEL is deliberately absent below.
 
-name = "compass-web"
+name = "college-compass-web"
 
 # Required in Pages mode, and what tells wrangler this is a Pages project
 # rather than a Worker. Relative to this file, so it is the frontend's Vite
@@ -62,7 +62,7 @@ migrations_dir = "backend/migrations"
 # never consulted for normal traffic. It matters for what it *refuses*: without
 # it the middleware falls back to localhost:5173, and any other site's fetch is
 # rejected. Replace with the custom domain when Phase 7.5 attaches one.
-CORS_ORIGIN = "https://compass-web.pages.dev"
+CORS_ORIGIN = "https://college-compass-web.pages.dev"
 
 # LOG_LEVEL is deliberately NOT set here, and its absence is the decision.
 #
@@ -109,6 +109,6 @@ migrations_dir = "backend/migrations"
 [env.preview.vars]
 # Preview deployments are same-origin too, so this is never consulted in
 # practice. It cannot be made accurate anyway: each preview is served from its
-# own <hash>.compass-web.pages.dev hostname, and no static allowlist can
+# own <hash>.college-compass-web.pages.dev hostname, and no static allowlist can
 # enumerate those in advance.
-CORS_ORIGIN = "https://compass-web.pages.dev"
+CORS_ORIGIN = "https://college-compass-web.pages.dev"

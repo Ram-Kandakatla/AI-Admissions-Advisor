@@ -228,7 +228,7 @@ Each prints a `database_id`. Put them in the root `wrangler.toml`, replacing
 `REPLACE-WITH-PREVIEW-D1-DATABASE-ID`. Commit that change — it is not a secret,
 and a database id in git is what makes the config reproducible.
 
-Naming follows §7.6: `compass-web` for the project, `compass-db` for the
+Naming follows §7.6: `college-compass-web` for the project, `compass-db` for the
 database, `compass-db-preview` beside it so the two sort together in a
 dashboard that will eventually hold several projects.
 
@@ -249,7 +249,7 @@ Dashboard → **Workers & Pages → Create → Pages → Connect to Git** →
 
 | Setting | Value |
 |---|---|
-| Project name | `compass-web` — must match `name` in `wrangler.toml` |
+| Project name | `college-compass-web` — must match `name` in `wrangler.toml` |
 | Production branch | `main` |
 | Root directory | repo root (leave blank) |
 | Build command | `npm run build:pages` |
@@ -336,7 +336,7 @@ PHASE-1 specifies two WAF rules: `compass-global` at 300 requests / 15 min per
 IP on `/api/*`, and `compass-chat-edge` at 60 / 15 min on `/api/chat`. Neither
 is creatable as written on a starting account:
 
-- **WAF rate limiting rules are zone-scoped.** `compass-web.pages.dev` is not a
+- **WAF rate limiting rules are zone-scoped.** `college-compass-web.pages.dev` is not a
   zone in your account, so there is nothing to attach a rule to until §7.5
   attaches a domain you control. The rate limit is therefore blocked on the
   custom domain, which is why step 6 comes before step 7.
@@ -391,7 +391,7 @@ should be a deliberate choice, not a reaction to a 500 during the smoke test.
   broken Open Graph card — the tags are otherwise correct.
 - **A Content-Security-Policy** on the document, per `_headers` above.
 - **`[env.preview]` has no separate `CORS_ORIGIN` that could ever be right.**
-  Each preview is served from its own `<hash>.compass-web.pages.dev` hostname
+  Each preview is served from its own `<hash>.college-compass-web.pages.dev` hostname
   and no static allowlist can enumerate those. It does not matter while
   previews are same-origin; it would immediately matter under a split
   deployment.

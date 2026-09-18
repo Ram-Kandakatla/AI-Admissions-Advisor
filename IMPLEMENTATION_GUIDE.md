@@ -781,7 +781,7 @@ elsewhere, add the CNAME the dashboard shows you.
 Since other projects are landing on this same Cloudflare account, pick a
 naming convention now rather than after the fifth project shows up in the
 dashboard — e.g. `<project>-web` for the Pages project name and
-`<project>-db` for its D1 database (`compass-web`, `compass-db`).
+`<project>-db` for its D1 database (`college-compass-web`, `compass-db`).
 
 ### 7.7 Smoke-test before calling it done
 
@@ -1247,7 +1247,7 @@ half is a runbook in [PHASE-7.md](PHASE-7.md)
 - [ ] Custom domain attached — also unblocks the five `compass.example.com`
       placeholders (three in `index.html`, two in `.well-known/security.txt`)
       and the WAF rule below
-- [x] Naming convention picked — `compass-web`, `compass-db`, `compass-db-preview`
+- [x] Naming convention picked — `college-compass-web`, `compass-db`, `compass-db-preview`
 - [ ] Post-deploy smoke test (incl. second-device data check)
 - [ ] **Blocked, not pending:** the global rate limit. WAF rate limiting rules
       are zone-scoped, so there is nothing to attach one to until a custom
