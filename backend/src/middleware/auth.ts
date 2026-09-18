@@ -40,8 +40,8 @@ function isHttps(c: Context<AppEnv>): boolean {
  * Secure, have Path=/, and carry no Domain, so it can only have been set by
  * this exact host. That matters on Pages, where every preview deployment is a
  * subdomain of the production host. Without it, a preview page could set a
- * `Domain=compass-web.pages.dev` cookie holding a session id it already knows,
- * and a visitor would go on to build their guest profile inside the attacker's
+ * `Domain=college-compass-web.pages.dev` cookie holding a session id it already
+ * knows, and a visitor would go on to build their guest profile inside the attacker's
  * session. With it, a cookie planted that way has the wrong name and is never
  * read.
  *

@@ -3,8 +3,8 @@
 // WHY THIS EXISTS WHEN THE COOKIE IS ALREADY SameSite=Lax
 //
 // SameSite is decided by *site*, not by origin, and on Cloudflare Pages the
-// site is `compass-web.pages.dev`: pages.dev is a public suffix, so every
-// preview deployment (`<hash>.compass-web.pages.dev`) and every branch alias is
+// site is `college-compass-web.pages.dev`: pages.dev is a public suffix, so every
+// preview deployment (`<hash>.college-compass-web.pages.dev`) and every branch alias is
 // the same site as production. A page on any of them can POST to the
 // production API and the browser attaches the session cookie. wrangler.toml
 // already calls previews what they are — unreviewed code.
@@ -54,7 +54,7 @@ export function allowedOrigins(env: Env): string[] {
 /**
  * The request's own origin always counts, which is what keeps preview
  * deployments working: each serves its frontend and its API from the same
- * `<hash>.compass-web.pages.dev` host, and no static list could name those in
+ * `<hash>.college-compass-web.pages.dev` host, and no static list could name those in
  * advance. What a preview cannot do is write to *another* host's API.
  */
 function isTrusted(c: Context<AppEnv>, origin: string): boolean {

@@ -13,7 +13,7 @@
 # says the same thing from its side.
 #
 # `name` is therefore a local-only label: nothing is ever deployed as
-# "compass-api". The deployed project is "compass-web".
+# "compass-api". The deployed project is "college-compass-web".
 
 name = "compass-api"
 main = "src/index.ts"
