@@ -20,6 +20,15 @@
       ],
       "cwd": "frontend",
       "port": 5173
+    },
+    {
+      "name": "pages",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "preview"
+      ],
+      "port": 8788
     }
   ]
 }

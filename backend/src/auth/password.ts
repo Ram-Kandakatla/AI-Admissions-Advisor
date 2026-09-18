@@ -9,17 +9,21 @@
 //
 // COST, AND WHY IT IS A NAMED CONSTANT
 //
-// PBKDF2 is deliberately slow; that is the entire defense. 100k iterations of
-// HMAC-SHA-256 costs roughly 40-60ms of CPU per call. That matters on
-// Cloudflare specifically: the Workers free plan caps CPU at 10ms per
-// invocation, so signup and login — and only those two routes — would exceed
-// it. On the Workers Paid plan the ceiling is 30s and this is a rounding
-// error. ITERATIONS is a single constant so that trade-off is one line to
-// change, and the value is recorded *inside every hash* so lowering or raising
-// it later does not invalidate the passwords already stored.
+// PBKDF2 is deliberately slow; that is the entire defense. That cost has to fit
+// inside Cloudflare's per-invocation CPU budget, which on the Workers free plan
+// is 10ms — and signup and login are the only two routes that come near it. On
+// Workers Paid the ceiling is 30s and this is a rounding error. ITERATIONS is a
+// single constant so that trade-off is one line to change, and the value is
+// recorded *inside every hash* so lowering or raising it later does not
+// invalidate the passwords already stored.
 
-/** OWASP's floor for PBKDF2-HMAC-SHA256 at the time of writing. */
-const ITERATIONS = 100_000;
+/**
+ * Lowered from 100,000 to fit the free plan's 10ms cap — a real reduction in
+ * cracking cost, chosen deliberately rather than discovered during a 500.
+ * OWASP's guidance is far higher than either figure. Raise this on Workers Paid;
+ * hashes written at any cost keep verifying, so the change needs no migration.
+ */
+const ITERATIONS = 25_000;
 const KEY_BITS = 256;
 const SALT_BYTES = 16;
 const PREFIX = "pbkdf2";
@@ -62,7 +66,7 @@ async function derive(
  * Hash a password for storage.
  *
  * The returned string carries its own parameters —
- * `pbkdf2$SHA-256$100000$<salt>$<hash>` — so a future change to ITERATIONS
+ * `pbkdf2$SHA-256$25000$<salt>$<hash>` — so a future change to ITERATIONS
  * does not strand existing rows: verifyPassword reads the cost the hash was
  * written with, not the cost configured today.
  */

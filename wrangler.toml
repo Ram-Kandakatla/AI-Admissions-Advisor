@@ -49,7 +49,7 @@ database_name = "compass-db"
 # Filled in from `wrangler d1 create compass-db` — see PHASE-7.md. Until then
 # a deploy fails fast with an unknown-database error, which is the right
 # failure: better than silently binding nothing and 500ing on every route.
-database_id = "REPLACE-WITH-PRODUCTION-D1-DATABASE-ID"
+database_id = "b6b7c8f9-59f0-4e85-81f6-559fc412f9e1"
 # Relative to this file. Declared here, and not only in backend/wrangler.toml,
 # because this is the config that knows the real database ids — so this is the
 # only place `wrangler d1 migrations apply --remote` can be run from. The
@@ -100,7 +100,7 @@ CORS_ORIGIN = "https://compass-web.pages.dev"
 [[env.preview.d1_databases]]
 binding = "DB"
 database_name = "compass-db-preview"
-database_id = "REPLACE-WITH-PREVIEW-D1-DATABASE-ID"
+database_id = "8f83ccf3-4328-4017-a059-5927e38ef27a"
 # The same migrations. Preview differs from production in its data, never in
 # its schema — a preview running an older schema would fail in ways production
 # never would, which is the opposite of what a preview is for.

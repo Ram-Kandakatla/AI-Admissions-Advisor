@@ -50,7 +50,7 @@ describe("password hashing", () => {
 
   test("the stored form carries its own cost, and survives a null", async () => {
     const stored = await hashPassword(PASSWORD);
-    expect(stored.startsWith("pbkdf2$SHA-256$100000$")).toBe(true);
+    expect(stored.startsWith("pbkdf2$SHA-256$25000$")).toBe(true);
     // An anonymous user row has password_hash NULL by design; reaching one on
     // a login attempt must read as a wrong password, not a 500.
     expect(await verifyPassword(PASSWORD, null)).toBe(false);
