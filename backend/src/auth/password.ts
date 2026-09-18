@@ -121,6 +121,30 @@ export async function fakeVerify(password: string): Promise<false> {
   return false;
 }
 
+/**
+ * True when `stored` was written at a cost other than the one configured now.
+ *
+ * This exists to keep fakeVerify honest, and that is a sharper requirement than
+ * housekeeping. fakeVerify burns ITERATIONS; verifyPassword burns the cost baked
+ * into the hash it was handed. While every stored hash sits at ITERATIONS those
+ * are the same number and the two paths take the same time — which is the whole
+ * mechanism hiding which emails have accounts. Change ITERATIONS with rows
+ * already written at the old cost and they diverge, silently, and a stopwatch
+ * on /auth/login starts answering the question the shared error message refuses
+ * to. Upgrading on each successful login walks stored hashes back onto the
+ * current cost and closes the gap as accounts are used.
+ *
+ * It closes as accounts are used, not at once: an account nobody signs into
+ * keeps its old cost and stays distinguishable. Raising the cost sharply while
+ * dormant accounts exist wants a rehash sweep, not just this.
+ */
+export function needsRehash(stored: string | null | undefined): boolean {
+  if (!stored) return false;
+  const [prefix, hashName, iterations] = stored.split("$");
+  if (prefix !== PREFIX || hashName !== HASH) return false;
+  return Number(iterations) !== ITERATIONS;
+}
+
 // ---- Opaque bearer tokens ----
 //
 // Used by password reset and, since 2FA, by the short-lived challenge that
