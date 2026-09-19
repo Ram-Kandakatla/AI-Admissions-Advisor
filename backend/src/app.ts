@@ -30,10 +30,13 @@
 //   PATCH  /api/students/:id/applications/:appId  Update one application
 //   DELETE /api/students/:id/applications/:appId  Stop tracking
 //
-// The app is exported as a factory-free Hono instance so both entry points can
-// use it: src/index.ts (a standalone Worker, what `wrangler dev` runs today)
-// and, in Phase 7, functions/api/[[route]].ts via hono/cloudflare-pages. That
-// is the whole reason routing lives here instead of in the entry file.
+// The app is exported as a factory-free Hono instance so the entry point can
+// mount it under either wrangler config: backend/wrangler.toml runs the API
+// alone on :8787, the root one deploys it alongside the built frontend. Phase 7
+// briefly added a second entry (functions/api/[[route]].ts via
+// hono/cloudflare-pages) for Pages; the 2026-09-18 move to Workers deleted it
+// and there is one entry again. Routing lives here rather than in the entry
+// file precisely so that churn never reached this file.
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";

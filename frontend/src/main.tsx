@@ -10,8 +10,8 @@ import "./styles/fonts.css";
 import "./styles/global.css";
 
 // BrowserRouter, not HashRouter: /matches is an address someone can read out
-// loud, and Cloudflare Pages serves the SPA fallback that makes it resolve on
-// a cold load (see public/_redirects).
+// loud, and the deployed Worker serves the SPA fallback that makes it resolve
+// on a cold load (`not_found_handling` in the root wrangler.toml).
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     {/* Outside the router, so it also catches a throw in Layout or in the

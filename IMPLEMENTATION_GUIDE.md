@@ -1219,15 +1219,23 @@ account half
 
 **Phase 7 — Cloudflare Pages + Workers hosting** — **code half done**, account
 half is a runbook in [PHASE-7.md](PHASE-7.md)
-- [x] Architecture chosen — Option A (Pages + Functions), kept deliberately even
-      though Cloudflare now recommends Workers for new projects
-- [x] `functions/api/[[route]].ts` + `backend/src/pages.ts` — the adapter is not
-      where §7.1 puts it, because `hono` cannot resolve from `functions/`
-- [x] Root `wrangler.toml` in Pages mode — the deployed config, in git rather
-      than in dashboard fields. Duplicates compatibility settings and the DB
-      binding from `backend/wrangler.toml`, which vitest still reads
-- [x] `[env.preview]` binding a separate `compass-db-preview`, so an unreviewed
-      PR preview cannot write to real student data
+- [x] ~~Architecture chosen — Option A (Pages + Functions)~~ **Migrated to
+      Workers with static assets, 2026-09-18.** Not a reconsideration: the
+      dashboard no longer offers a Pages creation flow, and Workers Builds
+      injects Workers-scoped credentials that cannot authenticate a Pages
+      deploy (`Authentication error [code: 10000]`). PHASE-7.md predicted the
+      migration and it cost what it predicted
+- [x] ~~`functions/api/[[route]].ts` + `backend/src/pages.ts`~~ **both deleted.**
+      The root config points `main` at `backend/src/index.ts` directly — which
+      works for the same reason the adapter had to live in `backend/` in the
+      first place, so the constraint outlived the workaround
+- [x] Root `wrangler.toml` — the deployed config, in git rather than in
+      dashboard fields. Duplicates compatibility settings and the DB binding
+      from `backend/wrangler.toml`, which vitest still reads
+- [ ] `[env.preview]` binding a separate `compass-db-preview` — **written but
+      inert.** Pages applied it to previews automatically; Workers needs
+      `--env preview` passed explicitly, so non-production builds are switched
+      **off** rather than risk a PR preview bound to production D1
 - [x] `LOG_LEVEL` deliberately **not** declared — declaring it would freeze the
       dashboard field Phase 4 created it for
 - [x] `frontend/public/_headers` — closes PHASE-6's deferred `Referrer-Policy`
@@ -1236,10 +1244,14 @@ half is a runbook in [PHASE-7.md](PHASE-7.md)
 - [x] Remote migrations moved to root scripts (`db:migrate:remote`,
       `db:migrate:preview`) — the backend's version could only ever have failed,
       resolving against a config with a placeholder database id
-- [x] CI builds the Pages Functions bundle, the only step exercising the deploy path
-- [x] Verified locally end-to-end with `npm run preview` (`wrangler pages dev`):
-      D1 reachable through the Function, deep SPA routes served, headers applied
-- [ ] Wrangler login, D1 databases created, Pages project connected to GitHub
+- [x] CI bundles the deployed Worker (`wrangler deploy --dry-run`), the only
+      step exercising the deploy path
+- [x] Verified locally end-to-end with `npm run preview` (`wrangler dev` on the
+      root config): D1 reachable from the Worker, `/api/*` not swallowed by the
+      SPA fallback, deep routes served, `_headers` applied — including the
+      load-bearing `/shared/*` append order, which survived the migration
+- [x] Wrangler login, D1 databases created and migrated
+- [ ] Worker connected to GitHub and building green
 - [ ] Migrations applied to both databases
 - [ ] Secrets set on Production — `ANTHROPIC_API_KEY`, and since password reset
       landed also `RESEND_API_KEY`, `EMAIL_FROM` and `APP_ORIGIN`; Preview
