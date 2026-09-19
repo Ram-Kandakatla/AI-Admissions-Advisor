@@ -56,6 +56,17 @@ compatibility_date = "2026-08-01"
 # deployed Worker, not the backend one.
 compatibility_flags = ["nodejs_compat"]
 
+# Workers Logs are opt-in, and this being absent was a real gap the migration
+# introduced: Pages retained deployment logs by default, Workers retains nothing
+# unless asked. Without it the only way to see anything is to hold a
+# `wrangler tail` open and wait for the problem to happen again — which is no
+# use for a 500 a student reports an hour later, and quietly cancels the reason
+# Phase 4 made LOG_LEVEL a dashboard var instead of a secret (raise it
+# mid-incident, read what already happened). backend/wrangler.toml has carried
+# this since Phase 4; the deployed config needs it more, not less.
+[observability]
+enabled = true
+
 # ============================================================================
 # Static assets — the built frontend, served from the same Worker.
 # ============================================================================
@@ -80,9 +91,19 @@ not_found_handling = "single-page-application"
 # index.html and the API would disappear behind the frontend. The Worker runs
 # first for these paths and the assets are never consulted.
 #
+# Both entries are needed. The glob requires a segment after the slash, so
+# "/api/*" alone leaves the bare "/api" falling through to the SPA fallback —
+# answering an API probe with index.html and a 200. Pages did not have that
+# seam, because `[[route]]` was an *optional* catch-all that matched "/api"
+# itself, so this is a behaviour the migration would otherwise have dropped.
+#
 # Needs Wrangler >= 4.20. The repo is on 4.127; a downgrade past that boundary
 # breaks the API rather than failing the build, so it is worth knowing.
-run_worker_first = ["/api/*"]
+# config.test.ts asserts both of these are still here, because nothing else
+# would notice: the test suite drives Hono directly and never crosses the
+# assets layer, so deleting this line leaves every test green and the deployed
+# API gone.
+run_worker_first = ["/api", "/api/*"]
 
 # ============================================================================
 # Production — the top-level configuration is the production environment.
