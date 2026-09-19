@@ -18,7 +18,7 @@ node_modules/
 # app. Never in the repo.
 backend/.wrangler/
 
-# The same, for the root: `npm run preview` runs `wrangler pages dev` from here
+# The same, for the root: `npm run preview` runs `wrangler dev` from here
 # and writes its own build cache and state alongside this file. It is pointed
 # at backend/.wrangler/state for D1 so the two dev loops share one database,
 # but the directory itself still appears.

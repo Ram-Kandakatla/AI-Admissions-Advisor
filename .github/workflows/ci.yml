@@ -57,15 +57,15 @@ jobs:
       # No API keys are set, which pins the chat route to its offline fallback.
       - run: npm run test --prefix backend
 
-      # Bundle functions/api/[[route]].ts the way Cloudflare Pages will, using
-      # the root wrangler.toml. This is the only step that exercises the deploy
-      # path, and it is here because the failure it catches is invisible
-      # everywhere else: functions/ has no node_modules above it, so a package
-      # imported from that directory resolves locally in an editor and then
-      # fails in Cloudflare's build. Cheap — a few seconds — and the alternative
-      # is finding out from a red deploy after the merge.
-      - name: Build the Pages Functions bundle
-        run: backend/node_modules/.bin/wrangler pages functions build --outfile=/tmp/functions.js
+      # Bundle the deployed Worker the way Cloudflare will, using the root
+      # wrangler.toml. This is the only step that exercises the deploy path,
+      # and it stays for the reason it was added: module resolution for the
+      # entry point depends on where the entry file sits, so a bad `main` or a
+      # misplaced import resolves in an editor and then fails in Cloudflare's
+      # build. --dry-run bundles and validates without deploying or needing
+      # credentials. Cheap, and the alternative is a red deploy after a merge.
+      - name: Build the deployed Worker bundle
+        run: backend/node_modules/.bin/wrangler deploy --dry-run --outdir=/tmp/worker-build
 
   frontend:
     name: Frontend (jsdom)

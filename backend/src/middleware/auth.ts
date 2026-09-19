@@ -38,12 +38,12 @@ function isHttps(c: Context<AppEnv>): boolean {
  *
  * The prefix is a promise the browser enforces: a `__Host-` cookie must be
  * Secure, have Path=/, and carry no Domain, so it can only have been set by
- * this exact host. That matters on Pages, where every preview deployment is a
- * subdomain of the production host. Without it, a preview page could set a
- * `Domain=college-compass-web.pages.dev` cookie holding a session id it already
- * knows, and a visitor would go on to build their guest profile inside the attacker's
- * session. With it, a cookie planted that way has the wrong name and is never
- * read.
+ * this exact host. That matters on Cloudflare, where every preview deployment
+ * is a subdomain of the production host. Without it, a preview page could set a
+ * `Domain=` cookie on the shared parent host, holding a session id it already
+ * knows, and a visitor would go on to build their guest profile inside the
+ * attacker's session. With it, a cookie planted that way has the wrong name and
+ * is never read.
  *
  * Browsers reject a `__Host-` cookie that is not Secure, so plain-http local
  * dev keeps the bare name — the same reasoning `secure` follows below.

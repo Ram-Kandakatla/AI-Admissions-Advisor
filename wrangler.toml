@@ -1,22 +1,38 @@
-# Compass — Cloudflare Pages project configuration (Phase 7).
+# Compass — deployed Cloudflare Worker configuration.
 #
-# This is the deployed configuration. It is the second wrangler file in the
-# repo, and the split is deliberate rather than an oversight:
+# WAS PAGES UNTIL 2026-09-18, AND THE SWITCH WAS NOT A PREFERENCE
 #
-#   wrangler.toml          (this file) — Pages mode. Read by Cloudflare when it
-#                          builds and deploys, and by `wrangler pages dev`.
-#                          Serves frontend/dist plus functions/api/[[route]].ts.
-#   backend/wrangler.toml  — Workers mode. Read by the local `wrangler dev`
-#                          loop on :8787, and by backend/vitest.config.ts, which
-#                          takes the test bindings from it precisely so a test
-#                          cannot pass under a configuration the deployed thing
-#                          does not have.
+# Phase 7 built this as a Pages project and said so at length. What ended that
+# is concrete: Cloudflare's current dashboard has no Pages creation flow left to
+# find — "Workers & Pages → Create" lands on a Workers setup screen — so the
+# deployed project was created as a Workers service. Pointing its build at
+# `wrangler pages deploy` then failed with
+#
+#   A request to the Cloudflare API (/accounts/…/pages/projects/…) failed.
+#   Authentication error [code: 10000]
+#
+# because Workers Builds injects credentials scoped to Workers, not Pages. A
+# Pages deploy cannot authenticate from inside it, and no Pages project by that
+# name exists to deploy to. Workers Builds is not a general CI runner that
+# happens to have your account keys.
+#
+# PHASE-7.md predicted this migration and kept it cheap on purpose: app.ts did
+# not change at all, backend/src/pages.ts and functions/ are deleted, and this
+# file gained `main` and an `[assets]` block. That is the whole diff.
+#
+# This is still the second wrangler file in the repo, and the split is still
+# deliberate:
+#
+#   wrangler.toml          (this file) — what Cloudflare builds and deploys,
+#                          and what `wrangler dev` at the repo root runs. Serves
+#                          frontend/dist plus the API from one Worker.
+#   backend/wrangler.toml  — the API alone on :8787, which is still how the app
+#                          is developed locally, and what backend/vitest.config.ts
+#                          takes its bindings from so a test cannot pass under a
+#                          configuration the deployed thing does not have.
 #
 # The two must agree on compatibility_date, compatibility_flags and the DB
-# binding. They are duplicated here because Pages will not read a config from a
-# subdirectory, and the alternative — keeping production settings in dashboard
-# fields instead — puts them outside git and outside review. Change one, change
-# the other; there is no import mechanism to lean on.
+# binding. There is no import mechanism to lean on: change one, change the other.
 #
 # NOTE: the fields this file sets become read-only in the Cloudflare dashboard.
 # That is the intended direction for anything that should be reviewed, and it
@@ -24,20 +40,49 @@
 
 name = "college-compass-web"
 
-# Required in Pages mode, and what tells wrangler this is a Pages project
-# rather than a Worker. Relative to this file, so it is the frontend's Vite
-# output directory. There is no `main` key: Pages discovers functions/ by
-# convention instead, which is why functions/api/[[route]].ts is named the way
-# it is.
-pages_build_output_dir = "frontend/dist"
+# The Worker itself. Relative to this file, and deliberately pointing inside
+# backend/ rather than at a root-level shim: module resolution walks up from the
+# entry file, so an entry under backend/src finds hono in backend/node_modules.
+# A root-level entry does not — there is no node_modules above the repo root —
+# which is the exact trap that forced the old functions/ + pages.ts indirection.
+# Pointing `main` here instead is what let both of those files be deleted.
+main = "backend/src/index.ts"
 
 compatibility_date = "2026-08-01"
 
 # Same flag, same reason as backend/wrangler.toml: the Anthropic and OpenAI
 # SDKs pull in Node built-in shims, and without this the bundle fails at build
-# time. It has to be repeated here because the Function is bundled by Pages
-# using this config, not the backend one.
+# time. It has to be repeated here because this config is what bundles the
+# deployed Worker, not the backend one.
 compatibility_flags = ["nodejs_compat"]
+
+# ============================================================================
+# Static assets — the built frontend, served from the same Worker.
+# ============================================================================
+
+[assets]
+# Vite's output. Built by `npm run build:deploy` before this config is used.
+directory = "frontend/dist"
+
+# Replaces the _redirects file, which Workers does not support and which was
+# deleted with this migration. Every route below / is rendered by React Router
+# and has no file on disk, so a cold load of /matches — a bookmark, a shared
+# link, a refresh — must answer index.html with a 200 rather than a 404, which
+# is also what keeps the original URL in the bar for the router to read.
+#
+# The edge Phase 7 recorded still applies: a request for a missing
+# /assets/*.js chunk also returns index.html with a 200, so a tab left open
+# across a deploy receives HTML where it expects JavaScript. That is the exact
+# failure the Phase 5 error boundary's second state was built for.
+not_found_handling = "single-page-application"
+
+# Without this, single-page-application handling would answer /api/* with
+# index.html and the API would disappear behind the frontend. The Worker runs
+# first for these paths and the assets are never consulted.
+#
+# Needs Wrangler >= 4.20. The repo is on 4.127; a downgrade past that boundary
+# breaks the API rather than failing the build, so it is worth knowing.
+run_worker_first = ["/api/*"]
 
 # ============================================================================
 # Production — the top-level configuration is the production environment.
@@ -57,12 +102,21 @@ database_id = "b6b7c8f9-59f0-4e85-81f6-559fc412f9e1"
 migrations_dir = "backend/migrations"
 
 [vars]
-# Belt and braces. Option A puts the frontend and the API on one origin, so no
+# Belt and braces. The frontend and the API are one Worker on one origin, so no
 # browser request from Compass to Compass is cross-origin and this allowlist is
-# never consulted for normal traffic. It matters for what it *refuses*: without
-# it the middleware falls back to localhost:5173, and any other site's fetch is
-# rejected. Replace with the custom domain when Phase 7.5 attaches one.
-CORS_ORIGIN = "https://college-compass-web.pages.dev"
+# never consulted for normal traffic — isTrusted() passes same-origin before it
+# ever reads this. It matters for what it *refuses*: unset, the middleware falls
+# back to localhost:5173, which is not a thing production should trust.
+#
+# UNFILLED. The move to Workers changed the hostname: a Worker is served from
+# <name>.<account-subdomain>.workers.dev, not <name>.pages.dev, and the account
+# subdomain is not knowable until the first successful deploy prints it. The old
+# .pages.dev value was left over from the Pages build and named a host that will
+# never exist, so it is replaced with a placeholder rather than a plausible
+# guess — a wrong origin that looks right is worse than one that obviously is
+# not. Fill it in from the deploy output, then replace it again with the custom
+# domain when Phase 7.5 attaches one.
+CORS_ORIGIN = "https://REPLACE-WITH-DEPLOYED-ORIGIN"
 
 # LOG_LEVEL is deliberately NOT set here, and its absence is the decision.
 #
@@ -76,24 +130,33 @@ CORS_ORIGIN = "https://college-compass-web.pages.dev"
 # it afterwards.
 
 # ============================================================================
-# Preview — every non-production deployment, i.e. every pull request.
+# Preview — CURRENTLY INERT. Read this before re-enabling PR builds.
 # ============================================================================
 #
-# Preview gets its OWN database. Phase 7.4 makes this call for the LLM key —
-# leave it unset on Preview so previews run the offline fallback and spend no
-# real money — and the same reasoning applies harder to student data: a PR
-# preview is unreviewed code, and pointing it at the production D1 would let a
-# half-finished migration or a bad DELETE reach real profiles. A preview
-# database costs nothing and fails safe.
+# Preview gets its OWN database, and the reason is worth restating because the
+# migration to Workers is what put it at risk: a PR preview is unreviewed code,
+# and pointing it at the production D1 would let a half-finished migration or a
+# bad DELETE reach real profiles. A preview database costs nothing and fails
+# safe. Phase 7.4 makes the matching call for the LLM key — leave it unset on
+# preview so previews run the offline fallback and spend no real money.
 #
-# Named to sort next to its production sibling in the dashboard, which is the
-# actual benefit a naming convention buys (Phase 7.6).
+# THE ISOLATION IS NO LONGER AUTOMATIC. Under Pages, every non-production
+# deployment picked this block up by itself. Workers does not work that way: a
+# deploy uses the top-level configuration unless it is passed `--env preview`
+# explicitly, so a non-production build wired up carelessly comes up bound to
+# PRODUCTION D1 — the exact outcome this block exists to prevent, arriving
+# silently.
 #
-# Both of the keys below have to be restated rather than inherited: `vars` and
-# `d1_databases` are non-inheritable, and Pages requires an environment that
-# overrides any one of them to specify all of them. Omitting env.preview.vars
-# here would leave preview deployments with no CORS_ORIGIN at all, not with
-# the production one.
+# So "Builds for non-production branches" is switched OFF in the dashboard as
+# of 2026-09-18, and this block deploys nothing. That is a deliberate trade:
+# no PR previews at all, rather than PR previews that might write to real
+# student data. To re-enable, the non-production deploy command must be
+# `npx wrangler deploy --env preview` — and that should be verified against
+# `/api/health` on a preview URL before any PR is trusted with it.
+#
+# Note it becomes a SEPARATE WORKER named college-compass-web-preview, rather
+# than a preview deployment of this one. The database it binds is already
+# created and migrated.
 #
 # Remember to apply migrations to both databases — see PHASE-7.md.
 
@@ -107,8 +170,10 @@ database_id = "8f83ccf3-4328-4017-a059-5927e38ef27a"
 migrations_dir = "backend/migrations"
 
 [env.preview.vars]
-# Preview deployments are same-origin too, so this is never consulted in
-# practice. It cannot be made accurate anyway: each preview is served from its
-# own <hash>.college-compass-web.pages.dev hostname, and no static allowlist can
-# enumerate those in advance.
-CORS_ORIGIN = "https://college-compass-web.pages.dev"
+# Preview is same-origin too, so this is never consulted in practice — and it
+# deploys nothing at all while non-production builds are off. Restated rather
+# than inherited because vars and d1_databases are non-inheritable: an
+# environment that overrides any one of them must specify all of them, so
+# omitting this block would leave a preview with no CORS_ORIGIN, not with the
+# production one.
+CORS_ORIGIN = "https://REPLACE-WITH-DEPLOYED-PREVIEW-ORIGIN"
