@@ -200,7 +200,7 @@ export default function Layout({
           <NavLink to="/" className="brand" aria-label="Compass home">
             <BrandMark className="brand-mark" />
             <span className="brand-name">
-              Comp<b>ass</b>
+              Com<b>pass</b>
             </span>
           </NavLink>
 
