@@ -129,15 +129,13 @@ migrations_dir = "backend/migrations"
 # ever reads this. It matters for what it *refuses*: unset, the middleware falls
 # back to localhost:5173, which is not a thing production should trust.
 #
-# UNFILLED. The move to Workers changed the hostname: a Worker is served from
-# <name>.<account-subdomain>.workers.dev, not <name>.pages.dev, and the account
-# subdomain is not knowable until the first successful deploy prints it. The old
-# .pages.dev value was left over from the Pages build and named a host that will
-# never exist, so it is replaced with a placeholder rather than a plausible
-# guess — a wrong origin that looks right is worse than one that obviously is
-# not. Fill it in from the deploy output, then replace it again with the custom
-# domain when Phase 7.5 attaches one.
-CORS_ORIGIN = "https://REPLACE-WITH-DEPLOYED-ORIGIN"
+# Filled in from the first successful deploy, 2026-09-20. A Worker is served
+# from <name>.<account-subdomain>.workers.dev, which is why this could not be
+# written down in advance — the account subdomain is not in any config file.
+# Replace again with the custom domain when Phase 7.5 attaches one, and note
+# that APP_ORIGIN (a secret) has to move at the same time or password-reset and
+# signup links will keep pointing here.
+CORS_ORIGIN = "https://college-compass-web.kandakatla-ram.workers.dev"
 
 # LOG_LEVEL is deliberately NOT set here, and its absence is the decision.
 #
@@ -197,4 +195,4 @@ migrations_dir = "backend/migrations"
 # environment that overrides any one of them must specify all of them, so
 # omitting this block would leave a preview with no CORS_ORIGIN, not with the
 # production one.
-CORS_ORIGIN = "https://REPLACE-WITH-DEPLOYED-PREVIEW-ORIGIN"
+CORS_ORIGIN = "https://college-compass-web-preview.kandakatla-ram.workers.dev"
