@@ -320,15 +320,37 @@ app.put("/students/:id", async (c) => {
   return c.json(record!);
 });
 
+/**
+ * How many schools per tier the matches page actually returns.
+ *
+ * Before the Scorecard import the dataset was 42 schools and every match fit on
+ * one page. At 614 a mid-range student matches ~550 of them, which is not a
+ * college list — it is the whole database re-sorted. Measured at that size the
+ * page rendered 16,500 DOM nodes over 93 screens, and "Save as PDF" (which is
+ * window.print(), by design) produced a 64-page document.
+ *
+ * Browsing everything is what /explore is for. Matches is a shortlist, so the
+ * engine's ranking is allowed to mean something: each tier is already sorted by
+ * matchScore, so this keeps the strongest and drops the tail. `counts` below
+ * stays the TRUE total — the student is told what was filtered, never shown a
+ * truncated list presented as the whole result.
+ */
+const MATCHES_PER_TIER = 20;
+
 app.get("/students/:id/recommendations", (c) => {
   const student = c.get("student");
-  const recommendations = recommendUniversities(student);
+  const all = recommendUniversities(student);
   const counts = {
-    reach: recommendations.reach.length,
-    target: recommendations.target.length,
-    safety: recommendations.safety.length,
+    reach: all.reach.length,
+    target: all.target.length,
+    safety: all.safety.length,
   };
-  return c.json({ studentId: student.id, counts, recommendations });
+  const recommendations = {
+    reach: all.reach.slice(0, MATCHES_PER_TIER),
+    target: all.target.slice(0, MATCHES_PER_TIER),
+    safety: all.safety.slice(0, MATCHES_PER_TIER),
+  };
+  return c.json({ studentId: student.id, counts, recommendations, shownPerTier: MATCHES_PER_TIER });
 });
 
 // ---- Scholarships ----

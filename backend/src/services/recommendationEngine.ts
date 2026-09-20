@@ -67,8 +67,15 @@ export function evaluate(uni: University, student: StudentRecord): Recommendatio
     reasons.push("A significant reach on GPA.");
   }
 
-  // --- Test scores (only if provided) ---
-  if (student.satScore) {
+  // --- Test scores (only if the student has one AND the school uses one) ---
+  // A null avgSAT is not missing data: it means the school reports no SAT
+  // average because it does not consider the SAT. Scoring a student's score
+  // against it would be inventing a hurdle the school does not have — so a
+  // test-blind school is neither rewarded nor penalised on test fit, and the
+  // student is told why rather than silently seeing one fewer reason.
+  if (student.satScore && uni.avgSAT === null) {
+    reasons.push("Test-blind — they don't consider SAT scores.");
+  } else if (student.satScore && uni.avgSAT !== null) {
     const satGap = uni.avgSAT - student.satScore;
     if (satGap <= -30) {
       score += 8;

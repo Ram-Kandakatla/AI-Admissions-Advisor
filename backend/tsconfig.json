@@ -36,6 +36,16 @@
   // in functions/ cannot resolve "@cloudflare/workers-types" from the `types`
   // array: there is no node_modules above that directory. One include line
   // beats a second config plus a second CI step.
-  "include": ["src/**/*.ts", "test/**/*.ts", "*.ts", "*.d.ts", "data/*.json", "../functions/**/*.ts"],
+  // scripts/*.d.mts declares the build-time importer's exports so its unit tests
+  // can be TypeScript while the script itself stays runnable under bare node.
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "*.ts",
+    "*.d.ts",
+    "scripts/*.d.mts",
+    "data/*.json",
+    "../functions/**/*.ts"
+  ],
   "exclude": ["node_modules"]
 }

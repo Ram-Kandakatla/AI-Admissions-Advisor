@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import type { Meta, University } from "../types";
 import SchoolNote, { NoteHint, StarButton } from "./SchoolNote";
+import { GpaValue, SatValue } from "./GpaValue";
 import type { NotesStore } from "../useSchoolNotes";
 
 export default function UniversityExplorer({
@@ -144,8 +145,8 @@ export default function UniversityExplorer({
                       <td>
                         {u.city}, {u.state}
                       </td>
-                      <td>{u.avgGPA}</td>
-                      <td>{u.avgSAT}</td>
+                      <td><GpaValue value={u.avgGPA} source={u.gpaSource} /></td>
+                      <td><SatValue value={u.avgSAT} /></td>
                       <td>{u.acceptanceRate}%</td>
                       <td>${(u.tuition / 1000).toFixed(0)}k</td>
                       <td>{u.majors.slice(0, 3).join(", ")}{u.majors.length > 3 ? "…" : ""}</td>
