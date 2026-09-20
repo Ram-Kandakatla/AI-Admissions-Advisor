@@ -5,15 +5,19 @@
 # vitest.config.ts reads its bindings from, so a test cannot pass under a
 # configuration the deployed app does not have.
 #
-# It is NOT the deployed configuration. Phase 7 puts the API on Cloudflare
-# Pages, which reads the repo root's wrangler.toml instead — Pages will not
-# take a config from a subdirectory. That means compatibility_date, the
-# compatibility flags and the DB binding below exist in both files and have to
-# be changed in both; there is no import mechanism between them. The root file
-# says the same thing from its side.
+# It is NOT the deployed configuration. The repo root's wrangler.toml is what
+# Cloudflare builds and deploys: one Worker serving both the API and the built
+# frontend. That means compatibility_date, the compatibility flags and the DB
+# binding below exist in both files and have to be changed in both; there is no
+# import mechanism between them. The root file says the same thing from its side.
+#
+# Both files now point `main` at the same src/index.ts. What differs is what
+# else is mounted: the root config adds an [assets] block for frontend/dist,
+# which is why running that config locally serves the whole app on one port
+# while this one serves the API alone.
 #
 # `name` is therefore a local-only label: nothing is ever deployed as
-# "compass-api". The deployed project is "compass-web".
+# "compass-api". The deployed Worker is "college-compass-web".
 
 name = "compass-api"
 main = "src/index.ts"

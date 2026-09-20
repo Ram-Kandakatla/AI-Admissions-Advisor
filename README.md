@@ -76,10 +76,10 @@ No Cloudflare account is needed. `wrangler dev` runs a real local D1 (SQLite und
 `backend/.wrangler/state`), so the whole stack works offline.
 
 To see the app in its **deployed** shape instead — one origin serving the built
-frontend and the API together, the way Cloudflare Pages runs it:
+frontend and the API together, the way Cloudflare runs it:
 
 ```bash
-npm run preview          # wrangler pages dev, port 8788
+npm run preview          # wrangler dev on the root config, port 8787
 ```
 
 Use it when a bug looks origin- or routing-related; `npm run dev` is better for
@@ -178,10 +178,16 @@ says whether the code is safe to merge; Cloudflare ships it.
 
 ## Deploying
 
-One Cloudflare Pages project serves both halves on one origin: the built frontend from
-`frontend/dist`, and the API from `functions/api/[[route]].ts`, which re-exports the same
-Hono app the local Worker runs. Same origin, so there is no CORS to configure and one
-thing to deploy.
+One Cloudflare **Worker** serves both halves on one origin: the built frontend from
+`frontend/dist` as static assets, and the API from the same Hono app the local Worker
+runs, with `run_worker_first` keeping `/api/*` from being swallowed by the SPA fallback.
+Same origin, so there is no CORS to configure and one thing to deploy.
+
+This was a Pages project until 2026-09-18. The switch was forced rather than chosen:
+Cloudflare's dashboard no longer offers a Pages creation flow, so the project was created
+as a Worker, and Workers Builds injects Workers-scoped credentials that cannot
+authenticate a Pages deploy at all. [PHASE-7.md](PHASE-7.md) had planned the migration and
+kept it cheap — `app.ts` did not change, and two files were deleted rather than rewritten.
 
 The deployed configuration is the root [`wrangler.toml`](wrangler.toml) — in git rather
 than in dashboard fields, so it is reviewable. `backend/wrangler.toml` is the local-only
@@ -192,9 +198,14 @@ write to real profiles, and get no LLM key, so they run the offline fallback and
 nothing.
 
 The account setup — sign-in, creating the databases, connecting the repo, secrets, the
-domain — is a step-by-step runbook in [PHASE-7.md](PHASE-7.md), along with two things
-that are **blocked rather than pending**: the global rate limit needs both a custom
-domain and a paid plan, and PBKDF2's cost exceeds the Workers free plan's CPU limit.
+domain — is a step-by-step runbook in [PHASE-7.md](PHASE-7.md). Both databases now exist
+and carry every migration; what is left there starts at connecting the repo to Pages.
+
+One item remains **blocked rather than pending**: the global rate limit needs both a
+custom domain and a paid plan. The other, PBKDF2's cost against the free plan's 10ms CPU
+limit, was settled by lowering `ITERATIONS` to 25,000 — see
+[`backend/src/auth/password.ts`](backend/src/auth/password.ts), which also explains why
+a later change to that number has to keep the login upgrade path alongside it.
 
 ## Observability
 

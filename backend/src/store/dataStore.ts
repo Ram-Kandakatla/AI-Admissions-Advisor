@@ -751,6 +751,10 @@ export function createStore(db: D1Database) {
   const updatePasswordRow = db.prepare(
     "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND email IS NOT NULL"
   );
+  // Compare-and-set on the old hash — see rehashPassword for why that matters.
+  const rehashPasswordRow = db.prepare(
+    "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND password_hash = ?"
+  );
   const deleteSessionsForUser = db.prepare("DELETE FROM sessions WHERE user_id = ?");
 
   // ---- Two-factor ----
@@ -1068,6 +1072,29 @@ export function createStore(db: D1Database) {
   }
 
   /**
+   * Re-write a password hash at the cost configured today, changing nothing else.
+   *
+   * Deliberately not resetPassword: this is an invisible upgrade of a credential
+   * the user just proved they hold, not a change of it, so revoking sessions
+   * would sign someone out for logging in successfully.
+   *
+   * The WHERE on the old hash makes it a compare-and-set. The rehash runs in
+   * waitUntil, so a real password change can land while it is still in flight —
+   * without the guard, the upgrade would then overwrite the new password with a
+   * re-hash of the one it replaced, and the reset the user just completed would
+   * silently come undone.
+   */
+  async function rehashPassword(
+    userId: number,
+    previousHash: string,
+    upgradedHash: string
+  ): Promise<void> {
+    await rehashPasswordRow
+      .bind(upgradedHash, new Date().toISOString(), userId, previousHash)
+      .run();
+  }
+
+  /**
    * The enrolled secret, for verification. The one place it leaves the table.
    *
    * Returns the raw column rather than putting it on UserRecord, deliberately:
@@ -1325,6 +1352,7 @@ export function createStore(db: D1Database) {
     createPasswordReset,
     findPasswordReset,
     resetPassword,
+    rehashPassword,
     sweepPasswordResets,
     getTotpState,
     stageTotpSecret,

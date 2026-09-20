@@ -1,5 +1,25 @@
 # Phase 7 — Hosting on Cloudflare Pages + Workers
 
+> **SUPERSEDED IN PART, 2026-09-18 — the app deploys as a Worker, not a Pages
+> project.** Everything below about *what was built and why* still describes the
+> codebase accurately, with two exceptions now deleted: `backend/src/pages.ts`
+> and `functions/api/[[route]].ts`. The platform question this document answers
+> "Pages, deliberately" was reopened by Cloudflare and settled the other way.
+>
+> What forced it: the dashboard no longer has a Pages creation flow to find, so
+> the project was created as a Workers service, and pointing its build at
+> `wrangler pages deploy` fails with `Authentication error [code: 10000]` —
+> Workers Builds injects credentials scoped to Workers, and a Pages deploy
+> cannot authenticate from inside it. This was not a matter of finding the right
+> command; the two products have separate CI and separate credentials.
+>
+> The migration was exactly the one ["The platform question"](#the-platform-question-and-why-the-answer-is-still-pages)
+> below predicted, which is the one genuinely useful thing that section did:
+> `app.ts` unchanged, `pages.ts` and `functions/` deleted, root `wrangler.toml`
+> gains `main` and `[assets]`. Read **§ Runbook step 4** and the root
+> `wrangler.toml` for current instructions; prefer either over this document
+> wherever they disagree.
+
 This phase splits in a way none of the others did. Everything that can be
 written, run and verified on a laptop is **done and committed**; everything
 that needs a Cloudflare account is a **runbook** below, because it needs
@@ -228,7 +248,7 @@ Each prints a `database_id`. Put them in the root `wrangler.toml`, replacing
 `REPLACE-WITH-PREVIEW-D1-DATABASE-ID`. Commit that change — it is not a secret,
 and a database id in git is what makes the config reproducible.
 
-Naming follows §7.6: `compass-web` for the project, `compass-db` for the
+Naming follows §7.6: `college-compass-web` for the project, `compass-db` for the
 database, `compass-db-preview` beside it so the two sort together in a
 dashboard that will eventually hold several projects.
 
@@ -242,40 +262,53 @@ npm run db:migrate:preview
 Run this **before** the first deploy. `wrangler dev` will happily boot against
 a database with no tables; so will production, and every route will 500.
 
-### 4. Connect the repo to Pages
+### 4. Connect the repo — as a Worker, not a Pages project
 
-Dashboard → **Workers & Pages → Create → Pages → Connect to Git** →
-`kandakatla-ram/AI-Admissions-Advisor`.
+**Rewritten 2026-09-18.** There is no Pages option left to pick: Dashboard →
+**Workers & Pages → Create** lands on a Workers setup screen, and that is the
+flow to use. Repo: `Ram-Kandakatla/AI-Admissions-Advisor` (renamed from
+`kandakatla-ram/…`; git redirects, the dashboard picker does not).
 
 | Setting | Value |
 |---|---|
-| Project name | `compass-web` — must match `name` in `wrangler.toml` |
+| Project name | `college-compass-web` — must match `name` in `wrangler.toml` |
 | Production branch | `main` |
-| Root directory | repo root (leave blank) |
-| Build command | `npm run build:pages` |
-| Build output directory | `frontend/dist` |
+| Build command | `npm run build:deploy` |
+| Deploy command | `npx wrangler deploy --env=""` |
+| Builds for non-production branches | **off** — see below |
 
 **The build command is not §7.2's.** The guide gives
 `npm install --prefix frontend && npm run build --prefix frontend`, which
-installs frontend dependencies only — and then the Functions bundler cannot
-resolve `hono`, `@anthropic-ai/sdk` or `openai`, all of which live in
-`backend/node_modules`. `build:pages` installs both halves. It is a root npm
+installs frontend dependencies only — and then the bundler cannot resolve
+`hono`, `@anthropic-ai/sdk` or `openai`, all of which live in
+`backend/node_modules`. `build:deploy` installs both halves. It is a root npm
 script rather than a dashboard string so that it is in git and reviewable.
 
-Once the root `wrangler.toml` is picked up, the fields it declares become
-read-only in the dashboard. That is expected.
+**The `--env=""` is not cosmetic.** The root config defines an `[env.preview]`
+environment, and `wrangler deploy` with no `--env` warns that it is guessing.
+The empty string says "the top-level environment" explicitly, which is
+production. Leaving it off happens to do the right thing today and would stop
+doing so the moment someone adds another environment.
+
+**Non-production builds are off deliberately.** Under Pages, `[env.preview]`
+was picked up by every preview deployment automatically. Workers does not do
+that — a deploy uses the top-level config unless passed `--env preview` — so a
+PR preview wired up carelessly comes up bound to **production D1**. Off is the
+safe state until that is wired and verified; the root `wrangler.toml` says the
+same thing at the `[env.preview]` block.
 
 ### 5. Secrets — production only
 
 ```bash
-backend/node_modules/.bin/wrangler pages secret put ANTHROPIC_API_KEY --project-name=compass-web
+backend/node_modules/.bin/wrangler secret put ANTHROPIC_API_KEY --name college-compass-web
 ```
 
-Set **nothing** on Preview. That is §7.4's recommendation and it needs no extra
-work: with no key set, `llmService` runs its offline keyword fallback, so every
-PR preview is fully usable and spends no API money. `/api/health` reports
-`"llm":"fallback"` when this is the case, which is how to tell the two apart at
-a glance.
+Note this is `wrangler secret put`, not `wrangler pages secret put` — the Pages
+form fails against a Worker for the same reason the Pages deploy did.
+
+With no key set, `llmService` runs its offline keyword fallback, so the app is
+fully usable and spends no API money. `/api/health` reports `"llm":"fallback"`
+when this is the case, which is how to tell the two apart at a glance.
 
 ### 6. Custom domain (§7.5)
 
@@ -320,7 +353,7 @@ in memory during local `wrangler dev` testing.
 Watch it live with:
 
 ```bash
-backend/node_modules/.bin/wrangler pages deployment tail --project-name=compass-web
+backend/node_modules/.bin/wrangler tail college-compass-web
 ```
 
 ---
@@ -336,7 +369,8 @@ PHASE-1 specifies two WAF rules: `compass-global` at 300 requests / 15 min per
 IP on `/api/*`, and `compass-chat-edge` at 60 / 15 min on `/api/chat`. Neither
 is creatable as written on a starting account:
 
-- **WAF rate limiting rules are zone-scoped.** `compass-web.pages.dev` is not a
+- **WAF rate limiting rules are zone-scoped.** The deployed `workers.dev`
+  hostname is not a
   zone in your account, so there is nothing to attach a rule to until §7.5
   attaches a domain you control. The rate limit is therefore blocked on the
   custom domain, which is why step 6 comes before step 7.
@@ -391,10 +425,10 @@ should be a deliberate choice, not a reaction to a 500 during the smoke test.
   broken Open Graph card — the tags are otherwise correct.
 - **A Content-Security-Policy** on the document, per `_headers` above.
 - **`[env.preview]` has no separate `CORS_ORIGIN` that could ever be right.**
-  Each preview is served from its own `<hash>.compass-web.pages.dev` hostname
-  and no static allowlist can enumerate those. It does not matter while
-  previews are same-origin; it would immediately matter under a split
-  deployment.
+  Each preview is served from its own generated hostname and no static
+  allowlist can enumerate those. It does not matter while previews are
+  same-origin; it would immediately matter under a split deployment. Moot
+  while non-production builds are off.
 - **Branch protection** (Phase 3.4) is still blocked on the repository being
   private on a free GitHub plan. Cloudflare's git integration does not care,
   but nothing stops a red CI run from being merged.

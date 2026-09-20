@@ -30,6 +30,7 @@ import {
   hashPassword,
   verifyPassword,
   fakeVerify,
+  needsRehash,
   generateResetToken,
   hashResetToken,
 } from "../auth/password.js";
@@ -601,6 +602,21 @@ auth.post("/login", async (c) => {
           "That email and password don't match an account. If you've just signed up, open the link we emailed you first.",
       },
       401
+    );
+  }
+
+  // A correct password written at a superseded cost is the one moment we can
+  // upgrade it — the plaintext is in hand and will not be again. Left alone,
+  // this row keeps verifying at the old cost while fakeVerify above burns the
+  // new one, and the two branches stop taking the same time; see needsRehash.
+  // waitUntil keeps the second derivation off the response path.
+  const previousHash = row.password_hash;
+  if (previousHash && needsRehash(previousHash)) {
+    const userId = row.id;
+    c.executionCtx.waitUntil(
+      hashPassword(credentials.password).then((upgraded) =>
+        store.rehashPassword(userId, previousHash, upgraded)
+      )
     );
   }
 

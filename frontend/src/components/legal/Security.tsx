@@ -224,7 +224,7 @@ export default function Security() {
               and a cookie setting alone would let one of them act on your account.
             </li>
             <li>
-              <strong>Passwords are PBKDF2-HMAC-SHA-256, 100,000 iterations</strong>, with a
+              <strong>Passwords are PBKDF2-HMAC-SHA-256, 25,000 iterations</strong>, with a
               random 16-byte salt per account and the iteration count stored inside the hash
               so it can be raised later without invalidating anyone. Plaintext passwords are
               never written anywhere.
@@ -425,7 +425,7 @@ export default function Security() {
             person rather than a queue.
           </li>
           <li>
-            Sessions are revocable server-side rows; passwords are PBKDF2 with 100,000
+            Sessions are revocable server-side rows; passwords are PBKDF2 with 25,000
             iterations; logs are built so they cannot hold a student identifier.
           </li>
           <li>
