@@ -15,17 +15,15 @@ type GpaSource = University["gpaSource"];
  * render identically to one a school published, because a student reads both as
  * the school's own bar.
  *
- * The two estimate bases are not equally good, and the tooltip says which one is
- * in play. An SAT-derived figure fits the reported data at RMSE 0.090; an
- * admit-rate one, used for test-blind schools, at 0.222 — admission rate alone
- * cannot separate a selective school from an open-access one with many
- * applicants.
+ * The tooltip says which basis is in play, because they are not the same thing.
+ * An SAT-derived figure fits the reported data at RMSE 0.090; a test-blind
+ * school's, fitted from admission rate and first-year retention, at 0.152.
  */
 const TOOLTIP: Record<string, string> = {
   "estimated-sat":
     "Estimated from this school's average SAT — no federal dataset publishes average GPA, and this school has not reported one.",
-  "estimated-admit":
-    "Estimated from this school's admission rate, because it is test-blind and reports no SAT average. A rougher estimate than the others.",
+  "estimated-profile":
+    "Estimated from this school's admission rate and first-year retention, because it is test-blind and reports no SAT average.",
 };
 
 export function GpaValue({ value, source }: { value: number; source?: GpaSource }) {

@@ -119,12 +119,14 @@ export interface University {
    *
    * - "curated"         hand-entered from the school's own reporting.
    * - "estimated-sat"   interpolated from its SAT average (RMSE 0.090).
-   * - "estimated-admit" interpolated from its admission rate, for test-blind
-   *                     schools with no SAT at all. Materially weaker
-   *                     (RMSE 0.222) since admit rate cannot tell a selective
-   *                     school from an open-access one with many applicants.
+   * - "estimated-profile" fitted from its admission rate AND first-year
+   *                     retention, for test-blind schools with no SAT at all.
+   *                     Retention is the load-bearing half: admission rate
+   *                     alone made avgGPA a function of acceptanceRate, which
+   *                     handed classifyTier the same number twice and collapsed
+   *                     every such school in an admit band onto one tier.
    */
-  gpaSource?: "curated" | "estimated-sat" | "estimated-admit";
+  gpaSource?: "curated" | "estimated-sat" | "estimated-profile";
   /**
    * Admission-test policy. Worth carrying because avgSAT is computed over
    * submitters only, so at a test-optional school it overstates the class — and

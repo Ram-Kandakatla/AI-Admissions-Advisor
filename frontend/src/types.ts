@@ -103,7 +103,7 @@ export interface University {
    * hand-curated schools are reported figures. Rendered as an "est." marker,
    * see <GpaValue>.
    */
-  gpaSource?: "curated" | "estimated-sat" | "estimated-admit";
+  gpaSource?: "curated" | "estimated-sat" | "estimated-profile";
   testPolicy?: "required" | "recommended" | "optional" | "not-used" | null;
   enrollment?: number;
 }
@@ -153,7 +153,7 @@ export interface MajorSchool {
   setting: string;
   type: string;
   avgGPA: number;
-  gpaSource?: "curated" | "estimated-sat" | "estimated-admit";
+  gpaSource?: "curated" | "estimated-sat" | "estimated-profile";
   avgSAT: number | null;
   acceptanceRate: number;
   tuition: number;

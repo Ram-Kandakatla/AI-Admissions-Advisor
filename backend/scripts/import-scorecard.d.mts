@@ -12,11 +12,26 @@ export function estimateGpa(sat: number): number;
 /** Anchor points [SAT, GPA] the estimate interpolates between. */
 export const GPA_ANCHORS: readonly (readonly [number, number])[];
 
-/** GPA from an admission rate (percent), for test-blind schools with no SAT. */
+/** GPA from an admission rate (percent) alone. Fallback for a missing retention rate. */
 export function estimateGpaFromAdmitRate(admitPercent: number): number;
 
 /** Anchor points [admit rate %, GPA], calibrated on the SAT-derived population. */
 export const ADMIT_GPA_ANCHORS: readonly (readonly [number, number])[];
+
+/**
+ * GPA for a test-blind school from its admission rate (percent) and first-year
+ * retention (0-1). Falls back to the admit-only curve when retention is missing
+ * or implausible. Retention is what keeps avgGPA from being a pure function of
+ * acceptanceRate, which classifyTier also reads.
+ */
+export function estimateGpaFromProfile(admitPercent: number, retention: number | null): number;
+
+/** Least-squares coefficients behind estimateGpaFromProfile. */
+export const PROFILE_GPA_MODEL: {
+  readonly intercept: number;
+  readonly admit: number;
+  readonly retention: number;
+};
 
 /**
  * Majors above `threshold` share of degrees awarded, highest share first and

@@ -50,9 +50,10 @@ const DEFAULTS = {
 /**
  * Scorecard carries no GPA — neither does IPEDS. Only each school's Common Data
  * Set (item C12) reports one, and those are PDFs, frequently left blank, and
- * ambiguous about weighting. So every imported school's GPA is ESTIMATED from its
- * SAT average and tagged `gpaSource: "estimated"`, which is what lets the UI keep
- * an inferred number visually distinct from a reported one.
+ * ambiguous about weighting. So every imported school's GPA is ESTIMATED and
+ * tagged with the basis it came from — `gpaSource` is "estimated-sat" here and
+ * "estimated-profile" for a test-blind school — which is what lets the UI keep an
+ * inferred number visually distinct from a reported one.
  *
  * Why a hand-anchored curve and not a regression: a least-squares fit on the 42
  * curated schools scores well in-domain (R²=0.69 on SAT alone, 0.76 adding
@@ -135,9 +136,58 @@ const ADMIT_GPA_ANCHORS = [
   [95, 3.18],
 ];
 
-/** GPA for a school with no SAT average, from its admission rate (percent). */
+/** GPA from admission rate alone. Fallback only — see estimateGpaFromProfile. */
 function estimateGpaFromAdmitRate(admitPercent) {
   return interpolate(ADMIT_GPA_ANCHORS, admitPercent);
+}
+
+/**
+ * GPA for a school with no SAT average, from its admission rate AND its
+ * first-year retention rate.
+ *
+ * Retention is here to fix a specific defect, not for accuracy alone. With GPA
+ * derived from admission rate alone, `classifyTier(uni.acceptanceRate, gpaGap)`
+ * was handed two arguments that were the same number: avgGPA was a function of
+ * acceptanceRate, so the classifier had one school-side signal wearing two hats.
+ * Measured, every test-blind school in the 60-80% admit band collapsed onto a
+ * single tier (GPA spread 3.34-3.48) where SAT-reporting schools in that band
+ * spread 2.76-3.85 across all three. Worse, the admit-rate curve floors at 3.18,
+ * so `gpaGap <= -0.1` was unreachable for any student under 3.28 — a 3.2 student
+ * got safeties from 13% of SAT-reporting schools and 0% of test-blind ones,
+ * which is every CSU.
+ *
+ * Retention is genuinely independent of admission rate and is the stronger
+ * predictor of the two (R² 0.668 against 0.386 on the SAT-reporting schools).
+ * Together they reach R² 0.703, RMSE 0.152 against the admit-only 0.219.
+ *
+ * A least-squares fit is right here where it was wrong for GPA_ANCHORS, and the
+ * difference is the domain. Those anchors had to extrapolate far below the 42
+ * curated schools' SAT 1220-1545. These coefficients are fit over 572 schools
+ * spanning admit 4.5-99.9% and retention 0.34-0.99, and 138 of the 141
+ * test-blind schools with retention fall inside that box — interpolation.
+ *
+ * Validated out of sample against the 42 curated schools' *reported* GPAs:
+ * bias +0.004, RMSE 0.067, against 0.136 for the admit-only curve.
+ */
+const PROFILE_GPA_MODEL = { intercept: 2.0144, admit: -0.002578, retention: 1.941 };
+
+/** Retention outside this range is bad data (0.0 appears in the feed), not a low rate. */
+const PLAUSIBLE_RETENTION = { min: 0.2, max: 1 };
+
+function estimateGpaFromProfile(admitPercent, retention) {
+  if (
+    retention === null ||
+    retention < PLAUSIBLE_RETENTION.min ||
+    retention > PLAUSIBLE_RETENTION.max
+  ) {
+    // Two or three schools per import. The admit-only curve is worse but it is
+    // the only thing left, and it is still tagged as an estimate either way.
+    return estimateGpaFromAdmitRate(admitPercent);
+  }
+  const { intercept, admit, retention: retentionCoef } = PROFILE_GPA_MODEL;
+  const raw = intercept + admit * admitPercent + retentionCoef * retention;
+  // A linear model has no idea 4.0 is a ceiling.
+  return round(Math.max(2.4, Math.min(4.0, raw)), 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -514,7 +564,7 @@ function main() {
 
   const existing = JSON.parse(readFileSync(args.out, "utf8"));
   // Anything not previously imported is curated. Matched by prefix so the
-  // estimated-sat / estimated-admit split does not need a list kept in sync
+  // estimated-sat / estimated-profile split does not need a list kept in sync
   // here, and so a first run (where no row has gpaSource at all) still works.
   const curated = existing.filter((u) => !String(u.gpaSource ?? "").startsWith("estimated"));
   if (curated.length === 0) throw new Error("No curated schools found — refusing to overwrite.");
@@ -541,7 +591,7 @@ function main() {
   const need = [
     "UNITID", "INSTNM", "CITY", "STABBR", "LOCALE", "CONTROL", "PREDDEG",
     "CURROPER", "MAIN", "ADM_RATE", "SAT_AVG", "TUITIONFEE_IN", "TUITIONFEE_OUT",
-    "UGDS", "ADMCON7",
+    "UGDS", "ADMCON7", "RET_FT4",
     // The CIP columns are checked too because their absence does not throw — it
     // reads as "this school teaches nothing", which silently drops every row on
     // the no-majors gate and reports a successful import of zero schools.
@@ -610,8 +660,11 @@ function main() {
       // not have one, rather than having one we failed to find. Inventing a
       // number here would also feed the engine a test score for a school that
       // does not look at test scores.
-      avgGPA: sat === null ? estimateGpaFromAdmitRate(admitRate * 100) : estimateGpa(sat),
-      gpaSource: sat === null ? "estimated-admit" : "estimated-sat",
+      avgGPA:
+        sat === null
+          ? estimateGpaFromProfile(admitRate * 100, numberOrNull(get(row, "RET_FT4")))
+          : estimateGpa(sat),
+      gpaSource: sat === null ? "estimated-profile" : "estimated-sat",
       avgSAT: sat === null ? null : Math.round(sat),
       majors,
       acceptanceRate: round(admitRate * 100, 1),
@@ -686,7 +739,7 @@ function main() {
   console.log(`passed quality gates ${stats.pool}  (${stats.noSat} report no SAT)`);
   console.log(`dropped: no majors   ${stats.noMajors}`);
   console.log(`already curated      ${stats.replacedCurated}`);
-  console.log(`imported             ${stats.selected}  (${testBlind} test-blind, GPA from admit rate)`);
+  console.log(`imported             ${stats.selected}  (${testBlind} test-blind, GPA from admit rate + retention)`);
   console.log(`total in file        ${out.length}`);
   console.log(`bundle size          ${(Buffer.byteLength(json) / 1024).toFixed(0)} KB`);
 
@@ -705,7 +758,9 @@ function main() {
 export {
   estimateGpa,
   estimateGpaFromAdmitRate,
+  estimateGpaFromProfile,
   ADMIT_GPA_ANCHORS,
+  PROFILE_GPA_MODEL,
   majorsFor,
   shortNameFor,
   settingFor,

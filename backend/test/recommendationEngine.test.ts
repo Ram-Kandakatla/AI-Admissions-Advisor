@@ -159,9 +159,9 @@ test("still scores SAT for a school that reported both figures", () => {
 
 test("a test-blind school is neither scored nor silent about it", () => {
   const recs = recommendUniversities(satOnlyStudent, [
-    { ...(sampleUniversities[1] as University), avgSAT: null, gpaSource: "estimated-admit" },
+    { ...(sampleUniversities[1] as University), avgSAT: null, gpaSource: "estimated-profile" },
   ]);
   const only = [...recs.reach, ...recs.target, ...recs.safety][0]!;
   expect(only.reasons.join(" ")).toMatch(/test-blind/i);
-  expect(only.matchScore).toBe(scoreOf({ ...sampleUniversities[1], avgSAT: null, gpaSource: "estimated-admit" }));
+  expect(only.matchScore).toBe(scoreOf({ ...sampleUniversities[1], avgSAT: null, gpaSource: "estimated-profile" }));
 });
