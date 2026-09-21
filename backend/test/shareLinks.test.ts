@@ -143,6 +143,23 @@ describe("the shared view", () => {
     expect(b.cycleYear).toBeGreaterThan(2000);
   });
 
+  test("shortlists the matches and reports the true totals", async () => {
+    // The shared page is read by whoever the student sent it to, on whatever
+    // device they have. It shipped uncapped while /recommendations was capped,
+    // so the one list nobody could scroll past was the longest one.
+    const id = await studentWithAPlan();
+    const token = await shareToken(id);
+    resetSession();
+
+    const b = await body(await get(`/api/shared/${token}`), 200);
+    expect(b.shownPerTier).toBeGreaterThan(0);
+    for (const tier of ["reach", "target", "safety"] as const) {
+      expect(b.recommendations[tier].length).toBeLessThanOrEqual(b.shownPerTier);
+      // Without the true totals the page cannot say what it held back.
+      expect(b.recommendationCounts[tier]).toBeGreaterThanOrEqual(b.recommendations[tier].length);
+    }
+  });
+
   test("an unknown token and a revoked one are the same 404", async () => {
     const id = await studentWithAPlan();
     const token = await shareToken(id);

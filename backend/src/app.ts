@@ -80,6 +80,7 @@ import type {
   AppEnv,
   Checklist,
   SchoolNoteRecord,
+  Tiered,
   University,
 } from "./types.js";
 
@@ -340,20 +341,46 @@ app.put("/students/:id", async (c) => {
  */
 const MATCHES_PER_TIER = 20;
 
+/**
+ * Trim a tiered result to the strongest few per tier, keeping the true totals.
+ *
+ * Shared by every surface that renders a match list, because the first version
+ * of this capped only /recommendations and left the *share* route uncapped —
+ * which is the one page that gets sent to somebody else, and so the one where a
+ * 500-row render matters most.
+ */
+function shortlist<T>(tiered: Tiered<T>, perTier: number) {
+  const counts = {
+    reach: tiered.reach.length,
+    target: tiered.target.length,
+    safety: tiered.safety.length,
+  };
+  return {
+    counts,
+    shown: {
+      reach: tiered.reach.slice(0, perTier),
+      target: tiered.target.slice(0, perTier),
+      safety: tiered.safety.slice(0, perTier),
+    },
+  };
+}
+
 app.get("/students/:id/recommendations", (c) => {
   const student = c.get("student");
-  const all = recommendUniversities(student);
-  const counts = {
-    reach: all.reach.length,
-    target: all.target.length,
-    safety: all.safety.length,
-  };
-  const recommendations = {
-    reach: all.reach.slice(0, MATCHES_PER_TIER),
-    target: all.target.slice(0, MATCHES_PER_TIER),
-    safety: all.safety.slice(0, MATCHES_PER_TIER),
-  };
-  return c.json({ studentId: student.id, counts, recommendations, shownPerTier: MATCHES_PER_TIER });
+  // `full=1` opts out of the cap. Compare needs it: it looks a school up by id
+  // to show that student's tier and match score, and against a capped payload
+  // every school below the cut renders "Not in your matches" — which is the
+  // opposite of true. The cap is a rendering budget for list pages, so the page
+  // that is not rendering a list gets to ask for everything.
+  const full = ["1", "true"].includes(String(c.req.query("full") ?? ""));
+  const perTier = full ? Infinity : MATCHES_PER_TIER;
+  const { counts, shown } = shortlist(recommendUniversities(student), perTier);
+  return c.json({
+    studentId: student.id,
+    counts,
+    recommendations: shown,
+    shownPerTier: full ? null : MATCHES_PER_TIER,
+  });
 });
 
 // ---- Scholarships ----
@@ -746,6 +773,7 @@ app.get("/shared/:token", async (c) => {
     store.getApplications(student.id),
     store.getSchoolNotes(student.id),
   ]);
+  const sharedMatches = shortlist(recommendUniversities(student), MATCHES_PER_TIER);
 
   return c.json({
     sharedAt: new Date().toISOString(),
@@ -765,7 +793,13 @@ app.get("/shared/:token", async (c) => {
       // it is not needed to read the plan, and a link forwarded one hop past
       // the intended reader should not carry it.
     },
-    recommendations: recommendUniversities(student),
+    // Capped like /recommendations, and for a sharper reason: this page is read
+    // by somebody the student sent it to, on whatever device they have, and an
+    // uncapped list was ~550 rows. recommendationCounts carries the true totals
+    // so the view can say what it is not showing.
+    recommendations: sharedMatches.shown,
+    recommendationCounts: sharedMatches.counts,
+    shownPerTier: MATCHES_PER_TIER,
     scholarships: recommendScholarships(student),
     // Enumerated for the same reason the profile is, and this one was caught
     // by a test rather than by care: reusing decorate() here shipped the

@@ -409,7 +409,11 @@ export interface SharedPlan {
     careerGoals: string;
     preferredRegions: string[];
   };
+  /** The strongest per tier — capped by the API, like the matches page. */
   recommendations: Record<Tier, Recommendation[]>;
+  /** True totals per tier, before that cap. */
+  recommendationCounts: Record<Tier, number>;
+  shownPerTier: number;
   scholarships: Record<Tier, Scholarship[]>;
   applications: SharedApplication[];
   notes: SchoolNote[];

@@ -30,6 +30,10 @@ function plan(over: Partial<SharedPlan> = {}): SharedPlan {
       target: [],
       safety: [],
     },
+    // Defaults to "nothing was trimmed", so the shortlist label only appears in
+    // the test that sets counts above what it renders.
+    recommendationCounts: { reach: 1, target: 0, safety: 0 },
+    shownPerTier: 20,
     scholarships: { reach: [], target: [scholarship({ tier: "target" })], safety: [] },
     applications: [
       {
@@ -146,6 +150,23 @@ describe("what it shows", () => {
     expect(await screen.findByText("Highcliff University")).toBeInTheDocument();
     expect(screen.getByText("Northfield College")).toBeInTheDocument();
     expect(screen.getByText("Loved the labs.")).toBeInTheDocument();
+  });
+
+  it("says when a tier was shortlisted", async () => {
+    // The reader of a shared link cannot click through to the rest, so a
+    // trimmed tier has to admit it is trimmed rather than read as the whole
+    // list. Without this the count says "1" for a tier holding 154 schools.
+    mockApi.sharedPlan.mockResolvedValue(
+      plan({ recommendationCounts: { reach: 154, target: 0, safety: 0 } })
+    );
+    render(<SharedPlanView token="t" />);
+    expect(await screen.findByText("1 strongest of 154")).toBeInTheDocument();
+  });
+
+  it("shows a plain count when nothing was trimmed", async () => {
+    render(<SharedPlanView token="t" />);
+    expect(await screen.findByText("Highcliff University")).toBeInTheDocument();
+    expect(screen.queryByText(/strongest of/)).not.toBeInTheDocument();
   });
 
   it("copes with a plan that has nothing on it yet", async () => {

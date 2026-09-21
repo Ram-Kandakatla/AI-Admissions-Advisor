@@ -235,8 +235,15 @@ export const api = {
       body: JSON.stringify(profile),
     }),
 
-  recommendations: (studentId: string) =>
-    request<RecommendationResponse>(`/students/${studentId}/recommendations`),
+  /**
+   * `full` opts out of the API's per-tier cap. Only Compare needs it: it looks
+   * schools up by id, so a capped payload makes everything below the cut read
+   * as "not in your matches". List pages want the cap.
+   */
+  recommendations: (studentId: string, opts?: { full?: boolean }) =>
+    request<RecommendationResponse>(
+      `/students/${studentId}/recommendations${opts?.full ? "?full=1" : ""}`
+    ),
 
   scholarships: (studentId: string) =>
     request<ScholarshipResponse>(`/students/${studentId}/scholarships`),

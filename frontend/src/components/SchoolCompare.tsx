@@ -73,7 +73,11 @@ export default function SchoolCompare({
     }
     let live = true;
     api
-      .recommendations(student.id)
+      // Uncapped: this builds a lookup by school id, and any school the API
+      // trimmed would render "Not in your matches" for a school that is in
+      // them. Compare shows at most three columns, so nothing renders per row
+      // regardless of how many come back.
+      .recommendations(student.id, { full: true })
       .then((data) => {
         if (!live) return;
         const map = new Map<number, Recommendation>();

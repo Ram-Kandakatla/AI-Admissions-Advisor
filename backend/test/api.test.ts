@@ -79,6 +79,34 @@ describe("API endpoints", () => {
     expect(sawCappedTier, "expected this profile to overflow at least one tier").toBe(true);
   });
 
+  test("full=1 opts out of the cap", async () => {
+    // Compare looks schools up by id, so against a capped payload every school
+    // below the cut renders "Not in your matches" — for a school that is in
+    // them. This is the escape hatch that keeps that page honest.
+    const create = await body(
+      await post("/api/students", {
+        name: "Bea",
+        gpa: 3.4,
+        satScore: 1150,
+        interestedMajors: ["Business"],
+        financialNeed: "high",
+      }),
+      201
+    );
+
+    const capped = await body(await get(`/api/students/${create.id}/recommendations`), 200);
+    const full = await body(await get(`/api/students/${create.id}/recommendations?full=1`), 200);
+
+    expect(full.shownPerTier).toBeNull();
+    expect(full.counts).toEqual(capped.counts);
+    for (const tier of ["reach", "target", "safety"] as const) {
+      expect(full.recommendations[tier]).toHaveLength(full.counts[tier]);
+      expect(full.recommendations[tier].length).toBeGreaterThanOrEqual(
+        capped.recommendations[tier].length
+      );
+    }
+  });
+
   test("POST /api/chat returns an answer in fallback mode", async () => {
     const b = await body(await post("/api/chat", { question: "How does the FAFSA work?" }), 200);
     expect(typeof b.answer).toBe("string");
