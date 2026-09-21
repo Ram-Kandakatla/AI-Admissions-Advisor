@@ -90,7 +90,13 @@ export interface University {
   name: string;
   shortName: string;
   avgGPA: number;
-  avgSAT: number;
+  /**
+   * Null when the school reports no SAT average — which is a fact about the
+   * school, not a gap in the data: California is test-blind, so the UC and CSU
+   * systems and Caltech have none. Code comparing a student's score against this
+   * must skip rather than coerce; see evaluate() in recommendationEngine.ts.
+   */
+  avgSAT: number | null;
   majors: string[];
   acceptanceRate: number;
   tuition: number;
@@ -99,6 +105,34 @@ export interface University {
   state: string;
   setting: string;
   type: string;
+  /**
+   * IPEDS/College Scorecard institution id. Present on every row; it is the join
+   * key scripts/import-scorecard.mjs de-duplicates on, and the reason a re-import
+   * cannot renumber a school out from under the `university_id` values that
+   * `school_notes` and `applications` hold in D1.
+   */
+  unitid?: number;
+  /**
+   * Where avgGPA came from, because no federal dataset publishes average admit
+   * GPA — only each school's own Common Data Set does. The UI uses this to keep
+   * an inferred number from reading as a reported one.
+   *
+   * - "curated"         hand-entered from the school's own reporting.
+   * - "estimated-sat"   interpolated from its SAT average (RMSE 0.090).
+   * - "estimated-admit" interpolated from its admission rate, for test-blind
+   *                     schools with no SAT at all. Materially weaker
+   *                     (RMSE 0.222) since admit rate cannot tell a selective
+   *                     school from an open-access one with many applicants.
+   */
+  gpaSource?: "curated" | "estimated-sat" | "estimated-admit";
+  /**
+   * Admission-test policy. Worth carrying because avgSAT is computed over
+   * submitters only, so at a test-optional school it overstates the class — and
+   * every estimated GPA above is derived from that same average.
+   */
+  testPolicy?: "required" | "recommended" | "optional" | "not-used" | null;
+  /** Undergraduate enrollment, for size context in the explorer. */
+  enrollment?: number;
 }
 
 export interface ScholarshipAward {

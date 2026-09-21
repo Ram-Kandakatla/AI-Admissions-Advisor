@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { majorFromSlug, slugifyMajor } from "../slug";
+import { GpaValue } from "./GpaValue";
 import type { MajorInsights, MajorSchool, StudentRecord, Tier } from "../types";
 
 // Everything on this page is computed from the university dataset. There is
@@ -385,7 +386,7 @@ function SchoolRow({ school, showTier }: { school: MajorSchool; showTier: boolea
         </td>
       )}
       <td>{school.acceptanceRate}%</td>
-      <td>{school.avgGPA}</td>
+      <td><GpaValue value={school.avgGPA} source={school.gpaSource} /></td>
       <td>{money.format(school.tuition)}</td>
       <td>
         {school.alsoCovers.length > 0 ? (

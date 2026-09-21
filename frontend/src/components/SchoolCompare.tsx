@@ -5,6 +5,7 @@ import { api } from "../api";
 import { MAX_COMPARE, toggleCompare } from "../compare";
 import type { Recommendation, StudentRecord, Tier, University } from "../types";
 import SchoolNote, { NoteHint, StarButton } from "./SchoolNote";
+import { GpaValue, SatValue } from "./GpaValue";
 import type { NotesStore } from "../useSchoolNotes";
 
 // Side-by-side comparison across the whole dataset.
@@ -72,7 +73,11 @@ export default function SchoolCompare({
     }
     let live = true;
     api
-      .recommendations(student.id)
+      // Uncapped: this builds a lookup by school id, and any school the API
+      // trimmed would render "Not in your matches" for a school that is in
+      // them. Compare shows at most three columns, so nothing renders per row
+      // regardless of how many come back.
+      .recommendations(student.id, { full: true })
       .then((data) => {
         if (!live) return;
         const map = new Map<number, Recommendation>();
@@ -122,14 +127,16 @@ export default function SchoolCompare({
       {
         key: "gpa",
         label: "Avg admitted GPA",
-        cell: (u) => u.avgGPA.toFixed(2),
+        cell: (u) => <GpaValue value={u.avgGPA} source={u.gpaSource} />,
         standout: { of: (u) => u.avgGPA, pick: "max", label: "Highest bar" },
       },
       {
         key: "sat",
         label: "Avg admitted SAT",
-        cell: (u) => u.avgSAT,
-        standout: { of: (u) => u.avgSAT, pick: "max", label: "Highest bar" },
+        cell: (u) => <SatValue value={u.avgSAT} />,
+        // A test-blind school has no SAT bar to be highest, so it sorts below
+        // every real score rather than winning the row on a coerced zero.
+        standout: { of: (u) => u.avgSAT ?? -1, pick: "max", label: "Highest bar" },
       },
       {
         key: "tuition",

@@ -55,8 +55,12 @@ function row(uni: Recommendation): (string | number)[] {
     uni.type ?? "",
     uni.setting ?? "",
     uni.matchScore,
-    uni.avgGPA,
-    uni.avgSAT,
+    // A saved CSV outlives the page it came from, so the estimate marker has to
+    // travel in the value itself — there is no tooltip in a spreadsheet.
+    uni.gpaSource?.startsWith("estimated") ? `${uni.avgGPA} (est)` : uni.avgGPA,
+    // Test-blind schools have no SAT average; say so rather than leaving a blank
+    // cell that reads as a gap in the export.
+    uni.avgSAT ?? "test-blind",
     uni.acceptanceRate,
     uni.tuition,
     uni.gpaGap,

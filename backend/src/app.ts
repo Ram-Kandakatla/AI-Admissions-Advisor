@@ -80,6 +80,7 @@ import type {
   AppEnv,
   Checklist,
   SchoolNoteRecord,
+  Tiered,
   University,
 } from "./types.js";
 
@@ -323,15 +324,63 @@ app.put("/students/:id", async (c) => {
   return c.json(record!);
 });
 
+/**
+ * How many schools per tier the matches page actually returns.
+ *
+ * Before the Scorecard import the dataset was 42 schools and every match fit on
+ * one page. At 614 a mid-range student matches ~550 of them, which is not a
+ * college list — it is the whole database re-sorted. Measured at that size the
+ * page rendered 16,500 DOM nodes over 93 screens, and "Save as PDF" (which is
+ * window.print(), by design) produced a 64-page document.
+ *
+ * Browsing everything is what /explore is for. Matches is a shortlist, so the
+ * engine's ranking is allowed to mean something: each tier is already sorted by
+ * matchScore, so this keeps the strongest and drops the tail. `counts` below
+ * stays the TRUE total — the student is told what was filtered, never shown a
+ * truncated list presented as the whole result.
+ */
+const MATCHES_PER_TIER = 20;
+
+/**
+ * Trim a tiered result to the strongest few per tier, keeping the true totals.
+ *
+ * Shared by every surface that renders a match list, because the first version
+ * of this capped only /recommendations and left the *share* route uncapped —
+ * which is the one page that gets sent to somebody else, and so the one where a
+ * 500-row render matters most.
+ */
+function shortlist<T>(tiered: Tiered<T>, perTier: number) {
+  const counts = {
+    reach: tiered.reach.length,
+    target: tiered.target.length,
+    safety: tiered.safety.length,
+  };
+  return {
+    counts,
+    shown: {
+      reach: tiered.reach.slice(0, perTier),
+      target: tiered.target.slice(0, perTier),
+      safety: tiered.safety.slice(0, perTier),
+    },
+  };
+}
+
 app.get("/students/:id/recommendations", (c) => {
   const student = c.get("student");
-  const recommendations = recommendUniversities(student);
-  const counts = {
-    reach: recommendations.reach.length,
-    target: recommendations.target.length,
-    safety: recommendations.safety.length,
-  };
-  return c.json({ studentId: student.id, counts, recommendations });
+  // `full=1` opts out of the cap. Compare needs it: it looks a school up by id
+  // to show that student's tier and match score, and against a capped payload
+  // every school below the cut renders "Not in your matches" — which is the
+  // opposite of true. The cap is a rendering budget for list pages, so the page
+  // that is not rendering a list gets to ask for everything.
+  const full = ["1", "true"].includes(String(c.req.query("full") ?? ""));
+  const perTier = full ? Infinity : MATCHES_PER_TIER;
+  const { counts, shown } = shortlist(recommendUniversities(student), perTier);
+  return c.json({
+    studentId: student.id,
+    counts,
+    recommendations: shown,
+    shownPerTier: full ? null : MATCHES_PER_TIER,
+  });
 });
 
 // ---- Scholarships ----
@@ -724,6 +773,7 @@ app.get("/shared/:token", async (c) => {
     store.getApplications(student.id),
     store.getSchoolNotes(student.id),
   ]);
+  const sharedMatches = shortlist(recommendUniversities(student), MATCHES_PER_TIER);
 
   return c.json({
     sharedAt: new Date().toISOString(),
@@ -743,7 +793,13 @@ app.get("/shared/:token", async (c) => {
       // it is not needed to read the plan, and a link forwarded one hop past
       // the intended reader should not carry it.
     },
-    recommendations: recommendUniversities(student),
+    // Capped like /recommendations, and for a sharper reason: this page is read
+    // by somebody the student sent it to, on whatever device they have, and an
+    // uncapped list was ~550 rows. recommendationCounts carries the true totals
+    // so the view can say what it is not showing.
+    recommendations: sharedMatches.shown,
+    recommendationCounts: sharedMatches.counts,
+    shownPerTier: MATCHES_PER_TIER,
     scholarships: recommendScholarships(student),
     // Enumerated for the same reason the profile is, and this one was caught
     // by a test rather than by care: reusing decorate() here shipped the

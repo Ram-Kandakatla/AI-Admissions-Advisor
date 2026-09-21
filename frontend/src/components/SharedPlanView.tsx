@@ -189,10 +189,14 @@ export default function SharedPlanView({ token }: { token: string }) {
         {(["reach", "target", "safety"] as Tier[]).map((tier) => {
           const rows = plan.recommendations[tier];
           if (rows.length === 0) return null;
+          // The reader cannot click through to the rest, so the count has to
+          // say plainly that this is a shortlist rather than the whole tier.
+          const total = plan.recommendationCounts?.[tier] ?? rows.length;
           return (
             <div key={tier} className="shared-tier">
               <h3>
-                {TIER_LABEL[tier]} <span>{rows.length}</span>
+                {TIER_LABEL[tier]}{" "}
+                <span>{rows.length < total ? `${rows.length} strongest of ${total}` : rows.length}</span>
               </h3>
               <ul>
                 {rows.map((uni) => (

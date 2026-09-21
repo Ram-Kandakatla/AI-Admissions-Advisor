@@ -103,3 +103,65 @@ test("classifyTier marks highly selective schools as reach", () => {
   expect(classifyTier({ acceptanceRate: 70 }, -0.3)).toBe("safety");
   expect(classifyTier({ acceptanceRate: 30 }, 0.0)).toBe("target");
 });
+
+// --- Derived signals ---
+//
+// Most of the dataset's avgGPA is interpolated from avgSAT by
+// scripts/import-scorecard.mjs. Where that is true the two fields are one
+// measurement, and scoring both would let a school earn up to 26 points from
+// the same number that earns another school 18.
+
+const satOnlyStudent = { ...baseStudent, gpa: 3.7, satScore: 1500 } as StudentRecord;
+
+function scoreOf(uni: Partial<University>): number {
+  const school = {
+    id: 99,
+    name: "Derived U",
+    shortName: "DU",
+    avgGPA: 3.5,
+    avgSAT: 1300,
+    majors: ["CS"],
+    acceptanceRate: 50,
+    tuition: 20000,
+    region: "West",
+    city: "Reno",
+    state: "NV",
+    ...uni,
+  } as University;
+  const recs = recommendUniversities(satOnlyStudent, [school]);
+  return [...recs.reach, ...recs.target, ...recs.safety][0]!.matchScore;
+}
+
+test("does not score SAT twice when the GPA was derived from it", () => {
+  // Identical school, identical student; the only difference is whether avgGPA
+  // is the school's own figure or one interpolated from avgSAT.
+  const independent = scoreOf({ gpaSource: "curated" });
+  const derived = scoreOf({ gpaSource: "estimated-sat" });
+  expect(derived).toBeLessThan(independent);
+});
+
+test("says nothing about SAT when the GPA already encodes it", () => {
+  const recs = recommendUniversities(satOnlyStudent, [
+    { ...(sampleUniversities[1] as University), gpaSource: "estimated-sat" },
+  ]);
+  const only = [...recs.reach, ...recs.target, ...recs.safety][0]!;
+  // Restating one fact would cost a slot in the three reasons a card shows.
+  expect(only.reasons.join(" ")).not.toMatch(/SAT/i);
+});
+
+test("still scores SAT for a school that reported both figures", () => {
+  const recs = recommendUniversities(satOnlyStudent, [
+    { ...(sampleUniversities[1] as University), gpaSource: "curated" },
+  ]);
+  const only = [...recs.reach, ...recs.target, ...recs.safety][0]!;
+  expect(only.reasons.join(" ")).toMatch(/SAT/i);
+});
+
+test("a test-blind school is neither scored nor silent about it", () => {
+  const recs = recommendUniversities(satOnlyStudent, [
+    { ...(sampleUniversities[1] as University), avgSAT: null, gpaSource: "estimated-admit" },
+  ]);
+  const only = [...recs.reach, ...recs.target, ...recs.safety][0]!;
+  expect(only.reasons.join(" ")).toMatch(/test-blind/i);
+  expect(only.matchScore).toBe(scoreOf({ ...sampleUniversities[1], avgSAT: null, gpaSource: "estimated-admit" }));
+});

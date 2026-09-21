@@ -35,6 +35,17 @@
   // 2026-09-18 move to Workers deleted the directory, and the include with it:
   // a glob matching nothing is not inert, it is a claim that stops being true
   // without anything failing.
-  "include": ["src/**/*.ts", "test/**/*.ts", "*.ts", "*.d.ts", "data/*.json"],
+  //
+  // scripts/*.d.mts declares the build-time Scorecard importer's exports so its
+  // unit tests can be TypeScript while the script itself stays runnable under
+  // bare node. Only the declarations are included, never the .mjs.
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "*.ts",
+    "*.d.ts",
+    "scripts/*.d.mts",
+    "data/*.json"
+  ],
   "exclude": ["node_modules"]
 }

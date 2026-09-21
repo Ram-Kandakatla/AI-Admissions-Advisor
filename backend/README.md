@@ -139,10 +139,58 @@ are grouped into **reach / target / safety** by selectivity and GPA distance, ea
 a `matchScore` and plain-English `reasons`. See
 [`src/services/recommendationEngine.ts`](src/services/recommendationEngine.ts).
 
-Data lives in [`data/universities.json`](data/universities.json) (42 schools) and
+**The SAT term is scored only when it is independent evidence.** Most schools' `avgGPA`
+is interpolated from their `avgSAT` (see below), which makes `gpaGap` and `satGap` the
+same measurement — scoring both would earn such a school up to 26 points from one number
+where a school with a single signal earns 18. So the SAT term is skipped for
+`gpaSource: "estimated-sat"`, and for test-blind schools, which have no SAT at all. A
+curated school keeps both, because there the two figures really are separate.
+
+Data lives in [`data/universities.json`](data/universities.json) (757 schools) and
 [`data/scholarships.json`](data/scholarships.json) (45 awards). Profiles, chat history,
 tracked applications, and school notes live in D1 — see
 [`src/store/dataStore.ts`](src/store/dataStore.ts).
+
+`/students/:id/recommendations` returns the **20 strongest per tier**, with `counts`
+carrying the true totals so the page can say what it held back. Uncapped, a mid-range
+student matched ~550 schools, which rendered 16,500 DOM nodes and turned "Save as PDF"
+(`window.print()`) into a 64-page document. Browsing the whole set is what `/explore` is
+for.
+
+## Where the university data comes from
+
+715 of the 757 schools are imported from the U.S. Department of Education's
+[College Scorecard](https://collegescorecard.ed.gov/data/) (public domain). The other 42
+are the original hand-curated set and are preserved exactly — the importer matches them
+by IPEDS `UNITID`, never by name.
+
+Re-import after a Scorecard release (roughly annual) with the institution-level CSV:
+
+```
+npm run data:import -- --csv ~/Downloads/Most-Recent-Cohorts-Institution.csv
+```
+
+It is idempotent — re-running against the same CSV produces a byte-identical file. See
+[`scripts/import-scorecard.mjs`](scripts/import-scorecard.mjs) for the selection rules
+and field mappings, which carry the reasoning inline. Three things worth knowing:
+
+- **GPA is estimated, and labelled.** No federal dataset publishes average admit GPA —
+  only each school's own Common Data Set does, in a PDF that is frequently blank. Every
+  imported school carries an estimate and the UI marks it, so an inferred figure never
+  reads as a reported one. `gpaSource` says which: `estimated-sat` interpolates from the
+  SAT average (RMSE 0.090 against the curated schools), `estimated-admit` from the
+  admission rate (RMSE 0.222 — materially rougher). The curated 42 keep their real
+  numbers as `curated`.
+- **`avgSAT` is nullable, and null means test-blind.** 143 schools report no SAT average
+  because they do not consider one — the whole UC and CSU systems, and Caltech. That is
+  a fact about the school, not a gap in the data, so it is not filled in: `evaluate()`
+  skips test fit for them rather than scoring a student against a hurdle that does not
+  exist. The `estimated-admit` anchors are calibrated on the *SAT-derived population*
+  rather than the curated 42, so a test-blind school lands where a comparable
+  SAT-reporting one would instead of being scored generously for reporting nothing.
+- **Majors are coarse.** They are derived from 2-digit CIP degree shares and mapped onto
+  the existing 22-major vocabulary, capped at the 8 largest per school. CIP cannot
+  separate Physics from Chemistry, so a school with either is credited with both.
 
 `data/compass.db` is the pre-D1 SQLite file. Nothing reads it any more; it is
 kept only so the profiles in it aren't destroyed by the migration.

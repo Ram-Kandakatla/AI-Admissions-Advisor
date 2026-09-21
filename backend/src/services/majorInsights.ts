@@ -60,6 +60,11 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
 }
 
+/** The SAT averages that actually exist — test-blind schools report none. */
+function reportedSats(schools: University[]): number[] {
+  return schools.map((u) => u.avgSAT).filter((s): s is number => s !== null);
+}
+
 function spread(values: number[]): Spread | null {
   if (values.length === 0) return null;
   return {
@@ -102,7 +107,10 @@ export function majorInsights(
   const selectivity = spread(schools.map((u) => u.acceptanceRate));
   const tuition = spread(schools.map((u) => u.tuition));
   const avgGPA = spread(schools.map((u) => u.avgGPA));
-  const avgSAT = spread(schools.map((u) => u.avgSAT));
+  // Test-blind schools report no SAT, so they are excluded from the SAT spread
+  // rather than counted as a zero — a single null would drag `min` to 0 and make
+  // the median meaningless. spread() returns null if none of them report one.
+  const avgSAT = spread(reportedSats(schools));
 
   // --- Which other majors travel with this one ---
   // Useful for a student who might switch: a school strong on adjacent fields
@@ -134,7 +142,7 @@ export function majorInsights(
       medianGPA: round(medianGPA, 2),
       gpaGapToMedian: medianGPA === null ? null : round(student.gpa - medianGPA, 2),
       satScore: student.satScore ?? null,
-      medianSAT: student.satScore ? median(schools.map((u) => u.avgSAT)) : null,
+      medianSAT: student.satScore ? median(reportedSats(schools)) : null,
       // How many of these schools the student could afford at sticker price.
       affordable:
         student.financialNeed === "high"
@@ -180,6 +188,11 @@ export function majorInsights(
         setting: u.setting,
         type: u.type,
         avgGPA: u.avgGPA,
+        // Carried so the table can mark an estimated GPA. Without it this
+        // projection would silently launder an inferred figure into a reported
+        // one — the deep-dive table is the one place a student compares GPAs
+        // across many schools at once.
+        gpaSource: u.gpaSource,
         avgSAT: u.avgSAT,
         acceptanceRate: u.acceptanceRate,
         tuition: u.tuition,
