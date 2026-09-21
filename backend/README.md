@@ -178,16 +178,26 @@ and field mappings, which carry the reasoning inline. Three things worth knowing
   only each school's own Common Data Set does, in a PDF that is frequently blank. Every
   imported school carries an estimate and the UI marks it, so an inferred figure never
   reads as a reported one. `gpaSource` says which: `estimated-sat` interpolates from the
-  SAT average (RMSE 0.090 against the curated schools), `estimated-admit` from the
-  admission rate (RMSE 0.222 — materially rougher). The curated 42 keep their real
-  numbers as `curated`.
+  SAT average (RMSE 0.090 against the curated schools), `estimated-profile` fits from
+  admission rate and first-year retention (RMSE 0.152; 0.067 out of sample against the
+  curated schools' reported figures). The curated 42 keep their real numbers as
+  `curated`.
 - **`avgSAT` is nullable, and null means test-blind.** 143 schools report no SAT average
   because they do not consider one — the whole UC and CSU systems, and Caltech. That is
   a fact about the school, not a gap in the data, so it is not filled in: `evaluate()`
   skips test fit for them rather than scoring a student against a hurdle that does not
-  exist. The `estimated-admit` anchors are calibrated on the *SAT-derived population*
-  rather than the curated 42, so a test-blind school lands where a comparable
-  SAT-reporting one would instead of being scored generously for reporting nothing.
+  exist.
+- **Retention is in the `estimated-profile` fit for a structural reason, not accuracy.**
+  `classifyTier` reads `acceptanceRate` *and* `gpaGap`. With GPA fitted from admission
+  rate alone the second derived from the first, so the classifier had one school-side
+  signal wearing two hats: every test-blind school in the 60–80% admit band shared a
+  0.14-wide GPA range and therefore one tier, where SAT-reporting schools in that band
+  spread 1.09 wide across all three. It also floored at 3.18, making `gpaGap <= -0.1`
+  unreachable below a 3.28 GPA — a 3.2 student got safeties from 13% of SAT-reporting
+  schools and **0%** of test-blind ones, which is every CSU. Adding retention (the
+  stronger of the two predictors, R² 0.668 against 0.386) restored the spread to 0.84
+  wide and that student to 19%. A least-squares fit is right here where it is wrong for
+  `GPA_ANCHORS`: the test-blind schools fall *inside* the 572-school training domain.
 - **Majors are coarse.** They are derived from 2-digit CIP degree shares and mapped onto
   the existing 22-major vocabulary, capped at the 8 largest per school. CIP cannot
   separate Physics from Chemistry, so a school with either is credited with both.

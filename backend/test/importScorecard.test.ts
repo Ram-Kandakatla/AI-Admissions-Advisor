@@ -16,6 +16,8 @@ import {
   cleanName,
   estimateGpa,
   estimateGpaFromAdmitRate,
+  estimateGpaFromProfile,
+  PROFILE_GPA_MODEL,
   majorsFor,
   numberOrNull,
   parseCsv,
@@ -240,6 +242,87 @@ describe("field mappings", () => {
   });
 });
 
+describe("estimateGpaFromProfile", () => {
+  // The two-signal estimate exists to stop avgGPA being a function of
+  // acceptanceRate. classifyTier() reads acceptanceRate AND gpaGap; when the
+  // second derives from the first it has one signal wearing two hats, and every
+  // test-blind school in an admit band collapsed onto a single tier.
+
+  it("separates two schools with the same admission rate", () => {
+    // This is the whole point. Under the admit-only curve these were identical.
+    const strong = estimateGpaFromProfile(90, 0.9);
+    const weak = estimateGpaFromProfile(90, 0.5);
+    expect(strong).toBeGreaterThan(weak);
+    expect(strong - weak).toBeGreaterThan(0.5);
+  });
+
+  it("still falls as admission gets easier, holding retention fixed", () => {
+    let prev = Infinity;
+    for (let a = 5; a <= 100; a += 5) {
+      const g = estimateGpaFromProfile(a, 0.8);
+      expect(g).toBeLessThanOrEqual(prev);
+      prev = g;
+    }
+  });
+
+  it("stays inside a believable GPA range across the whole input space", () => {
+    // A linear model has no idea 4.0 is a ceiling, so the clamp is load-bearing.
+    for (let a = 0; a <= 100; a += 5) {
+      for (let r = 0.2; r <= 1; r += 0.05) {
+        const g = estimateGpaFromProfile(a, r);
+        expect(g).toBeGreaterThanOrEqual(2.4);
+        expect(g).toBeLessThanOrEqual(4.0);
+      }
+    }
+  });
+
+  it("falls back to the admit-only curve when retention is missing or junk", () => {
+    // 0.0 retention appears in the feed and is bad data, not a real rate.
+    for (const bad of [null, 0, 0.05, 1.4]) {
+      expect(estimateGpaFromProfile(90, bad as number)).toBe(estimateGpaFromAdmitRate(90));
+    }
+  });
+
+  it("keeps the coefficient signs the fit produced", () => {
+    // A sign flip here is silent and survives every other test in this file:
+    // the output stays inside the clamp and stays monotonic in one argument, it
+    // just ranks schools backwards. Harder admission and higher retention both
+    // mean a stronger class, so admit is negative and retention positive.
+    expect(PROFILE_GPA_MODEL.admit).toBeLessThan(0);
+    expect(PROFILE_GPA_MODEL.retention).toBeGreaterThan(0);
+    // Retention has to carry real weight or the collapse comes back: across the
+    // observed 0.34-0.99 range it must move GPA more than admit rate does across
+    // its full 0-100.
+    expect(PROFILE_GPA_MODEL.retention * 0.65).toBeGreaterThan(
+      Math.abs(PROFILE_GPA_MODEL.admit) * 100
+    );
+  });
+});
+
+describe("the test-blind rows the profile model produced", () => {
+  const blind = (universities as any[]).filter((u) => u.gpaSource === "estimated-profile");
+
+  it("no longer collapses onto one GPA per admit band", () => {
+    // The regression this guards: with GPA derived from admit rate alone, every
+    // school in the 60-80% band shared a 0.14-wide GPA range and therefore a
+    // single tier, while SAT-reporting schools in that band spread 1.09 wide.
+    const band = blind.filter((u) => u.acceptanceRate >= 60 && u.acceptanceRate < 80);
+    expect(band.length).toBeGreaterThan(10);
+    const spread = Math.max(...band.map((u) => u.avgGPA)) - Math.min(...band.map((u) => u.avgGPA));
+    expect(spread).toBeGreaterThan(0.5);
+  });
+
+  it("reaches low enough for a mid-range student to have safeties", () => {
+    // classifyTier needs gpaGap <= -0.1 for a safety. The admit-only curve
+    // floored at 3.18, so no test-blind school could be a safety below a 3.28
+    // GPA — a 3.2 student saw zero, including every CSU.
+    const reachableBy = (gpa: number) =>
+      blind.filter((u) => u.acceptanceRate > 40 && u.avgGPA - gpa <= -0.1).length;
+    expect(reachableBy(3.2)).toBeGreaterThan(0);
+    expect(reachableBy(3.0)).toBeGreaterThan(0);
+  });
+});
+
 describe("the generated dataset", () => {
   const all = universities as any[];
 
@@ -269,7 +352,7 @@ describe("the generated dataset", () => {
 
   it("labels every GPA with where it came from", () => {
     for (const u of all) {
-      expect(["curated", "estimated-sat", "estimated-admit"]).toContain(u.gpaSource);
+      expect(["curated", "estimated-sat", "estimated-profile"]).toContain(u.gpaSource);
     }
   });
 
@@ -296,7 +379,7 @@ describe("the generated dataset", () => {
     // The two must agree or a school is carrying a GPA derived from a number it
     // does not have — or hiding an SAT the engine could have used.
     for (const u of all) {
-      if (u.gpaSource === "estimated-admit") expect(u.avgSAT, u.name).toBeNull();
+      if (u.gpaSource === "estimated-profile") expect(u.avgSAT, u.name).toBeNull();
       if (u.gpaSource === "estimated-sat") expect(u.avgSAT, u.name).not.toBeNull();
     }
   });
