@@ -86,6 +86,26 @@ function cell(value: string | number): string {
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
+/**
+ * A note naming what the API trimmed, or "" when it trimmed nothing.
+ *
+ * The API sends the strongest few per tier and the true totals separately, and
+ * the page says so on screen. A spreadsheet has nowhere to put that, so without
+ * this the file reads as the complete match list — the same reasoning that puts
+ * "(est)" inside the GPA value rather than in a tooltip.
+ */
+function truncationNote(data: RecommendationResponse): string {
+  const trimmed = TIER_ORDER.filter(
+    (tier) => data.recommendations[tier].length < data.counts[tier]
+  );
+  if (trimmed.length === 0) return "";
+  const parts = trimmed.map(
+    (tier) =>
+      `${data.recommendations[tier].length} of ${data.counts[tier]} ${TIER_LABEL[tier].toLowerCase()}`
+  );
+  return `This export holds the strongest matches, not all of them: ${parts.join(", ")}. Open Compass to browse every school.`;
+}
+
 export function recommendationsToCsv(data: RecommendationResponse): string {
   const lines = [HEADERS.map(cell).join(",")];
   for (const tier of TIER_ORDER) {
@@ -93,6 +113,10 @@ export function recommendationsToCsv(data: RecommendationResponse): string {
       lines.push(row(uni).map(cell).join(","));
     }
   }
+  const note = truncationNote(data);
+  // After a blank line, so the rows above stay a clean rectangle that sorts and
+  // filters like any other sheet.
+  if (note) lines.push("", cell(note));
   // CRLF is what the spec asks for and what Excel is happiest with.
   return lines.join("\r\n");
 }
