@@ -139,6 +139,13 @@ are grouped into **reach / target / safety** by selectivity and GPA distance, ea
 a `matchScore` and plain-English `reasons`. See
 [`src/services/recommendationEngine.ts`](src/services/recommendationEngine.ts).
 
+**The SAT term is scored only when it is independent evidence.** Most schools' `avgGPA`
+is interpolated from their `avgSAT` (see below), which makes `gpaGap` and `satGap` the
+same measurement — scoring both would earn such a school up to 26 points from one number
+where a school with a single signal earns 18. So the SAT term is skipped for
+`gpaSource: "estimated-sat"`, and for test-blind schools, which have no SAT at all. A
+curated school keeps both, because there the two figures really are separate.
+
 Data lives in [`data/universities.json`](data/universities.json) (757 schools) and
 [`data/scholarships.json`](data/scholarships.json) (45 awards). Profiles, chat history,
 tracked applications, and school notes live in D1 — see

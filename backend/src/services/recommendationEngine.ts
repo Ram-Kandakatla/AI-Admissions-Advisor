@@ -67,24 +67,37 @@ export function evaluate(uni: University, student: StudentRecord): Recommendatio
     reasons.push("A significant reach on GPA.");
   }
 
-  // --- Test scores (only if the student has one AND the school uses one) ---
-  // A null avgSAT is not missing data: it means the school reports no SAT
-  // average because it does not consider the SAT. Scoring a student's score
-  // against it would be inventing a hurdle the school does not have — so a
-  // test-blind school is neither rewarded nor penalised on test fit, and the
-  // student is told why rather than silently seeing one fewer reason.
-  if (student.satScore && uni.avgSAT === null) {
-    reasons.push("Test-blind — they don't consider SAT scores.");
-  } else if (student.satScore && uni.avgSAT !== null) {
-    const satGap = uni.avgSAT - student.satScore;
-    if (satGap <= -30) {
-      score += 8;
-      reasons.push("Your SAT is comfortably above their average.");
-    } else if (satGap <= 40) {
-      score += 5;
-      reasons.push("Your SAT is in range.");
-    } else {
-      score -= 4;
+  // --- Test scores ---
+  //
+  // Scored only when the school's SAT average is evidence the GPA block above
+  // has not already used. Two cases where it is not:
+  //
+  //  - avgSAT is null. That is not missing data — the school reports no SAT
+  //    average because it does not consider the SAT. Scoring against it would
+  //    invent a hurdle the school does not have, so a test-blind school is
+  //    neither rewarded nor penalised here and the student is told why.
+  //  - avgGPA was interpolated *from* avgSAT (gpaSource "estimated-sat", which
+  //    is most of the dataset). Then gpaGap and satGap are the same measurement
+  //    twice: a school scored on both could earn 26 points from one number
+  //    while a school with a single signal earns 18. The reasons would restate
+  //    one fact too, in two of the three slots a card shows.
+  //
+  // A curated school keeps both terms, because there its GPA and SAT really are
+  // two independent figures the school reported.
+  if (student.satScore) {
+    if (uni.avgSAT === null) {
+      reasons.push("Test-blind — they don't consider SAT scores.");
+    } else if (uni.gpaSource !== "estimated-sat") {
+      const satGap = uni.avgSAT - student.satScore;
+      if (satGap <= -30) {
+        score += 8;
+        reasons.push("Your SAT is comfortably above their average.");
+      } else if (satGap <= 40) {
+        score += 5;
+        reasons.push("Your SAT is in range.");
+      } else {
+        score -= 4;
+      }
     }
   }
 
