@@ -139,6 +139,17 @@ are grouped into **reach / target / safety** by selectivity and GPA distance, ea
 a `matchScore` and plain-English `reasons`. See
 [`src/services/recommendationEngine.ts`](src/services/recommendationEngine.ts).
 
+**A GPA gap means different things at different admission rates.** `classifyTier` used to
+read `acceptanceRate > 40` as a binary, so a school admitting 98% of applicants and one
+admitting 41% were treated identically and the whole decision rested on `gpaGap` — which
+put Cal State Stanislaus (98.1% admit) in "reach" for a 3.2 student, along with 69 other
+schools admitting ≥85%. The thresholds now widen as admission gets easier: a student must
+be 0.6 below the typical admit before an open-admission school counts as a reach, and may
+sit 0.3 below and still call it a safety. Two invariants hold regardless — under 12% admit
+is a reach for everyone, and nothing at or under 40% is ever a safety. The change only ever
+moves a school toward "easier", so it cannot newly discourage a student; a test asserts
+that across the whole input space.
+
 **The SAT term is scored only when it is independent evidence.** Most schools' `avgGPA`
 is interpolated from their `avgSAT` (see below), which makes `gpaGap` and `satGap` the
 same measurement — scoring both would earn such a school up to 26 points from one number

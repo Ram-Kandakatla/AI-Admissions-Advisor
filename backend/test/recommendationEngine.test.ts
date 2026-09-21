@@ -104,6 +104,54 @@ test("classifyTier marks highly selective schools as reach", () => {
   expect(classifyTier({ acceptanceRate: 30 }, 0.0)).toBe("target");
 });
 
+// --- How much a GPA gap means depends on how hard the school is to get into ---
+
+test("a school admitting almost everyone is not a reach on a small GPA gap", () => {
+  // The regression: acceptanceRate was read as a binary above 40%, so the whole
+  // decision rested on gpaGap and Cal State Stanislaus — 98.1% admit — came out
+  // a "reach" for a 3.2 student sitting 0.16 under its typical admit.
+  expect(classifyTier({ acceptanceRate: 98 }, 0.16)).not.toBe("reach");
+  expect(classifyTier({ acceptanceRate: 90 }, 0.3)).not.toBe("reach");
+});
+
+test("the same GPA gap means different things at different admission rates", () => {
+  const gap = 0.2;
+  expect(classifyTier({ acceptanceRate: 41 }, gap)).toBe("reach");
+  expect(classifyTier({ acceptanceRate: 95 }, gap)).toBe("safety");
+});
+
+test("a student far below the bar is still a reach, however open the school", () => {
+  // Widening the tolerance must not collapse into "everything is a safety".
+  expect(classifyTier({ acceptanceRate: 99 }, 0.8)).toBe("reach");
+});
+
+test("holds the two invariants the tiers rest on", () => {
+  for (let gap = -1; gap <= 1; gap += 0.05) {
+    const g = Number(gap.toFixed(2));
+    // Nobody is safe at a school taking one applicant in ten.
+    expect(classifyTier({ acceptanceRate: 8 }, g), `gap ${g}`).toBe("reach");
+    // 2-in-5 odds are not "very likely admits you", however strong the student.
+    expect(classifyTier({ acceptanceRate: 40 }, g), `gap ${g}`).not.toBe("safety");
+  }
+});
+
+test("never makes a school more of a reach than the fixed thresholds did", () => {
+  // The change loosens tiers; it must not newly discourage anyone. A student
+  // told their safety is actually a reach is the failure that costs applications.
+  const rank = { safety: 0, target: 1, reach: 2 };
+  const before = (acc: number, gap: number) =>
+    acc < 12 || gap >= 0.15 ? "reach" : acc > 40 && gap <= -0.1 ? "safety" : "target";
+  for (let acc = 1; acc <= 100; acc += 1) {
+    for (let gap = -1; gap <= 1; gap += 0.05) {
+      const g = Number(gap.toFixed(2));
+      const now = classifyTier({ acceptanceRate: acc }, g);
+      expect(rank[now], `admit ${acc}, gap ${g}`).toBeLessThanOrEqual(
+        rank[before(acc, g) as keyof typeof rank]
+      );
+    }
+  }
+});
+
 // --- Derived signals ---
 //
 // Most of the dataset's avgGPA is interpolated from avgSAT by

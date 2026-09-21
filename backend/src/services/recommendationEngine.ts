@@ -152,9 +152,52 @@ export function evaluate(uni: University, student: StudentRecord): Recommendatio
 }
 
 // Reach / target / safety based on selectivity and GPA distance.
+//
+// The two inputs are not independent in the way an earlier version assumed. It
+// read `acceptanceRate > 40` as a binary, so a school admitting 98% of
+// applicants and one admitting 41% were treated identically and the whole
+// decision rested on gpaGap — which put Cal State Stanislaus (98.1% admit) in
+// "reach" for a 3.2 student, and ASU at 90% alongside it.
+//
+// What that missed is that admission rate governs how much a GPA gap *means*.
+// Being 0.16 below the average admit matters enormously at a school taking one
+// applicant in ten and hardly at all at one taking nine in ten. So the
+// thresholds widen as admission gets easier, rather than a fixed gap being
+// applied to every school on the list.
+
+/** Below this, a school is never a safety: 2-in-5 odds are not "very likely". */
+const SAFETY_FLOOR = 40;
+/** Below this, a school is a reach for everyone, however strong. */
+const REACH_CEILING = 12;
+
+/** 0 at the safety floor, 1 at open admission. Everything below 40% is 0. */
+function admissionEase(acceptanceRate: number): number {
+  return Math.max(0, Math.min(1, (acceptanceRate - SAFETY_FLOOR) / (100 - SAFETY_FLOOR)));
+}
+
+// Gap thresholds at the safety floor (where they reproduce the original fixed
+// values exactly) and at open admission. The spans are judgement, and these are
+// the two numbers to tune: at 100% admit a student must be a full 0.6 below the
+// typical admit before the school counts as a reach — roughly the distance to a
+// minimum-eligibility floor — and may sit 0.3 below and still call it a safety,
+// because the school is turning almost nobody away.
+const REACH_GAP = { atFloor: 0.15, atOpen: 0.6 };
+const SAFETY_GAP = { atFloor: -0.1, atOpen: 0.3 };
+
+function lerp(from: number, to: number, t: number): number {
+  return from + (to - from) * t;
+}
+
 export function classifyTier(uni: Pick<University, "acceptanceRate">, gpaGap: number): Tier {
-  if (uni.acceptanceRate < 12 || gpaGap >= 0.15) return "reach";
-  if (uni.acceptanceRate > 40 && gpaGap <= -0.1) return "safety";
+  const ease = admissionEase(uni.acceptanceRate);
+  if (uni.acceptanceRate < REACH_CEILING) return "reach";
+  if (gpaGap >= lerp(REACH_GAP.atFloor, REACH_GAP.atOpen, ease)) return "reach";
+  if (
+    uni.acceptanceRate > SAFETY_FLOOR &&
+    gpaGap <= lerp(SAFETY_GAP.atFloor, SAFETY_GAP.atOpen, ease)
+  ) {
+    return "safety";
+  }
   return "target";
 }
 
