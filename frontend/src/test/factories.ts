@@ -52,7 +52,10 @@ export function recommendation(over: Partial<Recommendation> = {}): Recommendati
 }
 
 export function recommendationResponse(
-  by: Partial<Record<Tier, Recommendation[]>> = {}
+  by: Partial<Record<Tier, Recommendation[]>> = {},
+  // `counts` defaults to the number of rows, i.e. nothing was trimmed. Pass it
+  // to model the API's per-tier cap, where the totals exceed what was sent.
+  counts: Partial<Record<Tier, number>> = {}
 ): RecommendationResponse {
   const recommendations = {
     reach: by.reach ?? [],
@@ -62,9 +65,9 @@ export function recommendationResponse(
   return {
     studentId: "stu_1",
     counts: {
-      reach: recommendations.reach.length,
-      target: recommendations.target.length,
-      safety: recommendations.safety.length,
+      reach: counts.reach ?? recommendations.reach.length,
+      target: counts.target ?? recommendations.target.length,
+      safety: counts.safety ?? recommendations.safety.length,
     },
     recommendations,
   };

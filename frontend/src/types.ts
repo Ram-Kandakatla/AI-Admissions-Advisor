@@ -169,7 +169,13 @@ export interface MajorInsights {
   selectivity: Spread;
   tuition: Spread;
   avgGPA: Spread;
-  avgSAT: Spread;
+  /**
+   * Null when no school offering this major reports an SAT average. Test-blind
+   * schools are excluded from the spread rather than counted as zero, so a major
+   * taught only by them has nothing to average — see reportedSats() in
+   * majorInsights.ts.
+   */
+  avgSAT: Spread | null;
   regions: { key: string; count: number }[];
   settings: { key: string; count: number }[];
   types: { key: string; count: number }[];

@@ -29,12 +29,50 @@ const usd = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,
 });
 
-interface Metric {
+/**
+ * How far a school's avgGPA can be off, by where the number came from. A lead
+ * smaller than this is not a lead — it is the estimator's noise.
+ *
+ * Without this the grid hands "Highest bar" to an interpolated 3.93 over a
+ * school's own reported 3.90, adjudicating a 0.03 gap with a number whose error
+ * is three times that. The figures are the ones published beside each estimator
+ * in scripts/import-scorecard.mjs.
+ */
+const GPA_UNCERTAINTY: Record<string, number> = {
+  curated: 0,
+  "estimated-sat": 0.09,
+  "estimated-profile": 0.152,
+};
+
+const gpaNoise = (u: University) => GPA_UNCERTAINTY[u.gpaSource ?? "curated"] ?? 0;
+
+/** Plain English for Scorecard's admission-test requirement code. */
+const TEST_POLICY_LABEL: Record<string, string> = {
+  required: "Required",
+  recommended: "Recommended",
+  optional: "Optional",
+  "not-used": "Not considered",
+};
+
+const enrolled = new Intl.NumberFormat();
+
+/** Exported for SchoolCompare.test.tsx — standoutIndex takes one. */
+export interface Metric {
   key: string;
   label: string;
   cell: (u: University) => ReactNode;
   /** Which column to call out on this row, and what to call it. */
-  standout?: { of: (u: University) => number; pick: "min" | "max"; label: string };
+  standout?: {
+    of: (u: University) => number;
+    pick: "min" | "max";
+    label: string;
+    /**
+     * Noise in `of`'s value for a given school. When the winner's margin over
+     * the runner-up is inside it, the row is left unflagged rather than
+     * claiming a difference the data cannot support.
+     */
+    uncertainty?: (u: University) => number;
+  };
 }
 
 export default function SchoolCompare({
@@ -128,7 +166,12 @@ export default function SchoolCompare({
         key: "gpa",
         label: "Avg admitted GPA",
         cell: (u) => <GpaValue value={u.avgGPA} source={u.gpaSource} />,
-        standout: { of: (u) => u.avgGPA, pick: "max", label: "Highest bar" },
+        standout: {
+          of: (u) => u.avgGPA,
+          pick: "max",
+          label: "Highest bar",
+          uncertainty: gpaNoise,
+        },
       },
       {
         key: "sat",
@@ -137,6 +180,20 @@ export default function SchoolCompare({
         // A test-blind school has no SAT bar to be highest, so it sorts below
         // every real score rather than winning the row on a coerced zero.
         standout: { of: (u) => u.avgSAT ?? -1, pick: "max", label: "Highest bar" },
+      },
+      {
+        key: "testPolicy",
+        label: "Tests required?",
+        // The row that makes the one above readable. An SAT average is computed
+        // over submitters only, so at a test-optional school it describes the
+        // students who chose to send scores, not the class — and it is the same
+        // average this school's estimated GPA was derived from.
+        cell: (u) => (u.testPolicy ? TEST_POLICY_LABEL[u.testPolicy] : "—"),
+      },
+      {
+        key: "enrollment",
+        label: "Undergraduates",
+        cell: (u) => (typeof u.enrollment === "number" ? enrolled.format(u.enrollment) : "—"),
       },
       {
         key: "tuition",
@@ -193,7 +250,13 @@ export default function SchoolCompare({
             </span>
           );
         },
-        standout: { of: (u) => student.gpa - u.avgGPA, pick: "max", label: "Best GPA standing" },
+        standout: {
+          of: (u) => student.gpa - u.avgGPA,
+          pick: "max",
+          label: "Best GPA standing",
+          // Same inferred GPA on the other side of the subtraction.
+          uncertainty: gpaNoise,
+        },
       },
       {
         key: "majorfit",
@@ -376,14 +439,25 @@ export default function SchoolCompare({
  * either the row carries no direction, or every column ties on it, in which
  * case calling one of them out would be noise.
  */
-function standoutIndex(metric: Metric, columns: University[]): number {
+export function standoutIndex(metric: Metric, columns: University[]): number {
   if (!metric.standout || columns.length < 2) return -1;
-  const { of, pick } = metric.standout;
+  const { of, pick, uncertainty } = metric.standout;
   const values = columns.map(of);
   if (values.some((v) => !Number.isFinite(v))) return -1;
   const target = pick === "min" ? Math.min(...values) : Math.max(...values);
   if (values.every((v) => v === target)) return -1;
-  return values.indexOf(target);
+  const winner = values.indexOf(target);
+
+  // A lead inside the estimator's own error is not a lead. Most of the dataset's
+  // GPAs are inferred, so without this the grid would routinely name a winner on
+  // a gap smaller than the noise in the numbers it compared.
+  if (uncertainty) {
+    const rest = values.filter((_, i) => i !== winner);
+    const runnerUp = pick === "min" ? Math.min(...rest) : Math.max(...rest);
+    const noise = Math.max(...columns.map(uncertainty));
+    if (Math.abs(target - runnerUp) <= noise) return -1;
+  }
+  return winner;
 }
 
 /**
