@@ -14,16 +14,8 @@ import type {
   ScholarshipResponse,
   SchoolNote,
   StudentRecord,
-  Tier,
 } from "./types";
-
-const TIER_ORDER: Tier[] = ["reach", "target", "safety"];
-
-const TIER_LABEL: Record<Tier, string> = {
-  reach: "Reach",
-  target: "Target",
-  safety: "Safety",
-};
+import { TIER_LABEL, TIER_ORDER } from "./tiers";
 
 const HEADERS = [
   "Tier",

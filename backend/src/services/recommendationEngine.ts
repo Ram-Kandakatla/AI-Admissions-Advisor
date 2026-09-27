@@ -1,6 +1,7 @@
 // Rule-based university recommendation engine.
 // Given a student profile, returns schools grouped into reach / target / safety,
 // each annotated with a match score and human-readable reasons.
+import { clamp, round } from "../math.js";
 //
 // The rules are intentionally simple and transparent so they can be validated
 // with real students before any move to a learned model.
@@ -172,7 +173,7 @@ const REACH_CEILING = 12;
 
 /** 0 at the safety floor, 1 at open admission. Everything below 40% is 0. */
 function admissionEase(acceptanceRate: number): number {
-  return Math.max(0, Math.min(1, (acceptanceRate - SAFETY_FLOOR) / (100 - SAFETY_FLOOR)));
+  return clamp((acceptanceRate - SAFETY_FLOOR) / (100 - SAFETY_FLOOR), 0, 1);
 }
 
 // Gap thresholds at the safety floor (where they reproduce the original fixed
@@ -199,13 +200,4 @@ export function classifyTier(uni: Pick<University, "acceptanceRate">, gpaGap: nu
     return "safety";
   }
   return "target";
-}
-
-function round(n: number, places: number): number {
-  const f = 10 ** places;
-  return Math.round(n * f) / f;
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, n));
 }

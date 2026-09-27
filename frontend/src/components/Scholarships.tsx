@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { downloadCsv, scholarshipCsvFilename, scholarshipsToCsv } from "../exportList";
 import type { Scholarship, ScholarshipResponse, StudentRecord, Tier } from "../types";
+import { TIER_ORDER, tierVar } from "../tiers";
 
 const TIER_META: Record<Tier, { title: string; blurb: string }> = {
   reach: { title: "Reach", blurb: "National names with long odds — worth the essay, not the whole plan." },
@@ -155,7 +156,7 @@ export default function Scholarships({
           </div>
 
           <div className="rec-summary">
-            {(["reach", "target", "safety"] as Tier[]).map((t) => (
+            {TIER_ORDER.map((t) => (
               <div className={`rec-stat ${t}`} key={t}>
                 <div className="num">{data.counts[t]}</div>
                 <div className="label">{TIER_META[t].title}</div>
@@ -249,15 +250,6 @@ function comparator(sort: SortKey): (a: Scholarship, b: Scholarship) => number {
     return (a, b) => b.expectedValue - a.expectedValue || b.matchScore - a.matchScore;
   }
   return (a, b) => b.matchScore - a.matchScore || b.expectedValue - a.expectedValue;
-}
-
-function tierVar(t: Tier): React.CSSProperties {
-  const map: Record<Tier, string> = {
-    reach: "var(--orange)",
-    target: "var(--green)",
-    safety: "var(--blue)",
-  };
-  return { ["--tier" as string]: map[t] } as React.CSSProperties;
 }
 
 const EFFORT_LABEL: Record<Scholarship["effort"], string> = {

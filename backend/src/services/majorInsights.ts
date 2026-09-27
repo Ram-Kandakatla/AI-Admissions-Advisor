@@ -2,6 +2,7 @@
 //
 // IMPORTANT — on what this does NOT do:
 // It would be easy to attach prose to each school/major pair ("top-10 robotics
+import { round } from "../math.js";
 // program", "strong Google recruiting", "join the HCI lab"). We don't, because
 // none of that is in the dataset and a student who repeats an invented detail
 // in an essay or interview is worse off than one who had nothing. Every number
@@ -66,10 +67,11 @@ function reportedSats(schools: University[]): number[] {
 }
 
 function spread(values: number[]): Spread | null {
-  if (values.length === 0) return null;
+  const mid = median(values);
+  if (mid === null) return null;
   return {
     min: Math.min(...values),
-    median: round(median(values), 2),
+    median: round(mid, 2),
     max: Math.max(...values),
   };
 }
@@ -80,12 +82,6 @@ function tally(items: string[]): { key: string; count: number }[] {
   return [...counts.entries()]
     .map(([key, count]) => ({ key, count }))
     .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
-}
-
-function round(n: number | null, places = 2): number | null {
-  if (n === null) return null;
-  const f = 10 ** places;
-  return Math.round(n * f) / f;
 }
 
 /**
@@ -130,7 +126,7 @@ export function majorInsights(
   if (student && typeof student.gpa === "number") {
     const tiers: Record<Tier, number> = { reach: 0, target: 0, safety: 0 };
     for (const uni of schools) {
-      tiers[classifyTier(uni, round(uni.avgGPA - student.gpa, 2) ?? 0)] += 1;
+      tiers[classifyTier(uni, round(uni.avgGPA - student.gpa, 2))] += 1;
     }
 
     const gpas = schools.map((u) => u.avgGPA);
@@ -139,7 +135,7 @@ export function majorInsights(
     position = {
       tiers,
       gpa: student.gpa,
-      medianGPA: round(medianGPA, 2),
+      medianGPA: medianGPA === null ? null : round(medianGPA, 2),
       gpaGapToMedian: medianGPA === null ? null : round(student.gpa - medianGPA, 2),
       satScore: student.satScore ?? null,
       medianSAT: student.satScore ? median(reportedSats(schools)) : null,
@@ -204,7 +200,7 @@ export function majorInsights(
           : [],
         tier:
           student && typeof student.gpa === "number"
-            ? classifyTier(u, round(u.avgGPA - student.gpa, 2) ?? 0)
+            ? classifyTier(u, round(u.avgGPA - student.gpa, 2))
             : null,
       }))
       .sort((a, b) => a.acceptanceRate - b.acceptanceRate),

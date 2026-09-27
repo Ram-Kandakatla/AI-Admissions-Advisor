@@ -5,6 +5,7 @@
 // reach / target / safety vocabulary, so a student reading both pages is
 // reading one idea twice rather than two.
 //
+import { clamp, round } from "../math.js";
 // Two things it does NOT do, on purpose:
 //
 //   1. It never claims a student meets a demographic or membership condition.
@@ -338,13 +339,4 @@ function joinList(items: string[]): string {
 
 function formatCount(n: number): string {
   return n >= 1000 ? `${Math.round(n / 1000)},000` : String(n);
-}
-
-function round(n: number, places: number): number {
-  const f = 10 ** places;
-  return Math.round(n * f) / f;
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, n));
 }

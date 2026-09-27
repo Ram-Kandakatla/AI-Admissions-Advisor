@@ -22,6 +22,8 @@
 // weakness that matters for SHA-1 is collision resistance, which HMAC does not
 // rely on; HMAC-SHA1 has no practical break and is what the standard specifies.
 
+import { sha256Hex, timingSafeEqual } from "../crypto.js";
+
 /** RFC 4648 base32, which is what every authenticator app speaks. */
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -167,22 +169,6 @@ export async function verifyTotp(
 }
 
 /**
- * Constant-time string comparison.
- *
- * `===` on strings short-circuits at the first differing character, which
- * leaks how many leading digits were right. That is a weak oracle against a
- * six-digit code — an attacker would need an enormous number of samples
- * through a rate limiter that stops them long before — but it costs one loop
- * to remove, and "too small to matter" is how timing leaks end up shipped.
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-/**
  * The URI an authenticator app consumes.
  *
  * Also what makes enrollment work without a QR code: on a phone this is a
@@ -266,10 +252,6 @@ export function normalizeRecoveryCode(code: string): string {
  * from a CSPRNG has no dictionary to attack, so the expensive hash that
  * protects a human-chosen password would buy nothing here.
  */
-export async function hashRecoveryCode(code: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(normalizeRecoveryCode(code))
-  );
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+export function hashRecoveryCode(code: string): Promise<string> {
+  return sha256Hex(normalizeRecoveryCode(code));
 }

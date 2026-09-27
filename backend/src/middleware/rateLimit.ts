@@ -7,6 +7,7 @@
 // has to live in storage both requests can reach, and D1 is already bound.
 //
 // WHAT IS AND ISN'T LIMITED HERE
+import { sha256Hex } from "../crypto.js";
 //
 // Routes where one caller can do outsized damage, each worth a D1 write to
 // protect: /api/chat (real money per call), the auth routes (password and
@@ -58,9 +59,7 @@ export interface RateLimitOptions {
  * rows live for one window, which is the stronger half of the protection.
  */
 export async function hashedKey(label: string, value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return `${label}:${hex}`;
+  return `${label}:${await sha256Hex(value)}`;
 }
 
 /**

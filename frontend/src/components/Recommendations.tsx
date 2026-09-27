@@ -7,6 +7,7 @@ import SchoolNote, { NoteHint, StarButton } from "./SchoolNote";
 import { GpaValue, SatValue } from "./GpaValue";
 import type { NotesStore } from "../useSchoolNotes";
 import type { Recommendation, RecommendationResponse, StudentRecord, Tier } from "../types";
+import { TIER_ORDER, tierVar } from "../tiers";
 
 const TIER_META: Record<Tier, { title: string; blurb: string }> = {
   reach: { title: "Reach", blurb: "Ambitious — apply, but don't count on them." },
@@ -141,7 +142,7 @@ export default function Recommendations({
           </div>
 
           <div className="rec-summary">
-            {(["reach", "target", "safety"] as Tier[]).map((t) => (
+            {TIER_ORDER.map((t) => (
               <div className={`rec-stat ${t}`} key={t}>
                 <div className="num">{data.counts[t]}</div>
                 <div className="label">{TIER_META[t].title}</div>
@@ -150,7 +151,7 @@ export default function Recommendations({
             ))}
           </div>
 
-          {(["reach", "target", "safety"] as Tier[]).map((t) =>
+          {TIER_ORDER.map((t) =>
             data.recommendations[t].length > 0 ? (
               <section className={`tier-block ${t}`} key={t}>
                 <div className="tier-head" style={tierVar(t)}>
@@ -204,15 +205,6 @@ export default function Recommendations({
       )}
     </div>
   );
-}
-
-function tierVar(t: Tier): React.CSSProperties {
-  const map: Record<Tier, string> = {
-    reach: "var(--orange)",
-    target: "var(--green)",
-    safety: "var(--blue)",
-  };
-  return { ["--tier" as string]: map[t] } as React.CSSProperties;
 }
 
 function UniCard({

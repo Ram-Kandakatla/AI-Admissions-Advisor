@@ -3,10 +3,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { api } from "../api";
 import { MAX_COMPARE, toggleCompare } from "../compare";
-import type { Recommendation, StudentRecord, Tier, University } from "../types";
+import type { Recommendation, StudentRecord, University } from "../types";
 import SchoolNote, { NoteHint, StarButton } from "./SchoolNote";
 import { GpaValue, SatValue } from "./GpaValue";
 import type { NotesStore } from "../useSchoolNotes";
+import { TIER_LABEL, TIER_ORDER } from "../tiers";
 
 // Side-by-side comparison across the whole dataset.
 //
@@ -16,12 +17,6 @@ import type { NotesStore } from "../useSchoolNotes";
 // column actually is — "Best odds", "Most selective", "Lowest sticker" —
 // rather than stamping a winner. Only tuition has an unambiguous direction,
 // and even that is sticker price, not what you'd pay.
-
-const TIER_LABEL: Record<Tier, string> = {
-  reach: "Reach",
-  target: "Target",
-  safety: "Safety",
-};
 
 const usd = new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -119,7 +114,7 @@ export default function SchoolCompare({
       .then((data) => {
         if (!live) return;
         const map = new Map<number, Recommendation>();
-        for (const tier of ["reach", "target", "safety"] as Tier[]) {
+        for (const tier of TIER_ORDER) {
           for (const uni of data.recommendations[tier]) map.set(uni.id, uni);
         }
         setRecs(map);

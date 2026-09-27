@@ -17,6 +17,8 @@
 // recorded *inside every hash* so lowering or raising it later does not
 // invalidate the passwords already stored.
 
+import { sha256Hex, timingSafeEqual, toHex } from "../crypto.js";
+
 /**
  * Lowered from 100,000 to fit the free plan's 10ms cap — a real reduction in
  * cracking cost, chosen deliberately rather than discovered during a 500.
@@ -28,11 +30,6 @@ const KEY_BITS = 256;
 const SALT_BYTES = 16;
 const PREFIX = "pbkdf2";
 const HASH = "SHA-256";
-
-function toHex(buf: ArrayBuffer | Uint8Array): string {
-  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 function fromHex(hex: string): Uint8Array {
   const out = new Uint8Array(hex.length / 2);
@@ -74,17 +71,6 @@ export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
   const hash = await derive(password, salt, ITERATIONS);
   return [PREFIX, HASH, ITERATIONS, toHex(salt), hash].join("$");
-}
-
-/** Compare two hex strings without leaking where they first differ. */
-function timingSafeEqual(a: string, b: string): boolean {
-  // Length is not secret — both sides are fixed-width hex of the same
-  // derivation — but an early return on a mismatched length would skip the
-  // constant-time loop entirely, so bail into a guaranteed-false compare.
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
 }
 
 /**
@@ -186,7 +172,6 @@ export function generateResetToken(): string {
  * nothing here: salts defend against precomputation across a *guessable* input
  * space, and there is no rainbow table for 256 random bits.
  */
-export async function hashResetToken(token: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+export function hashResetToken(token: string): Promise<string> {
+  return sha256Hex(token);
 }
