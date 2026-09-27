@@ -1,6 +1,6 @@
 # Two-factor attempt limit
 
-**Status:** built and merged in [PR #23](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/23). Written as the plan beforehand; kept as the record of the design.
+**Status:** built and merged in [PR #23](https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/pull/23). Written as the plan beforehand; kept as the record of the design.
 **Closes:** the security review finding "no per-account limit on 2FA guesses".
 
 Every place Compass checks a second-factor code is rate limited per network and nowhere else. This document is the full set of steps to add a per-account limit: the design and why, every file that changes, the tests that prove it, and how to ship it.

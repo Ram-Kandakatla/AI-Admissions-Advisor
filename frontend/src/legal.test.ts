@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import rawSecurityTxt from "../public/.well-known/security.txt?raw";
 import {
   formatLegalDate,
   isUnfilled,
@@ -77,5 +78,10 @@ describe("links", () => {
 
   it("uses https everywhere", () => {
     expect(REPO_URL.startsWith("https://")).toBe(true);
+  });
+
+  it("gives security.txt the same contact as the Security page", () => {
+    const contact = rawSecurityTxt.match(/^Contact: (.+)$/m)?.[1];
+    expect(contact).toBe(SECURITY_ADVISORY_URL);
   });
 });
