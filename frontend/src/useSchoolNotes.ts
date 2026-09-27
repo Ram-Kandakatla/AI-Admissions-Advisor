@@ -1,13 +1,5 @@
-// One notes store for the whole app.
-//
-// Matches, Explore, Compare, Tracker and Saved all read and write the same
-// note, so the state is loaded once in App and handed down rather than
-// fetched per page — otherwise starring a school on one page would leave a
-// stale star on the next.
-//
-// Writes are optimistic. Typing into a note and having the letters arrive a
-// beat late is worse than the rare failed save, which is reconciled by
-// reloading the server's copy.
+// One notes store for the whole app, loaded once in App so every page sees the
+// same stars. Writes are optimistic; a failed save reloads the server's copy.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
@@ -63,15 +55,8 @@ export function useSchoolNotes(studentId: string | null): NotesStore {
   // the second cancel the first one's save.
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
-  // What that timer will send when it fires, merged across every edit made
-  // during the window.
-  //
-  // One timer per school was enough while a note was the only debounced field.
-  // Phase 6.5 added two more, and a timer that carried only its own field's
-  // value would mean typing a note and then a contact name within 700ms
-  // cancels the note's save and sends the contact alone — the note surviving
-  // on screen, because the optimistic update already landed, and not on the
-  // server. Accumulating the patch is what keeps one timer correct.
+  // Edits merged per school while its timer runs. The timer is shared by
+  // several fields, so each edit must add to the patch, not replace it.
   const pending = useRef(new Map<number, NotePatch>());
 
   useEffect(() => {
@@ -151,12 +136,7 @@ export function useSchoolNotes(studentId: string | null): NotesStore {
     });
   }, []);
 
-  /**
-   * Show the edit now, save it once the typing stops.
-   *
-   * Shared by every debounced field so they queue into one patch per school
-   * rather than racing each other for the school's single timer.
-   */
+  /** Show the edit now, save once typing stops. */
   const queue = useCallback(
     (universityId: number, patch: NotePatch) => {
       optimistic(universityId, patch);

@@ -3,20 +3,8 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 
 /**
- * `/forgot` — ask for a reset link.
- *
- * WHY THE SUCCESS SCREEN IS DELIBERATELY VAGUE
- *
- * It says "if an account exists for that address" and never "we've sent you an
- * email", because the server cannot tell the client which of those is true
- * without turning this page into a membership oracle: paste in a list of
- * addresses, read the responses, and learn which of them belong to teenagers
- * with a college-planning account. That inference is worth more to the wrong
- * person than any single account, so the vagueness is the feature.
- *
- * It is also the thing a future "helpful" edit is most likely to break — the
- * obvious improvement is to say "no account found, want to sign up?", and that
- * is exactly the sentence that cannot be written here.
+ * The success message is deliberately vague ("if an account exists"). Never
+ * add "no account found": it would reveal which addresses have accounts.
  */
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");

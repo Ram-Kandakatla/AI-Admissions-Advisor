@@ -1,15 +1,8 @@
-// Major deep-dive: what the dataset can honestly say about one field of study.
-//
-// IMPORTANT — on what this does NOT do:
-// It would be easy to attach prose to each school/major pair ("top-10 robotics
-import { round } from "../math.js";
-// program", "strong Google recruiting", "join the HCI lab"). We don't, because
-// none of that is in the dataset and a student who repeats an invented detail
-// in an essay or interview is worse off than one who had nothing. Every number
-// below is computed from data/universities.json; everything qualitative is
-// either a question for the student to research or a handoff to the chatbot,
-// which can answer with its own knowledge and its own caveats.
+// Major deep dive, computed only from the dataset. No invented prose about
+// programs ("top-10 robotics"): a student could repeat it in an essay.
+// Qualitative questions go to the student's own research or the chatbot.
 
+import { round } from "../math.js";
 import { loadUniversities } from "../store/staticData.js";
 import { classifyTier } from "./recommendationEngine.js";
 import type { StudentRecord, Tier, University } from "../types.js";
@@ -184,10 +177,7 @@ export function majorInsights(
         setting: u.setting,
         type: u.type,
         avgGPA: u.avgGPA,
-        // Carried so the table can mark an estimated GPA. Without it this
-        // projection would silently launder an inferred figure into a reported
-        // one — the deep-dive table is the one place a student compares GPAs
-        // across many schools at once.
+        // So the table can mark estimated GPAs as estimates.
         gpaSource: u.gpaSource,
         avgSAT: u.avgSAT,
         acceptanceRate: u.acceptanceRate,

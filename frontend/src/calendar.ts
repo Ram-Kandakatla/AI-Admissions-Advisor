@@ -1,30 +1,12 @@
-// The tracker's deadlines, as a calendar the student actually lives in.
+// Tracker deadlines as an .ics file, with VALARM reminders, so reminders come
+// from the student's own calendar with no server involved.
 //
-// Phase 6.1 — deadline reminder emails — is blocked on a sending domain and an
-// email provider. This is the other half of the same idea and needs neither:
-// an .ics file imports into Google Calendar, Apple Calendar, or Outlook, and
-// the VALARM on each event is what makes the reminder fire. It arrives from
-// the student's own calendar, on the device they already check, with no server
-// and no address list involved at all.
-//
-// Everything below is RFC 5545. Four of its rules are easy to get wrong and
-// each one is load-bearing here:
-//
-//   * DTEND is EXCLUSIVE for an all-day event. A deadline on Nov 1 is
-//     DTSTART 20261101 / DTEND 20261102. Writing the same date for both makes
-//     a zero-length event, which some clients render as a sliver and others
-//     drop outright.
-//   * TEXT values escape backslash, semicolon, comma, and newline. Without it
-//     "Washington University in St. Louis, MO" splits at the comma into two
-//     properties and the import fails or silently truncates.
-//   * Lines fold at 75 OCTETS, not characters, and a fold must never land
-//     inside a multi-byte character.
-//   * The whole file is CRLF, including a trailing one.
-//
-// The dates are date-only, and stay that way. Giving a deadline a time would
-// mean inventing one, and an invented time is a timezone bug waiting to
-// happen — the exact failure dates.ts exists to prevent, arriving in someone's
-// calendar as an application due the day before it is due.
+// RFC 5545 rules that are easy to get wrong:
+//   * An all-day event's DTEND is exclusive (Nov 1 ends 20261102).
+//   * TEXT escapes backslash, semicolon, comma and newline.
+//   * Lines fold at 75 octets, never inside a multi-byte character.
+//   * CRLF line endings throughout, including a trailing one.
+// Dates stay date-only: adding a time would mean inventing one.
 
 import { isSettled } from "./applicationStatus";
 import { dayMonth, parseLocalDate } from "./dates";
@@ -40,26 +22,13 @@ const MAX_OCTETS = 75;
 /** How far ahead the reminder fires. Seven days is enough to still act. */
 const ALARM_LEAD = "-P7D";
 
-// Once an application is submitted or decided, its deadline is a fact rather
-// than a countdown — so it keeps its place in the calendar as a record, and
-// loses its alarm. Reminding someone about a deadline they have already met is
-// the fastest way to teach them to ignore the reminders.
-//
-// The rule itself now lives in applicationStatus.ts, shared with the tracker,
-// the timeline and the shared view. It was a fourth private copy here first.
+// Submitted or decided applications keep their event but lose the alarm.
 
 /* ------------------------------------------------------------ Primitives */
 
 const encoder = new TextEncoder();
 
-/**
- * Escape one TEXT value.
- *
- * Order matters: backslash first, or the escapes added below get escaped in
- * turn and every comma arrives as a literal `\\,`. Colon is deliberately not
- * escaped — RFC 5545 only requires it inside a quoted parameter value, and
- * escaping it here breaks any URL in a note.
- */
+/** Backslash first, or later escapes get re-escaped. Colons stay, so URLs survive. */
 export function escapeText(value: string): string {
   return value
     .replace(/\\/g, "\\\\")
@@ -69,12 +38,8 @@ export function escapeText(value: string): string {
 }
 
 /**
- * Fold one content line to 75 octets.
- *
- * Iterating with `for...of` walks code points rather than UTF-16 units, which
- * is what keeps a fold from landing inside a character. The continuation limit
- * is one lower than the first line's because the leading space a fold inserts
- * counts toward that line's 75.
+ * `for...of` walks code points, so a fold never splits a character.
+ * Continuation lines hold one octet less: the leading space counts.
  */
 export function foldLine(line: string): string {
   if (encoder.encode(line).length <= MAX_OCTETS) return line;
@@ -105,12 +70,7 @@ function icsDate(iso: string): string {
   return iso.replace(/-/g, "");
 }
 
-/**
- * The day after `iso`, as an ICS date — an all-day event's exclusive DTEND.
- *
- * Built through parseLocalDate rather than string arithmetic so month ends,
- * year ends, and leap days are the Date object's problem rather than ours.
- */
+/** The exclusive DTEND of an all-day event on `iso`. */
 function icsDayAfter(iso: string): string {
   const d = parseLocalDate(iso);
   d.setDate(d.getDate() + 1);
@@ -134,15 +94,7 @@ function calendarName(app: Application): string {
   return app.university?.shortName || app.university?.name || "Application";
 }
 
-/**
- * What the event body says.
- *
- * Three things, in the order a student needs them: which deadline this is,
- * what is still outstanding on it, and — when the date is only the convention
- * for the plan — that the date itself is not confirmed. That last one matters
- * more in an exported file than on the page it came from: the calendar entry
- * outlives the session, and nothing around it repeats the caveat.
- */
+/** Includes the "date not confirmed" caveat, since nothing else in a calendar repeats it. */
 function describe(app: Application, meta: ApplicationMeta): string {
   const planLabel = meta.plans.find((p) => p.key === app.plan)?.label ?? app.plan;
   const lines = [`${planLabel} deadline for ${schoolName(app)}.`];
@@ -177,19 +129,13 @@ function event(app: Application, meta: ApplicationMeta, stamp: string): string[]
 
   const lines = [
     "BEGIN:VEVENT",
-    // The application's own id, which is a UUID from the server. Stable across
-    // exports on purpose: a calendar keys on UID, so re-importing after
-    // changing a deadline updates the existing entry instead of leaving the
-    // student with two of every school.
+    // Stable across exports, so a re-import updates events instead of duplicating.
     `UID:${app.id}@compass`,
     `DTSTAMP:${stamp}`,
     `DTSTART;VALUE=DATE:${icsDate(deadline)}`,
     `DTEND;VALUE=DATE:${icsDayAfter(deadline)}`,
     `SUMMARY:${escapeText(summary)}`,
     `DESCRIPTION:${escapeText(describe(app, meta))}`,
-    // An unconfirmed date is a tentative event in the most literal sense the
-    // format has, so `deadlineIsTypical` maps straight onto it — clients that
-    // render TENTATIVE differently will show the caveat without reading it.
     `STATUS:${app.deadlineIsTypical ? "TENTATIVE" : "CONFIRMED"}`,
     // A deadline does not make you unavailable all day.
     "TRANSP:TRANSPARENT",
@@ -211,15 +157,7 @@ function event(app: Application, meta: ApplicationMeta, stamp: string): string[]
 
 /* ------------------------------------------------------------------ File */
 
-/**
- * The whole calendar.
- *
- * Only applications with a real date become events — a rolling application has
- * no day to sit on, and picking one would be exactly the invention
- * `deadlineIsTypical` exists to avoid. They are named in the calendar's own
- * description instead, so the file says what it left out rather than quietly
- * being short.
- */
+/** Undated (rolling) applications aren't events; the calendar description names them. */
 export function applicationsToIcs(
   applications: Application[],
   meta: ApplicationMeta,
@@ -247,17 +185,13 @@ export function applicationsToIcs(
     `PRODID:${PRODID}`,
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    // X-WR-* are not in the spec, but Google, Apple, and Outlook all read them
-    // and there is no standard property that names an imported calendar.
-    // Without them the import lands as "Untitled" next to everything else.
+    // Non-standard, but the major clients read it to name the calendar.
     `X-WR-CALNAME:${escapeText(CALENDAR_NAME)}`,
     `X-WR-CALDESC:${escapeText(description)}`,
     ...dated.flatMap((app) => event(app, meta, stamp)),
     "END:VCALENDAR",
   ];
 
-  // Trailing CRLF included: the spec's grammar ends every content line with
-  // one, and a few strict parsers reject a file whose last line has none.
   return `${lines.map(foldLine).join("\r\n")}\r\n`;
 }
 
@@ -265,13 +199,7 @@ export function deadlinesIcsFilename(student: StudentRecord, now = new Date()): 
   return `compass-deadlines-${filenameSlug(student.name)}-${filenameStamp(now)}.ics`;
 }
 
-/**
- * Hand the .ics to the browser.
- *
- * No BOM, unlike the CSV path: that prefix is there for Excel, and a calendar
- * client reading UTF-8 per the spec has no use for it. The media type is what
- * gets a phone to offer "Add to Calendar" rather than a text preview.
- */
+/** No BOM (that's for Excel). The media type makes phones offer "Add to Calendar". */
 export function downloadIcs(filename: string, ics: string): void {
   downloadFile(filename, ics, "text/calendar;charset=utf-8");
 }

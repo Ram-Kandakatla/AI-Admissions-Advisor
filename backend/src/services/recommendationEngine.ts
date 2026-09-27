@@ -1,11 +1,7 @@
-// Rule-based university recommendation engine.
-// Given a student profile, returns schools grouped into reach / target / safety,
-// each annotated with a match score and human-readable reasons.
-import { clamp, round } from "../math.js";
-//
-// The rules are intentionally simple and transparent so they can be validated
-// with real students before any move to a learned model.
+// Rule-based matching into reach / target / safety, with a score and reasons.
+// Kept simple and transparent on purpose, so the rules can be checked by hand.
 
+import { clamp, round } from "../math.js";
 import { loadUniversities } from "../store/staticData.js";
 import type { StudentRecord, Tier, Tiered, University } from "../types.js";
 
@@ -39,15 +35,11 @@ export function recommendUniversities(
   return tiers;
 }
 
-/**
- * Score a single university against the student.
- * Returns null when the school has no overlap with the student's intended majors
- * (a hard requirement), otherwise a recommendation object.
- */
+/** Null when the school offers none of the student's intended majors. */
 export function evaluate(uni: University, student: StudentRecord): Recommendation | null {
   const majors = student.interestedMajors || [];
   const matchedMajors = majors.filter((m: string) => uni.majors.includes(m));
-  if (matchedMajors.length === 0) return null; // Rule 1: must offer an intended major
+  if (matchedMajors.length === 0) return null;
 
   const reasons = [];
   let score = 50;
@@ -70,21 +62,9 @@ export function evaluate(uni: University, student: StudentRecord): Recommendatio
 
   // --- Test scores ---
   //
-  // Scored only when the school's SAT average is evidence the GPA block above
-  // has not already used. Two cases where it is not:
-  //
-  //  - avgSAT is null. That is not missing data — the school reports no SAT
-  //    average because it does not consider the SAT. Scoring against it would
-  //    invent a hurdle the school does not have, so a test-blind school is
-  //    neither rewarded nor penalised here and the student is told why.
-  //  - avgGPA was interpolated *from* avgSAT (gpaSource "estimated-sat", which
-  //    is most of the dataset). Then gpaGap and satGap are the same measurement
-  //    twice: a school scored on both could earn 26 points from one number
-  //    while a school with a single signal earns 18. The reasons would restate
-  //    one fact too, in two of the three slots a card shows.
-  //
-  // A curated school keeps both terms, because there its GPA and SAT really are
-  // two independent figures the school reported.
+  // Skipped for test-blind schools (null avgSAT), and for "estimated-sat"
+  // schools, whose GPA was derived from the SAT: scoring both would count the
+  // same number twice.
   if (student.satScore) {
     if (uni.avgSAT === null) {
       reasons.push("Test-blind — they don't consider SAT scores.");
@@ -152,36 +132,21 @@ export function evaluate(uni: University, student: StudentRecord): Recommendatio
   };
 }
 
-// Reach / target / safety based on selectivity and GPA distance.
-//
-// The two inputs are not independent in the way an earlier version assumed. It
-// read `acceptanceRate > 40` as a binary, so a school admitting 98% of
-// applicants and one admitting 41% were treated identically and the whole
-// decision rested on gpaGap — which put Cal State Stanislaus (98.1% admit) in
-// "reach" for a 3.2 student, and ASU at 90% alongside it.
-//
-// What that missed is that admission rate governs how much a GPA gap *means*.
-// Being 0.16 below the average admit matters enormously at a school taking one
-// applicant in ten and hardly at all at one taking nine in ten. So the
-// thresholds widen as admission gets easier, rather than a fixed gap being
-// applied to every school on the list.
+// Tiering. A GPA gap means more at a selective school than at one admitting
+// nine in ten, so the reach/safety thresholds widen as admission gets easier.
 
 /** Below this, a school is never a safety: 2-in-5 odds are not "very likely". */
 const SAFETY_FLOOR = 40;
 /** Below this, a school is a reach for everyone, however strong. */
 const REACH_CEILING = 12;
 
-/** 0 at the safety floor, 1 at open admission. Everything below 40% is 0. */
+/** 0 at the safety floor, 1 at open admission. */
 function admissionEase(acceptanceRate: number): number {
   return clamp((acceptanceRate - SAFETY_FLOOR) / (100 - SAFETY_FLOOR), 0, 1);
 }
 
-// Gap thresholds at the safety floor (where they reproduce the original fixed
-// values exactly) and at open admission. The spans are judgement, and these are
-// the two numbers to tune: at 100% admit a student must be a full 0.6 below the
-// typical admit before the school counts as a reach — roughly the distance to a
-// minimum-eligibility floor — and may sit 0.3 below and still call it a safety,
-// because the school is turning almost nobody away.
+// GPA-gap thresholds at the safety floor and at open admission. Judgement
+// calls, not fitted; these are the numbers to tune.
 const REACH_GAP = { atFloor: 0.15, atOpen: 0.6 };
 const SAFETY_GAP = { atFloor: -0.1, atOpen: 0.3 };
 

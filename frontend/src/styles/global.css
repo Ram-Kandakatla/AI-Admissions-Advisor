@@ -1758,10 +1758,7 @@ table.uni-table {
    ========================================================================= */
 
 .sec-hd {
-  /* A real <h2> since the accessibility pass — it was a styled <div>, which
-     looked like a section label and was invisible to a screen reader's
-     heading list. These two lines undo what the h1-h4 base rule would
-     otherwise impose on it, so it looks exactly as it did as a div. */
+  /* An <h2> styled as a label; these undo the h1-h4 base rule. */
   font-family: var(--font-body);
   line-height: 1.4;
   font-size: 11px;

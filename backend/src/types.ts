@@ -1,84 +1,39 @@
-// Shared types for the Compass API.
-//
-// The domain shapes here are the JSON the client already consumes — they were
-// implicit in the old JavaScript and are written down now because the sync→async
-// D1 rewrite touches every one of them, and a mistyped column is the failure
-// this migration is most likely to produce.
-
-/**
- * The Worker's bindings and configuration.
- *
- * On Express these were all `process.env` reads resolved once at module load.
- * A Worker gets this object handed to it per request instead, which is the
- * reason `dataStore` and `llmService` became factories rather than modules
- * holding state.
- */
+/** The Worker's bindings, handed over per request. */
 export interface Env {
-  /** D1 binding, declared in wrangler.toml. */
   DB: D1Database;
   /** Comma-separated browser origins allowed to call this API. */
   CORS_ORIGIN?: string;
-  /**
-   * Lowest level that reaches the log: debug | info | warn | error | silent.
-   * Unset or unrecognised means "info". Typed as a plain string because that
-   * is what a wrangler var is — see resolveLevel() in src/log.ts, which is
-   * where the value is actually validated.
-   */
+  /** debug | info | warn | error | silent; validated by resolveLevel in log.ts. */
   LOG_LEVEL?: string;
-  /** Set as a secret. Absent = the chatbot runs its offline fallback. */
+  /** Absent = the chatbot runs its offline fallback. */
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
   ANTHROPIC_MODEL?: string;
   OPENAI_MODEL?: string;
-  /**
-   * Resend credentials, both set as secrets. Absent = password reset reports
-   * itself unavailable rather than silently failing to deliver.
-   */
+  /** Absent = email-dependent flows report themselves unavailable. */
   RESEND_API_KEY?: string;
-  /** The From address, e.g. "Compass <noreply@yourdomain>". Must be a sender
-   *  Resend has verified for your domain, or every send is rejected. */
+  /** Must be a sender Resend has verified, or every send is rejected. */
   EMAIL_FROM?: string;
   /**
-   * Origin every emailed link points at — password reset, signup
-   * confirmation — e.g. "https://compass.example.com". The API has no reliable
-   * way to know the origin the *frontend* is served from: the Origin header is
-   * absent on some requests and attacker-controlled on others, and building an
-   * emailed URL out of either is how host-header poisoning turns a reset into
-   * an account takeover. So it is configuration.
+   * Origin for every emailed link. Configuration, never a request header:
+   * building a reset URL from Host or Origin is host-header poisoning.
    */
   APP_ORIGIN?: string;
   /**
-   * Development escape hatch: writes emailed links — password reset and signup
-   * confirmation — to the log, so both flows can be exercised with no email
-   * provider. Since signup needs its link to finish, local signup depends on
-   * this unless RESEND_API_KEY is set. NEVER set it in production: either link
-   * in a log is a live credential sitting in Cloudflare's log retention. Off
-   * unless it is exactly the string "true".
+   * "true" logs emailed links so local dev works without an email provider.
+   * Never in production: a logged link is a live credential.
    */
   DEV_LOG_EMAIL_LINKS?: string;
 }
 
-/**
- * Hono's generic slot: `Bindings` types `c.env`, `Variables` types the
- * per-request values the wiring middleware puts on the context. Declaring
- * them here is what makes `c.get("store")` a typed Store rather than unknown.
- *
- * The two imports below are circular on paper — those modules import this one —
- * but they are type-only, so they vanish at build time and nothing cycles at
- * runtime.
- */
 export type AppEnv = {
   Bindings: Env;
   Variables: {
     store: import("./store/dataStore.js").Store;
     llm: import("./services/llmService.js").LlmService;
-    /** Set by requireStudent; only present on routes behind it. */
+    /** Set by requireOwner; only present on routes behind it. */
     student: StudentRecord;
-    /**
-     * The caller's session, resolved from the cookie on every request.
-     * Null when there is no cookie or it names an expired/deleted session —
-     * which is the normal state for a first-time visitor, not an error.
-     */
+    /** Null for a visitor with no (live) session cookie; not an error. */
     session: SessionRecord | null;
   };
 };
@@ -90,12 +45,7 @@ export interface University {
   name: string;
   shortName: string;
   avgGPA: number;
-  /**
-   * Null when the school reports no SAT average — which is a fact about the
-   * school, not a gap in the data: California is test-blind, so the UC and CSU
-   * systems and Caltech have none. Code comparing a student's score against this
-   * must skip rather than coerce; see evaluate() in recommendationEngine.ts.
-   */
+  /** Null means test-blind, not missing data. Skip it; never coerce to 0. */
   avgSAT: number | null;
   majors: string[];
   acceptanceRate: number;
@@ -105,35 +55,17 @@ export interface University {
   state: string;
   setting: string;
   type: string;
-  /**
-   * IPEDS/College Scorecard institution id. Present on every row; it is the join
-   * key scripts/import-scorecard.mjs de-duplicates on, and the reason a re-import
-   * cannot renumber a school out from under the `university_id` values that
-   * `school_notes` and `applications` hold in D1.
-   */
+  /** College Scorecard id; the importer matches on it so re-imports keep ids stable. */
   unitid?: number;
   /**
-   * Where avgGPA came from, because no federal dataset publishes average admit
-   * GPA — only each school's own Common Data Set does. The UI uses this to keep
-   * an inferred number from reading as a reported one.
-   *
-   * - "curated"         hand-entered from the school's own reporting.
-   * - "estimated-sat"   interpolated from its SAT average (RMSE 0.090).
-   * - "estimated-profile" fitted from its admission rate AND first-year
-   *                     retention, for test-blind schools with no SAT at all.
-   *                     Retention is the load-bearing half: admission rate
-   *                     alone made avgGPA a function of acceptanceRate, which
-   *                     handed classifyTier the same number twice and collapsed
-   *                     every such school in an admit band onto one tier.
+   * No federal dataset publishes admit GPA, so most are estimated:
+   * "estimated-sat" from the SAT average (RMSE 0.090), "estimated-profile"
+   * from admission rate plus first-year retention for test-blind schools.
+   * The UI labels estimates so they don't read as reported figures.
    */
   gpaSource?: "curated" | "estimated-sat" | "estimated-profile";
-  /**
-   * Admission-test policy. Worth carrying because avgSAT is computed over
-   * submitters only, so at a test-optional school it overstates the class — and
-   * every estimated GPA above is derived from that same average.
-   */
+  /** avgSAT counts submitters only, so it overstates a test-optional class. */
   testPolicy?: "required" | "recommended" | "optional" | "not-used" | null;
-  /** Undergraduate enrollment, for size context in the explorer. */
   enrollment?: number;
 }
 
@@ -188,26 +120,15 @@ export interface StudentRecord extends StudentProfile {
   updatedAt?: string;
 }
 
-/**
- * An account.
- *
- * `email` is null for a guest — see migrations/0003_auth.sql for why guests
- * get a row here at all rather than a separate anonymous identity. `guest` is
- * derived from that rather than stored, so the two can never disagree.
- */
+/** `email` is null for a guest; `guest` is derived from it, never stored. */
 export interface UserRecord {
   id: number;
   email: string | null;
   guest: boolean;
   createdAt: string;
   /**
-   * Whether a second factor is switched on and confirmed.
-   *
-   * A boolean, never the secret. This record is what /auth/me returns, so
-   * anything on it reaches the browser — and the secret is the second factor,
-   * not a description of it. A half-finished enrollment (secret generated, no
-   * code verified yet) reports false here, because from every caller's point
-   * of view it is not on.
+   * Never the secret itself: /auth/me sends this record to the browser. False
+   * until enrollment is confirmed with a code.
    */
   twoFactorEnabled: boolean;
 }
@@ -219,13 +140,8 @@ export interface SessionRecord {
 }
 
 /**
- * A read-only link to one student's plan.
- *
- * The token is a bearer credential: whoever holds the URL can read the shared
- * view, with no account and no sign-in. There is no expiry and no revoked
- * flag — revoking deletes the row, so "revoked" and "never existed" are one
- * state the server could not tell apart even if a future handler wanted to.
- * See migrations/0006_share_links.sql.
+ * The token is a bearer credential for the read-only view. Revoking deletes
+ * the row, so "revoked" and "never existed" are indistinguishable.
  */
 export interface ShareLinkRecord {
   token: string;
@@ -262,23 +178,10 @@ export interface SchoolNoteRecord {
   universityId: number;
   starred: boolean;
   note: string;
-  /**
-   * The admissions officer handling this school, if the student knows who.
-   *
-   * Empty string rather than null for "not recorded", so there is one absent
-   * value rather than two. Deliberately only a name and a job title — see
-   * migrations/0005_school_contacts.sql for why there is no email or phone.
-   */
+  /** "" for not recorded. Name and role only; see migration 0005 for why. */
   contactName: string;
   contactRole: string;
-  /**
-   * When the student last spoke to them: YYYY-MM-DD, or "" for never.
-   *
-   * The field that makes this a tracker rather than an address book — "you
-   * have not contacted this school since August" is the thing worth knowing.
-   * Date-only because that is the granularity a student remembers; see
-   * frontend/src/dates.ts for why it must never meet `new Date(iso)`.
-   */
+  /** YYYY-MM-DD or "". Never pass to `new Date()`; see frontend/src/dates.ts. */
   contactLastAt: string;
   createdAt: string;
   updatedAt?: string;
@@ -286,5 +189,4 @@ export interface SchoolNoteRecord {
 
 export type Tier = "reach" | "target" | "safety";
 
-/** The three-bucket shape both recommendation engines return. */
 export type Tiered<T> = Record<Tier, T[]>;

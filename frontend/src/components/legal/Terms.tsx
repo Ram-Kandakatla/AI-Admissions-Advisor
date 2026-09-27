@@ -10,32 +10,9 @@ import {
 } from "../../legal";
 
 /**
- * The terms of service.
- *
- * WHAT THIS DOCUMENT IS ACTUALLY FOR
- *
- * Not to protect the operator from the student. A free, open-source tool run by
- * one person has almost nothing to defend and no revenue to lose. What it is
- * for is the opposite direction: making sure nobody uses Compass believing it
- * is something it is not. The load-bearing sections are §3 (what Compass is
- * and is not) and §6 (the AI can be wrong) — everything else is the ordinary
- * scaffolding an agreement needs to hang those on.
- *
- * WHY THE DISCLAIMERS ARE SPECIFIC RATHER THAN SWEEPING
- *
- * "Provided as-is without warranty of any kind" is legally conventional and
- * practically useless to a sixteen-year-old, who will read it as noise. The
- * concrete versions — a match score is not a prediction, a deadline shown here
- * is a convention and not that college's calendar, a scholarship listing is a
- * hand-curated snapshot — are the ones that actually change behaviour, because
- * each names a specific thing a student might otherwise rely on. The sweeping
- * disclaimer is still here, because it has to be; it is just not doing the
- * real work.
- *
- * The operator was described by the user on 2026-09-07 as a personal,
- * non-commercial project. That is stated plainly rather than dressed up as a
- * company, which is what lets several of these clauses be one sentence instead
- * of a paragraph.
+ * The sections that matter are §3 (what Compass is not) and §6 (the AI can be
+ * wrong). Disclaimers name specific things a student might rely on, since a
+ * generic "as-is" clause reads as noise.
  */
 export default function Terms() {
   const sections: LegalSection[] = [

@@ -89,10 +89,7 @@ export default function ProfileForm({
     setSaving(true);
     setErrors([]);
     try {
-      // An account holds one profile, so an edit updates the row it already
-      // has. Before Phase 2 this always POSTed, which quietly created a second
-      // student on every edit and left the first one — with its notes and
-      // tracked applications still attached — stranded.
+      // One profile per account: edits must PUT, or a second profile is created.
       const record = existing
         ? await api.updateStudent(existing.id, form)
         : await api.createStudent(form);

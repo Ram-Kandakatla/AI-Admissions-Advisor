@@ -367,7 +367,7 @@ export interface ChatMessage {
   source?: LlmProvider;
 }
 
-// ---- Sharing (Phase 6.7) ----
+// ---- Sharing ----
 
 export interface ShareLink {
   token: string;

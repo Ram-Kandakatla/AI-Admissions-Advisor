@@ -3,35 +3,9 @@ import LegalPage, { LegalTable, Unfilled, type LegalSection } from "./LegalPage"
 import { CONTACT_EMAIL, REPO_URL, SECURITY_ADVISORY_URL } from "../../legal";
 
 /**
- * The security / trust page: how to report a vulnerability, and what Compass
- * actually does to protect a student's data.
- *
- * WHY THE "KNOWN LIMITATIONS" SECTION EXISTS
- *
- * It is the section a trust page normally does not have, and it is the reason
- * to believe the rest of the page. Anyone can write "we take security
- * seriously"; the sentence carries no information because no product would ever
- * write the negation. A list of the things that are genuinely not done yet —
- * no self-serve account deletion, no 2FA, no independent audit, share links
- * that are bearer tokens — is checkable, and it is the part a researcher reads
- * first to decide whether the operator is worth talking to.
- *
- * WHY REPORTING GOES TO GITHUB RATHER THAN AN EMAIL ADDRESS
- *
- * See the note on SECURITY_ADVISORY_URL in src/legal.ts. Short version: no
- * inbox to harvest, a disclosure workflow attached, and it cannot rot the way a
- * personal address does.
- *
- * WHY THE SAFE HARBOUR IS WRITTEN AS A PROMISE, NOT A POLICY
- *
- * The thing that stops good-faith reports is not the absence of a form, it is
- * the fear of the CFAA and its equivalents. A researcher deciding whether to
- * poke at an app is asking one question — will this person call a lawyer — and
- * the only useful answer is an unambiguous no, stated in the first person and
- * before the rules rather than after them.
- *
- * Every defensive claim below names the file that implements it, so this page
- * can be re-verified rather than re-trusted.
+ * Each defensive claim names the file that implements it; keep them in sync
+ * (including the PBKDF2 iteration count). Keep the "known limitations" section
+ * honest: it is what makes the rest of the page credible.
  */
 export default function Security() {
   const sections: LegalSection[] = [

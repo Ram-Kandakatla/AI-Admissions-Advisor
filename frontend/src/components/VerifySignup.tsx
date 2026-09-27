@@ -4,26 +4,9 @@ import { api } from "../api";
 import type { AuthUser } from "../types";
 
 /**
- * `/verify?token=…` — finish creating an account from the emailed link.
- *
- * WHY IT CONFIRMS ON ITS OWN
- *
- * Opening the link is the confirmation. A "Confirm" button would be a second
- * click that proves nothing the first did not, so the page redeems the token as
- * soon as it loads — at most once. A ref guards the request because React's
- * StrictMode runs effects twice in development, and a second, racing
- * confirmation comes back as "this email already has an account", which would
- * paint an error over the success.
- *
- * WHY IT SOMETIMES ASKS FOR THE PASSWORD
- *
- * The link proves someone holds the inbox, not that they filled in the form.
- * Anyone can request a signup for someone else's address, so the server lets
- * the link finish by itself only in the browser that asked. Anywhere else — a
- * phone's mail app, another computer — it wants the password chosen at signup.
- * Someone who never signed up does not have it, and that is the point: opening
- * a link you did not ask for cannot put you in an account a stranger can also
- * sign in to.
+ * Redeems the token on load, once: a ref guards against StrictMode's double
+ * effect, whose racing second call would show "already has an account".
+ * Outside the browser that signed up, the server asks for the signup password.
  */
 export default function VerifySignup({
   onSignedIn,

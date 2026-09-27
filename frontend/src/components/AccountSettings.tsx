@@ -5,34 +5,8 @@ import TwoFactorPanel from "./TwoFactorPanel";
 import type { AuthUser } from "../types";
 
 /**
- * `/account` — what Compass holds about you, and the button that erases it.
- *
- * WHY THIS PAGE EXISTS
- *
- * The privacy policy claimed five self-serve rights and delivered four. See
- * it, correct it, export it, delete parts of it — all true. Delete *all* of it
- * was "email us and we'll do it by hand", which for an app whose users are
- * mostly minors is the weakest possible answer to the request that matters
- * most to someone who has changed their mind. This is the button that was
- * missing.
- *
- * WHY IT OFFERS AN EXPORT FIRST
- *
- * Erasure and portability are two different rights, and the moment someone
- * exercises the first is the last moment they can exercise the second. A
- * student deleting an account in March has a college list they may well still
- * want in April, and the CSV takes one click. Putting it here is not a dark
- * pattern to slow them down — nothing is hidden and nothing is discouraged —
- * it is the one piece of information that is genuinely useful at this moment
- * and useless five seconds later.
- *
- * WHY THE CONFIRMATION IS TYPE-TO-CONFIRM AND NOT A DIALOG
- *
- * A modal with a Cancel and a Delete is dismissed by muscle memory; the whole
- * interaction can be completed without reading a word. Typing the word cannot
- * be, and that is the entire point for an action with no undo. A signed-in
- * account additionally has to retype its password, which is what stops a
- * borrowed laptop or an unlocked phone being enough.
+ * Offers a CSV export before deletion: after it, the data is gone for good.
+ * Type-to-confirm rather than a dialog, which muscle memory clicks through.
  */
 export default function AccountSettings({
   user,

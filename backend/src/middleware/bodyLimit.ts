@@ -1,13 +1,5 @@
-// Request body cap.
-//
-// `express.json({ limit: "100kb" })` did two jobs: it parsed the body and it
-// refused an oversized one with a 413. Hono parses on demand instead, so the
-// cap becomes its own middleware.
-//
-// Checking Content-Length rejects the request before the body is read, which
-// is the point — an oversized payload costs nothing to refuse. A request that
-// omits the header is not waved through: c.req.json() would still buffer it,
-// so the parsed-size check in ./errors.ts backstops this.
+// Refuses an oversized body from its Content-Length, before reading it. A
+// request without the header is caught by readJson's size check in ../http.ts.
 
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "../types.js";
