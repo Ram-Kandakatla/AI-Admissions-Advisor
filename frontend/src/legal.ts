@@ -14,7 +14,7 @@ export const GOVERNING_LAW = TODO("YOUR STATE, COUNTRY");
 /** Privacy and legal contact. Kept separate from security reports on purpose. */
 export const CONTACT_EMAIL = TODO("YOUR CONTACT EMAIL");
 
-export const REPO_URL = "https://github.com/kandakatla-ram/AI-Admissions-Advisor";
+export const REPO_URL = "https://github.com/Ram-Kandakatla/AI-Admissions-Advisor";
 
 /**
  * GitHub private vulnerability reporting: no inbox to harvest or let go stale.

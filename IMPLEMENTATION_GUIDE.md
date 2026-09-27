@@ -1171,11 +1171,11 @@ land rather than trusting memory.
 are not numbered phases in this guide, landed between Phase 7's code half and its
 account half
 - [x] **Dead imports caught by the backend checker**, and the four it found cleared
-      ([#10](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/10))
+      ([#10](https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/pull/10))
 - [x] **Legal and trust pages** — privacy, terms, and a security page, written from
       the code rather than a template: they name `compass_session`, PBKDF2 100k, and
       the `/api/students/:id` log patterns. Writing the limitations down is what got
-      two of them fixed — see the next two items ([#11](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/11))
+      two of them fixed — see the next two items ([#11](https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/pull/11))
 - [x] **A cookie notice that is a notice, not a consent gate.** Compass sets exactly
       one strictly-necessary cookie, so an Accept/Reject pair would offer a choice
       that does not exist. One button, and a test asserting there is exactly one.
@@ -1194,21 +1194,21 @@ account half
       first fails on a constraint rather than orphaning anything. A member retypes
       their password (**403** on a wrong one, not 401 — 401 would sign them out over
       a typo); a guest has no password to retype. Offers a CSV export first, because
-      erasure and portability are different rights ([#12](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/12))
+      erasure and portability are different rights ([#12](https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/pull/12))
 - [x] **Password reset over Resend** — a Worker has no raw sockets, so SMTP libraries
       do not run at all, and MailChannels' free Workers relay ended in 2024.
       `/auth/forgot` answers 202 with byte-identical bodies for every case, at equal
       speed via `executionCtx.waitUntil`, so it is not an enumeration oracle over
       teenagers' addresses. Tokens are SHA-256, not PBKDF2 — iterating defends a
       *low-entropy* secret, and there is no dictionary for 256 random bits. A
-      successful reset revokes every session ([#13](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/13))
+      successful reset revokes every session ([#13](https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/pull/13))
 - [x] **TOTP two-factor auth**, hand-written in `backend/src/auth/totp.ts` to hold the
       zero-dependency rule, and **verified against all six RFC 6238 Appendix B
       vectors** — a hand-rolled standard tested only against itself agrees with
       itself, not with Google Authenticator. Login stops at an `mfa_challenges` row
       rather than a half-authenticated session, and password reset deliberately does
       **not** bypass 2FA: email is already the reset channel, so bypassing would
-      leave the inbox a full takeover path ([#14](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/14))
+      leave the inbox a full takeover path ([#14](https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/pull/14))
 - [x] 666 tests passing, up from 465 at Phase 6 — backend 311, frontend 355
 - [ ] *Not built:* email verification at signup. The provider is in place now, so
       this is the one thing still standing between §6.1 and its reminder emails

@@ -24,7 +24,7 @@
 #   3. Consider signing this file with the PGP key referenced by Encryption,
 #      if one is ever published. Unsigned is fine and is what most sites do.
 
-Contact: https://github.com/kandakatla-ram/AI-Admissions-Advisor/security/advisories/new
+Contact: https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/security/advisories/new
 Expires: 2027-08-31T00:00:00.000Z
 Preferred-Languages: en
 Policy: https://compass.example.com/security
