@@ -18,20 +18,8 @@ import ProfileForm from "./components/ProfileForm";
 import NotFound from "./components/NotFound";
 import ErrorBoundary from "./components/ErrorBoundary";
 
-// ---- What ships in the first bundle, and what doesn't ----
-//
-// Eager: the chrome, Home, ProfileForm, and the 404. That is the whole of the
-// path a first-time visitor walks — land, read the pitch, fill in the form —
-// so splitting any of it would trade a smaller download for a spinner in the
-// one place there is nothing yet to wait for.
-//
-// Lazy: everything else. Each of these pages is behind at least one click and
-// starts by fetching something anyway, so the chunk arrives inside a wait the
-// page was going to have regardless. The three the guide singles out —
-// ChatBot, SchoolCompare, ApplicationTracker — are the heaviest, but the rest
-// are split too: leaving a 6 kB page in the initial bundle to save it a
-// request costs every visitor those 6 kB, including the ones who never open
-// it.
+// Eager: the first-visit path (Home, ProfileForm, 404). Everything else is
+// lazy; each page fetches data on arrival anyway, so the chunk loads in that wait.
 const Recommendations = lazy(() => import("./components/Recommendations"));
 const Scholarships = lazy(() => import("./components/Scholarships"));
 const SavedSchools = lazy(() => import("./components/SavedSchools"));
@@ -49,10 +37,6 @@ const ResetPassword = lazy(() => import("./components/ResetPassword"));
 const VerifySignup = lazy(() => import("./components/VerifySignup"));
 const SharedPlanView = lazy(() => import("./components/SharedPlanView"));
 
-// The legal and trust pages. Lazy like everything else behind a click, and
-// grouped into one chunk each — they are text, they share a layout component,
-// and a visitor who opens the privacy policy has already decided to read
-// rather than to browse, so a request they never notice is the right cost.
 const Terms = lazy(() => import("./components/legal/Terms"));
 const Privacy = lazy(() => import("./components/legal/Privacy"));
 const CookiePolicy = lazy(() => import("./components/legal/CookiePolicy"));
@@ -65,25 +49,13 @@ type Theme = "light" | "dark";
 const initialTheme = (): Theme =>
   (document.documentElement.getAttribute("data-theme") as Theme) ?? "light";
 
-/**
- * Everything the pages share, plus the route map.
- *
- * The chrome moved to Layout when the router landed; what's left here is the
- * state that outlives any one page — the profile, the session, the notes
- * store, the compare selection — and the table of which URL shows what.
- */
+/** State that outlives any one page, plus the route map. */
 export default function App() {
   const [student, setStudent] = useState<StudentRecord | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
-  // Who the session says we are. `undefined` means "not asked yet", which is
-  // distinct from "asked, nobody" — rendering a Sign in button during that gap
-  // would flash the wrong state at every returning visitor on every load.
+  // `undefined` = not asked yet, so returning visitors don't see a flash of "Sign in".
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
-  // True until the session and any profile behind it have finished loading.
-  // Before the router this could not happen: you always arrived at Home and
-  // clicked your way in, so by the time a profile page rendered the fetch was
-  // long done. A bookmarked /matches renders immediately, and without this it
-  // would show "Build your profile first" to someone who has one.
+  // Keeps a bookmarked /matches from saying "build your profile first" while loading.
   const [restoring, setRestoring] = useState(true);
   const [savePrompt, setSavePrompt] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -94,21 +66,14 @@ export default function App() {
 
   const navigate = useNavigate();
 
-  // Notes and stars are shared by five pages, so they live here rather than
-  // in any one of them — a star tapped on a match card has to be lit when the
-  // explorer renders the same school a second later.
+  // Shared by five pages, so a star set on one shows on the others.
   const notes = useSchoolNotes(student?.id ?? null);
 
   useEffect(() => {
     api.meta().then(setMeta).catch(() => setMeta(null));
   }, []);
 
-  // Restore the session on load.
-  //
-  // This is also the first time Compass survives a refresh at all: before
-  // Phase 2 the student id lived only in this component's state, so reloading
-  // the page silently discarded a finished profile. The cookie now outlives
-  // the tab, and the profile comes back with it.
+  // Restore the session and profile on load.
   useEffect(() => {
     let cancelled = false;
     api
@@ -121,8 +86,7 @@ export default function App() {
         if (!cancelled && record) setStudent(record);
       })
       .catch(() => {
-        // An unreachable API is not a signed-out visitor, but there is nothing
-        // better to show than the logged-out shell until it answers.
+        // API unreachable: show the signed-out shell.
         if (!cancelled) setUser(null);
       })
       .finally(() => {
@@ -144,15 +108,10 @@ export default function App() {
 
   const onProfileSaved = (record: StudentRecord) => {
     setStudent(record);
-    // A guest who just built a profile now has something to lose, so the
-    // prompt to save it becomes relevant again even if they dismissed it
-    // before there was anything behind it.
+    // Re-show the save prompt: the guest now has something to lose.
     setSavePrompt(true);
 
-    // Who we are may have just changed. A first-time visitor has no session
-    // until POST /api/students mints the anonymous account that owns the
-    // profile — so without re-asking, `user` stays the null from page load and
-    // nothing ever knows this list belongs to a guest.
+    // A first save creates the guest account, so fetch who we are now.
     if (!user) {
       api
         .me()
@@ -181,14 +140,7 @@ export default function App() {
     navigate(record ? "/matches" : "/profile");
   };
 
-  /**
-   * The account and everything in it has just been erased server-side.
-   *
-   * Deliberately not routed through signOut(): there is no session left to
-   * revoke — the sessions rows cascaded with the user — so calling logout
-   * would be a request that can only 401. What is needed is the same local
-   * reset, and a different sentence afterwards.
-   */
+  /** Not signOut(): the server already deleted the session, so logout would 401. */
   const onAccountDeleted = (hadProfile: boolean) => {
     setUser(null);
     setStudent(null);
@@ -320,35 +272,17 @@ export default function App() {
           }
         />
 
-        {/* Ungated and outside every profile check, deliberately. A visitor
-            deciding whether to trust Compass with a GPA reads these *before*
-            there is anything to gate on, and a privacy policy you have to sign
-            up to read is not a privacy policy. They are also the destinations
-            a footer link has to reach from anywhere, including from the 404. */}
-        {/* Ungated: a guest has an anonymous account holding real work, and
-            wiping it from a shared or library computer is the case this page
-            matters most for. Gating it behind a profile would lock out the
-            person with the most reason to be here. */}
-        {/* Reachable with no session at all — being locked out is the entire
-            reason to be here. */}
+        {/* The auth pages, /account and the legal pages are all ungated: their
+            visitors may have no session or no profile. */}
         <Route path="/forgot" element={<ForgotPassword />} />
         <Route
           path="/reset"
           element={
             <ResetPassword
-              // A reset ends signed in, so this lands in the same handler a
-              // login does — minus the guest-draft question, which cannot
-              // arise: you cannot be holding an unsaved profile and be locked
-              // out of the account you would lose it to at the same time.
               onSignedIn={(account, studentId) => onSignedIn(account, studentId, false)}
             />
           }
         />
-        {/* Where a signup's emailed link lands. It ends signed in, so it uses
-            the login handler — guest-draft notice included, which really can
-            arise here: the link may be opened in a browser holding a different
-            unsaved list. Ungated, like the two routes above: the person arriving
-            may have no session in this browser at all. */}
         <Route path="/verify" element={<VerifySignup onSignedIn={onSignedIn} />} />
 
         <Route
@@ -358,8 +292,7 @@ export default function App() {
               user={user}
               hasProfile={!!student}
               onDeleted={onAccountDeleted}
-              // 2FA state lives on the user record, so flipping it has to
-              // re-ask rather than being guessed at locally.
+              // Refetch the user: 2FA status lives on the user record.
               onSecurityChanged={() => {
                 api
                   .me()
@@ -386,15 +319,9 @@ export default function App() {
 /* ------------------------------------------------------- Route adapters */
 
 /**
- * The comparison set, in the URL.
- *
- * `compareIds` stays App state because the ticks that build it happen on
- * /matches, where they have nowhere else to live. This bridges that state to
- * `?ids=` while the comparison page is open, in one direction each way: the
- * URL seeds the state once on arrival (so a shared link works), and after
- * that the state writes the URL (so the link stays current as you add and
- * remove schools). Writes are `replace` — twelve tick-throughs should not be
- * twelve presses of the back button.
+ * Syncs `?ids=` with App's compare state: the URL seeds the state once on
+ * arrival, then the state writes the URL (with `replace`, to spare the back
+ * button).
  */
 function CompareRoute({
   student,
@@ -419,17 +346,13 @@ function CompareRoute({
       .map((n) => Number(n))
       .filter((n) => Number.isInteger(n) && n > 0);
     if (fromUrl.length > 0) onChange(fromUrl);
-    // Runs once, on arrival. The search string is deliberately not a
-    // dependency: it changes on every write below, and reacting to our own
-    // writes would put the URL back in charge and fight the user's next click.
+    // Once only: depending on the search string would react to our own writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seeded]);
 
   useEffect(() => {
     if (!seeded) return;
-    // Built by hand rather than through URLSearchParams, which percent-encodes
-    // the separator — "?ids=1%2C3" round-trips perfectly and looks like an
-    // error to the person being sent it. A comma is legal in a query string.
+    // Not URLSearchParams, which would encode the commas as %2C.
     const search = selected.length > 0 ? `?ids=${selected.join(",")}` : "";
     if (search !== location.search) {
       navigate({ pathname: location.pathname, search }, { replace: true });
@@ -440,11 +363,8 @@ function CompareRoute({
 }
 
 /**
- * `/shared/:token` — the read-only view, for someone who is not the student.
- *
- * Chrome-free and gate-free by design: this page must render for a visitor
- * with no session at all, so it deliberately does not go through `gated()`.
- * Its own Suspense and ErrorBoundary, since it sits outside Layout's.
+ * Outside Layout and ungated, since viewers have no session, so it brings its
+ * own <main> landmark, Suspense and ErrorBoundary.
  */
 function SharedRoute() {
   const { token } = useParams();
@@ -452,9 +372,6 @@ function SharedRoute() {
     document.title = "A shared college plan — Compass";
   }, []);
   return (
-    // <main>, because this page renders outside Layout and so gets none of
-    // its landmarks. Without it the whole document sits in no landmark at all,
-    // which is a screen reader with no way to skip past anything.
     <main className="shared-page" id="main">
       <ErrorBoundary>
         <Suspense fallback={<div className="spinner" aria-label="Loading the shared plan" />}>
@@ -486,19 +403,9 @@ function MajorsRoute({ student }: { student: StudentRecord | null }) {
 }
 
 /**
- * `/chat`, optionally carrying a question from the major deep dive.
- *
- * The handoff rides in history state rather than a query parameter. A question
- * is free text a student typed the app into asking on their behalf; putting it
- * in the address bar makes it something to share by accident and something a
- * proxy log keeps. History state is scoped to this tab's history entry and
- * never leaves the browser.
- *
- * The assistant *is* in the URL, though — `?mode=essay`. It names which of two
- * screens you are looking at rather than anything you typed, so it is exactly
- * the kind of state §5.1 put in the address bar: bookmarkable, shareable, and
- * survives a refresh. Unknown values fall back to advising rather than
- * erroring, since a mistyped query string should still show a usable page.
+ * A handed-off question travels in history state, not the URL, so it isn't
+ * shared or logged by accident. The mode is in the URL (`?mode=essay`) because
+ * it names a page, not user text; unknown values fall back to advising.
  */
 function ChatRoute({ student }: { student: StudentRecord | null }) {
   const location = useLocation();
@@ -512,10 +419,7 @@ function ChatRoute({ student }: { student: StudentRecord | null }) {
     <ChatBot
       student={student}
       mode={mode}
-      // `replace`, so flipping the switch four times doesn't put four entries
-      // between the student and the page they arrived from. Advising drops the
-      // parameter entirely rather than writing ?mode=advising — the default
-      // belongs at the bare URL.
+      // `replace` so toggling doesn't fill history; advising uses the bare URL.
       onModeChange={(next) =>
         navigate(
           { pathname: location.pathname, search: next === "essay" ? "?mode=essay" : "" },

@@ -1,22 +1,7 @@
-// LLM service for the admissions chatbot.
-//
-// Supports either provider, chosen by whichever key is present AND well-formed:
-//   ANTHROPIC_API_KEY -> Claude   (preferred when both are set)
-//   OPENAI_API_KEY    -> OpenAI
-// With no key at all, it falls back to a small built-in knowledge base so the
-// whole app stays usable in local development without any credentials. A key
-// that is present but malformed is reported and then treated as absent, which
-// lands in that same fallback instead of a 401 mid-conversation.
-//
-// WHAT THE WORKERS PORT CHANGED
-//
-// Both SDKs are fetch-based and run in a Worker unmodified, so the two API
-// calls at the bottom are untouched. What could not survive is the *shape* of
-// this module: it used to read process.env at import time and freeze
-// `provider` and the two clients into module constants. A Worker has no
-// process.env and gets its bindings per request, so all of that moved into
-// `createLlmService(env)`. `inspectApiKey` stays a free function — it is pure,
-// and the tests call it directly.
+// The chatbot's LLM. Claude if ANTHROPIC_API_KEY is well-formed, else OpenAI,
+// else a built-in offline knowledge base so the app works with no credentials.
+// A malformed key is logged and treated as absent, rather than surfacing as a
+// 401 mid-conversation.
 
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
@@ -31,19 +16,12 @@ export type Provider = "claude" | "openai" | "fallback";
 
 // ---- Key validation ----
 //
-// A key that is present but wrong — a paste that dropped the last characters,
-// the placeholder from .env.example left in place — is worse than no key at
-// all: the app looks healthy and then throws a 401 at the first student who
-// asks a question. Checking the shape moves that discovery to a log line.
-//
-// This is deliberately a shape check, not a live API call. Serving a request
-// must not depend on a round trip to the provider, and only the provider can
-// say whether a well-formed key is actually valid.
+// A shape check only, never a live call: catches truncated pastes and
+// placeholders at startup instead of as a 401 on a student's first question.
 
 const KEY_SPECS: Record<string, { prefix: string; reject?: string; minLength: number; provider: string }> = {
   ANTHROPIC_API_KEY: { prefix: "sk-ant-", minLength: 40, provider: "claude" },
-  // Anthropic keys also begin "sk-", so the prefix alone would wave one through
-  // if it were pasted into the wrong line. `reject` catches that swap.
+  // Anthropic keys also start "sk-"; `reject` catches one in the wrong slot.
   OPENAI_API_KEY: { prefix: "sk-", reject: "sk-ant-", minLength: 40, provider: "openai" },
 };
 
@@ -53,13 +31,11 @@ export interface KeyStatus {
   problems: string[];
 }
 
-/** Inspect one API key. */
 export function inspectApiKey(name: string, raw: unknown): KeyStatus {
   const spec = KEY_SPECS[name]!;
   const value = typeof raw === "string" ? raw.trim() : "";
 
-  // Absent and blank are the same thing: run offline, say nothing. This is a
-  // supported way to use Compass, not a misconfiguration.
+  // No key is a supported offline mode, not a misconfiguration.
   if (value === "") return { present: false, valid: false, problems: [] };
 
   const problems: string[] = [];
@@ -78,9 +54,7 @@ export function inspectApiKey(name: string, raw: unknown): KeyStatus {
   return { present: true, valid: problems.length === 0, problems };
 }
 
-// A Worker isolate is reused across requests, so this is the closest thing to
-// "at boot" available: the warning prints on the first request an isolate
-// serves and then stays quiet, instead of once per request forever.
+// Once per isolate: the nearest thing a Worker has to "at boot".
 const warnedIsolates = new Set<string>();
 
 function warnOnce(log: Logger, name: string, status: KeyStatus): void {
@@ -94,17 +68,9 @@ function warnOnce(log: Logger, name: string, status: KeyStatus): void {
 
 // ---- The two modes ----
 //
-// Phase 6.3 added the essay assistant. It is a different prompt and a
-// different offline bank over identical plumbing — same key inspection, same
-// provider selection, same error path — which is what the guide means by
-// "reusing llmService's existing provider abstraction". If a third mode ever
-// lands, it is another entry in these two records and nothing else.
-//
-// The essay prompt's job is mostly restraint. A model asked to help with a
-// college essay will write one unless told not to, and a personal statement in
-// the model's voice rather than the student's is worse than no help at all:
-// it reads as generic to the reader it was meant to persuade, and it is the
-// student's own name on it.
+// Each mode is a prompt plus an offline answer bank over the same plumbing. The
+// essay prompt is mostly restraint: unless told not to, a model will write the
+// essay, and it must stay in the student's voice.
 
 const ADVISING_PROMPT = `You are Compass, a warm, plain-spoken college admissions advisor for U.S. high school students.
 Help with the application process: timelines and deadlines, essays, standardized tests, recommendation letters,
@@ -170,12 +136,7 @@ export interface LlmAnswer {
 
 export type LlmService = ReturnType<typeof createLlmService>;
 
-/**
- * Build the chatbot service for one request's environment.
- *
- * Cheap to call — the constructors below only stash a key; no connection is
- * opened until a question is actually asked.
- */
+/** Built per request; cheap, since the SDK clients open nothing until asked. */
 export function createLlmService(env: Env) {
   const log = createLogger(env);
   const keyStatus = {
@@ -321,14 +282,7 @@ const FALLBACKS = [
 
 // ---- Essay mode's own bank ----
 //
-// A dedicated mode that answers out of the advising bank is worse than no
-// mode: the advising bank has exactly one essay entry, so nine questions in
-// ten would get the same paragraph back. These are the questions students
-// actually open an essay assistant with.
-//
-// Every answer here is a prompt to think, not a draft — the same restraint the
-// live prompt is built around, held to in the offline path so the two modes
-// behave the same way with and without a key.
+// Each answer is a prompt to think, never a draft, matching the live prompt.
 
 const ESSAY_FALLBACKS = [
   {

@@ -8,24 +8,8 @@ import type { AuthUser } from "../types";
 const MIN_PASSWORD = 8;
 
 /**
- * `/reset?token=…` — choose a new password.
- *
- * WHY THE TOKEN IS IN THE QUERY STRING
- *
- * Because it arrived in an email, and a URL is the only thing an email can
- * hand back. It is a bearer credential in an address bar, which is not
- * wonderful — it lands in browser history, and it would ride along in a
- * Referer header on any outbound link — which is why the page is deliberately
- * bare: it links only to /signin and to the app's own pages, has no external
- * links at all, and the token is one-use and expires in an hour. Every
- * mainstream implementation of this flow makes the same trade for the same
- * reason.
- *
- * WHY IT SIGNS YOU IN INSTEAD OF SENDING YOU TO THE LOGIN FORM
- *
- * Whoever gets here has proved control of the mailbox *and* chosen a password,
- * which is strictly more than signing in asks for. Making them retype what
- * they typed ten seconds ago is friction with nothing to show for it.
+ * The token is a credential in the URL, so this page has no external links
+ * (they would leak it via Referer).
  */
 export default function ResetPassword({
   onSignedIn,
@@ -39,21 +23,9 @@ export default function ResetPassword({
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /**
-   * Whether a new link would fix the error on screen. Not after a 429: that is
-   * a limit — too many wrong codes on this account, or too many attempts from
-   * this network — and a new link belongs to the same account on the same
-   * network.
-   */
+  // Not after a 429: a new link doesn't lift a rate limit.
   const [offerNewLink, setOfferNewLink] = useState(true);
-  /**
-   * Set once the server says this account has a second factor.
-   *
-   * It cannot be known before submitting: the API will not reveal whether an
-   * account has 2FA until a valid reset token is presented, because that is a
-   * fact about someone else's account. So the form asks for a password first
-   * and then, if needed, for a code — which is also the friendlier order.
-   */
+  // Only known after submitting a valid token.
   const [needsCode, setNeedsCode] = useState(false);
   const [code, setCode] = useState("");
 

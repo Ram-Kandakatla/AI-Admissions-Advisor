@@ -1,25 +1,11 @@
-// Rule-based scholarship matcher — the money side of the recommendation engine.
+// Scholarship matching, parallel in shape to recommendationEngine.ts.
 //
-// Deliberately parallel to services/recommendationEngine.js: the same base
-// score, the same "hard requirement filters it out entirely" shape, the same
-// reach / target / safety vocabulary, so a student reading both pages is
-// reading one idea twice rather than two.
-//
-// Two things it does NOT do, on purpose:
-//
-//   1. It never claims a student meets a demographic or membership condition.
-//      Compass does not ask for race, gender, sexuality, tribal enrollment or
-//      club membership, and it is not going to start asking in order to sort a
-//      list. Awards carrying those conditions are shown with the condition
-//      stated as something for the student to confirm, and they are capped at
-//      "target" — the engine will never call an award a safety on the strength
-//      of a fact it does not have.
-//
-//   2. It never asserts a deadline date. Scholarship deadlines move every
-//      cycle, so the data carries the month a program typically closes plus the
-//      sponsor's own URL, and the client labels it as unconfirmed — the same
-//      rule models/application.js follows for college deadlines.
+// It never assumes a student meets a demographic or membership condition
+// (Compass doesn't ask): such awards state the condition for the student to
+// confirm and are capped at "target". It never asserts a deadline date either,
+// only the month an award usually closes.
 
+import { clamp, round } from "../math.js";
 import { loadScholarships } from "../store/staticData.js";
 import { currentCycleYear } from "../models/application.js";
 import type { Scholarship, StudentRecord, Tier, Tiered } from "../types.js";
@@ -74,13 +60,7 @@ export function recommendScholarships(
   return tiers;
 }
 
-/**
- * Score one scholarship against the student.
- * Returns null when the student is plainly ineligible — a stated GPA floor
- * they are under, a major restriction they don't meet, or a need-based award
- * when they've told us they have no financial need. Everything else is shown,
- * because a scholarship you don't apply for is a scholarship you don't win.
- */
+/** Null only when the student is plainly ineligible; everything else is shown. */
 export function evaluate(
   scholarship: Scholarship,
   student: StudentRecord,
@@ -110,10 +90,7 @@ export function evaluate(
   const reasons = [];
   let score = 50;
 
-  // Headroom over the stated academic floor. Distance above a bar is the
-  // scholarship equivalent of the university engine's GPA gap, inverted:
-  // there, above the average is comfort; here, above the minimum is merely
-  // eligibility, so the credit is smaller.
+  // Clearing a minimum is only eligibility, so it earns less than beating an average.
   const gpaHeadroom = scholarship.minGPA == null ? null : round(student.gpa - scholarship.minGPA, 2);
   if (gpaHeadroom == null) {
     score += 6;
@@ -152,9 +129,8 @@ export function evaluate(
   }
 
   // --- Odds ---
-  // Award count is the closest thing to an acceptance rate we have. It is a
-  // blunt proxy — a 500-award program with 90,000 applicants is not generous —
-  // so it moves the score, and the competitiveness field does the real tiering.
+  // Award count is a blunt proxy, so it only nudges the score; tiering uses
+  // the competitiveness field.
   const awards = scholarship.awardsPerYear ?? 0;
   if (scholarship.competitiveness === "entitlement") {
     score += 20;
@@ -170,9 +146,6 @@ export function evaluate(
   }
 
   // --- Effort ---
-  // Effort is not a negative: it's a filter that thins the applicant pool. But
-  // a short application is worth flagging, because it's the one a student with
-  // four supplements left can actually finish this week.
   if (scholarship.effort === "short") {
     score += 8;
     reasons.push("Short application — no long essay to write.");
@@ -200,9 +173,7 @@ export function evaluate(
   }
 
   // --- Conditions we cannot check ---
-  // "low-income" is the one audience tag the profile does answer — the student
-  // told us their financial need, and the hard gate above already acted on it.
-  // Repeating it here would ask them to confirm something they just typed in.
+  // Except "low-income", which the profile's financial need already answers.
   const eligibilityToConfirm = (scholarship.audience || [])
     .filter((key: string) => !VERIFIED_BY_PROFILE.has(key))
     .map(audienceLabel);
@@ -228,12 +199,8 @@ export function evaluate(
 }
 
 /**
- * Reach / target / safety.
- *
- * "Safety" here does not mean easy — it means an award where, on the facts we
- * actually hold, there is no reason you wouldn't be competitive. Anything
- * gated on a condition we can't verify stops at target no matter how broad it
- * is, and the elite national programs are a reach for everyone, by design.
+ * "Safety" means nothing we know argues against you. An unverifiable condition
+ * caps an award at target; elite programs are a reach for everyone.
  */
 export function classifyTier(
   scholarship: Pick<Scholarship, "competitiveness">,
@@ -255,9 +222,7 @@ export function classifyTier(
 
 // --- Deadlines ---
 //
-// A month, a year, and the sponsor's own words about it — never a date this
-// app invented. Months from August on belong to the autumn the cycle opens;
-// January through July fall in the calendar year after it.
+// August to December fall in the cycle year; January to July in the next.
 export function deadlineWindow(
   scholarship: Pick<Scholarship, "deadlineMonth" | "deadlineNote">,
   cycleYear: number
@@ -338,13 +303,4 @@ function joinList(items: string[]): string {
 
 function formatCount(n: number): string {
   return n >= 1000 ? `${Math.round(n / 1000)},000` : String(n);
-}
-
-function round(n: number, places: number): number {
-  const f = 10 ** places;
-  return Math.round(n * f) / f;
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, n));
 }

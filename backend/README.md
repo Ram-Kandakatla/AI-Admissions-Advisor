@@ -36,17 +36,21 @@ route 500s on a missing table.
 
 ```
 src/
-  index.ts          Worker entry — three lines, so Phase 7 can add a Pages
-                    Functions entry beside it without moving any routes
-  app.ts            the Hono app: middleware stack + every route
+  index.ts          Worker entry, shared by both wrangler configs
+  app.ts            the Hono app: middleware stack + every non-auth route
+  routes/auth.ts    signup, login, password reset, 2FA, account deletion
+  auth/             password hashing, TOTP, the wrong-code limit
   http.ts           JSON body reader (413 / 400 handling)
+  crypto.ts         hex, SHA-256, constant-time compare
+  math.ts           round, clamp
+  log.ts            structured JSON logging
   types.ts          bindings, domain types, Hono's context types
   models/           validation and normalization — pure, no I/O
-  services/         recommendation, scholarship, major-insight engines; the LLM client
+  services/         recommendation, scholarship, major-insight engines; LLM and email clients
   store/
     dataStore.ts    createStore(db) — the async D1 factory
     staticData.ts   universities/scholarships, imported not read (no filesystem)
-  middleware/       rate limiting, body cap
+  middleware/       sessions, rate limiting, CSRF guard, body cap, request log
 migrations/         D1 schema, applied by wrangler and by the test setup
 test/               Vitest suites, run inside workerd against a real D1
 ```
@@ -78,6 +82,15 @@ first student who asks a question.
 | POST | `/api/auth/login` | Start a session |
 | POST | `/api/auth/logout` | Revoke the session |
 | GET | `/api/auth/me` | Current user + their student id |
+| POST | `/api/auth/forgot` | Email a reset link — the same 202 for every address |
+| POST | `/api/auth/reset` | Set a new password from the link (`code` too if 2FA is on); signs in |
+| DELETE | `/api/auth/account` | Erase the account (`{ confirm: "DELETE", password? }`) |
+| GET | `/api/auth/2fa` | Whether 2FA is on, and recovery codes left |
+| POST | `/api/auth/2fa/setup` | Stage a TOTP secret (password, plus a code if 2FA is already on) |
+| POST | `/api/auth/2fa/enable` | Confirm with a code; returns recovery codes once |
+| POST | `/api/auth/2fa/disable` | Turn 2FA off (password + code) |
+| POST | `/api/auth/2fa/recovery-codes` | Replace the recovery codes (password + code) |
+| POST | `/api/auth/2fa/verify` | Finish a login that stopped at the second factor |
 | GET | `/api/health` | Service + LLM + D1 status |
 | GET | `/api/meta` | Majors / regions / need levels for form dropdowns |
 | GET | `/api/universities` | All universities. Filters: `region`, `major`, `maxTuition`, `search` |
@@ -96,8 +109,12 @@ first student who asks a question.
 | POST | `/api/students/:id/applications` | Track a university |
 | PATCH | `/api/students/:id/applications/:appId` | Update one application |
 | DELETE | `/api/students/:id/applications/:appId` | Stop tracking |
-| POST | `/api/chat` | Ask the chatbot (`{ studentId?, question }`) — rate limited, 30/15min per account (per IP for guests) |
-| GET | `/api/students/:id/chat` | Conversation history |
+| POST | `/api/chat` | Ask the chatbot (`{ studentId?, question, mode? }`) — rate limited, 30/15min per account (per IP for guests) |
+| GET | `/api/students/:id/chat` | One thread's history (`?mode=advising\|essay`) |
+| GET | `/api/students/:id/share` | The student's share link, if any |
+| POST | `/api/students/:id/share` | Create it, or `{ rotate: true }` to replace it |
+| DELETE | `/api/students/:id/share` | Revoke it |
+| GET | `/api/shared/:token` | The read-only shared plan — no session; the token is the credential |
 
 > **Every `/api/students/:id` route is behind an ownership check** (Phase 2).
 > The session cookie names an account; the account owns at most one profile;

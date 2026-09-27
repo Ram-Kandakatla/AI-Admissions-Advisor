@@ -3,6 +3,7 @@ import { api } from "../api";
 import { isSettled } from "../applicationStatus";
 import { countdown, dayMonth, parseLocalDate, urgencyOf } from "../dates";
 import type { SharedPlan, Tier } from "../types";
+import { TIER_LABEL, TIER_ORDER } from "../tiers";
 
 // The plan as a parent or counselor sees it.
 //
@@ -16,12 +17,6 @@ import type { SharedPlan, Tier } from "../types";
 // with an `interactive={false}` prop would mean every future edit to those
 // pages has to remember which half of itself is public. A separate, simpler
 // component cannot grow a control by accident.
-
-const TIER_LABEL: Record<Tier, string> = {
-  reach: "Reach",
-  target: "Target",
-  safety: "Safety",
-};
 
 const STATUS_LABEL: Record<string, string> = {
   planning: "Planning",
@@ -186,7 +181,7 @@ export default function SharedPlanView({ token }: { token: string }) {
       {/* ---- Matches ---- */}
       <section className="shared-section">
         <h2 className="sec-hd">The list Compass suggested</h2>
-        {(["reach", "target", "safety"] as Tier[]).map((tier) => {
+        {TIER_ORDER.map((tier) => {
           const rows = plan.recommendations[tier];
           if (rows.length === 0) return null;
           // The reader cannot click through to the rest, so the count has to

@@ -3,35 +3,12 @@ import { api, ApiError } from "../api";
 import type { TwoFactorStatus } from "../types";
 
 /**
- * The two-factor section of /account: switch it on, switch it off, print new
- * recovery codes.
- *
- * WHY ENROLLMENT IS THREE STEPS AND NOT ONE
- *
- *   password → secret shown → code confirms it
- *
- * The middle step exists because the secret has to get into an app before any
- * code can be produced, and the last one exists because the single likeliest
- * way to break this feature is to switch 2FA on for someone whose app is not
- * actually working. Nothing is enabled server-side until a real code comes
- * back, so a mistyped setup key costs a retry rather than an account.
- *
- * WHY THERE IS NO QR CODE
- *
- * The project's zero-new-dependencies rule, and a QR encoder is ~350 lines of
- * Reed-Solomon to write by hand. What replaces it is the pair of things a QR
- * code would have produced anyway: on a phone, the otpauth:// link is tappable
- * and opens the authenticator directly, which is *fewer* steps than scanning;
- * on a desktop, the setup key is shown in groups of four to be typed or pasted
- * into a password manager. Every authenticator app supports manual entry.
+ * Enrollment is password → secret → confirming code, so 2FA never turns on for
+ * an app that isn't producing codes. No QR code (no dependency): the otpauth
+ * link is tappable on a phone, and the key can be typed on a desktop.
  */
 export default function TwoFactorPanel({ onChanged }: { onChanged: () => void }) {
-  /**
-   * `null` until the server answers, and again if asking fails — and neither
-   * means "off". Only an answer saying it is off gets the offer to turn it on:
-   * offering it on a guess is how an account that already had 2FA could be
-   * sent into setup.
-   */
+  // null means unknown, never "off"; only a confirmed "off" offers setup.
   const [status, setStatus] = useState<TwoFactorStatus | null>(null);
   const [statusFailed, setStatusFailed] = useState(false);
   const [stage, setStage] = useState<"idle" | "password" | "confirm" | "codes" | "off">("idle");
@@ -43,11 +20,7 @@ export default function TwoFactorPanel({ onChanged }: { onChanged: () => void })
   const [error, setError] = useState<string | null>(null);
   /** Shown on the summary when a step ended without changing anything. */
   const [notice, setNotice] = useState<string | null>(null);
-  /**
-   * Whether the password step is on its way to a fresh batch of codes rather
-   * than to enrollment. Both need the same two proofs, so they share the form
-   * and differ only in what happens on submit.
-   */
+  // The password form is shared by enrollment and code regeneration.
   const [regenerating, setRegenerating] = useState(false);
 
   const loadStatus = async () => {
@@ -262,12 +235,8 @@ export default function TwoFactorPanel({ onChanged }: { onChanged: () => void })
                   setSecret(await api.startTwoFactor(password));
                 } catch (err) {
                   if (!(err instanceof ApiError && err.status === 409)) throw err;
-                  // Already on: it was switched on somewhere else after this
-                  // page loaded. The server changed nothing, and setting it up
-                  // again would need a code this form doesn't ask for — so
-                  // back to a summary that has caught up. The stale answer is
-                  // dropped first, or "Off." and its button would sit under
-                  // this notice until the new one arrived.
+                  // Enabled elsewhere since this page loaded. Drop the stale
+                  // status first so "Off." doesn't linger under the notice.
                   reset();
                   setNotice(
                     "Two-factor authentication was already on — it was switched on after this page loaded — so nothing was changed."

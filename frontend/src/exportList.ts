@@ -1,11 +1,5 @@
-// Turning a college list into something a student can keep.
-//
-// Both exports run entirely in the browser. The recommendations response
-// already holds every field worth exporting, so a round trip to the server
-// would only add a way for the download to fail. CSV is assembled here and
-// handed over as a Blob; "Save as PDF" is the browser's own print dialog
-// driven by the @media print block in global.css, which is what keeps the
-// printed page in the app's type and color rather than a library's.
+// Client-side exports. CSV is built here; "Save as PDF" is window.print()
+// styled by the @media print block in global.css.
 
 import type {
   Recommendation,
@@ -14,16 +8,8 @@ import type {
   ScholarshipResponse,
   SchoolNote,
   StudentRecord,
-  Tier,
 } from "./types";
-
-const TIER_ORDER: Tier[] = ["reach", "target", "safety"];
-
-const TIER_LABEL: Record<Tier, string> = {
-  reach: "Reach",
-  target: "Target",
-  safety: "Safety",
-};
+import { TIER_LABEL, TIER_ORDER } from "./tiers";
 
 const HEADERS = [
   "Tier",
@@ -72,13 +58,8 @@ function row(uni: Recommendation): (string | number)[] {
 }
 
 /**
- * Escape one value for RFC 4180.
- *
- * Strings also get a leading apostrophe when they start with a character a
- * spreadsheet would read as the start of a formula. A college list is a file
- * students mail around, and `=`-prefixed text in a shared sheet is the one
- * way a plain data export can misbehave. Numbers skip the guard so figures
- * stay sortable.
+ * RFC 4180, plus a leading apostrophe on strings a spreadsheet would run as a
+ * formula (CSV injection). Numbers skip it so they stay sortable.
  */
 function cell(value: string | number): string {
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
@@ -86,14 +67,7 @@ function cell(value: string | number): string {
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
-/**
- * A note naming what the API trimmed, or "" when it trimmed nothing.
- *
- * The API sends the strongest few per tier and the true totals separately, and
- * the page says so on screen. A spreadsheet has nowhere to put that, so without
- * this the file reads as the complete match list — the same reasoning that puts
- * "(est)" inside the GPA value rather than in a tooltip.
- */
+/** Says what the API's per-tier cap left out, so the file doesn't pass as complete. */
 function truncationNote(data: RecommendationResponse): string {
   const trimmed = TIER_ORDER.filter(
     (tier) => data.recommendations[tier].length < data.counts[tier]
@@ -122,10 +96,6 @@ export function recommendationsToCsv(data: RecommendationResponse): string {
 }
 
 // ---- Scholarships ----
-//
-// A separate sheet rather than more columns on the college one: the two lists
-// are worked at different times, and a student pasting deadlines into a
-// spreadsheet wants the awards on their own tab.
 
 const SCHOLARSHIP_HEADERS = [
   "Tier",
@@ -222,14 +192,7 @@ export function notesToCsv(rows: SchoolNote[]): string {
   return lines.join("\r\n");
 }
 
-/**
- * "Ada Lovelace" → "ada-lovelace"; empty or punctuation-only names fall back.
- *
- * Exported since Phase 6 so calendar.ts names its .ics the same way — every
- * file Compass hands over should look like it came from the same app. Not to
- * be confused with slugifyMajor() in slug.ts, which builds URL segments; this
- * one only ever builds filenames.
- */
+/** For filenames (shared with calendar.ts); slugifyMajor is for URLs. */
 export function filenameSlug(name: string): string {
   const s = name
     .toLowerCase()
@@ -256,14 +219,6 @@ export function savedCsvFilename(student: StudentRecord, now = new Date()): stri
   return `compass-saved-schools-${filenameSlug(student.name)}-${filenameStamp(now)}.csv`;
 }
 
-/**
- * Hand a generated file to the browser's download machinery.
- *
- * Split out of downloadCsv in Phase 6 so the .ics export shares one
- * implementation of this rather than growing a second one that forgets the
- * Safari note below. The BOM stays in downloadCsv, where it belongs — it is
- * an Excel workaround, not a property of downloading a file.
- */
 export function downloadFile(filename: string, content: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -279,12 +234,7 @@ export function downloadFile(filename: string, content: string, mimeType: string
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/**
- * Download a CSV.
- *
- * The BOM is there for Excel, which otherwise reads a UTF-8 CSV as the local
- * codepage and mangles any school name with an accent in it.
- */
+/** The BOM stops Excel reading UTF-8 as the local codepage and mangling accents. */
 export function downloadCsv(filename: string, csv: string): void {
   downloadFile(filename, `﻿${csv}`, "text/csv;charset=utf-8");
 }

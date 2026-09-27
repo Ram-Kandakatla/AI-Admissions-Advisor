@@ -23,14 +23,7 @@ import type {
   VerifySignupResult,
 } from "./types";
 
-/**
- * A failed API call: the server's message, and the status it came with.
- *
- * Still an Error, so every caller that only shows the message is unchanged.
- * The status is for the few that act on the kind of failure — ResetPassword
- * stops offering a new link after a 429, because a limit is not something a
- * new link lifts.
- */
+/** Carries the HTTP status for the few callers that branch on it. */
 export class ApiError extends Error {
   readonly status: number;
 
@@ -41,21 +34,14 @@ export class ApiError extends Error {
   }
 }
 
-// Every path here is origin-relative, which is what let this file survive
-// Phase 7 unchanged. In local development the Vite proxy forwards /api to the
-// backend Worker on :8787; deployed, Compass is one Cloudflare Pages origin
-// and /api resolves straight to the Function. Same strings either way.
+// Origin-relative paths: the Vite proxy serves /api locally, and the deployed
+// Worker serves the frontend and API on one origin.
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     headers: { "Content-Type": "application/json" },
-    // Every route that touches a profile is behind a session cookie.
-    // "include" rather than the default "same-origin". Phase 7 chose Option A,
-    // one origin, so "same-origin" would now be enough — this is kept because
-    // it is also correct under Option A and would be the thing forgotten if the
-    // API were ever split onto its own origin. (That split would additionally
-    // need SameSite=None on the cookie; the CORS middleware already sends
-    // credentials:true.)
+    // "include" still works if the API ever moves to its own origin (which
+    // would also need SameSite=None on the cookie).
     credentials: "include",
     ...options,
   });
@@ -81,12 +67,8 @@ export const api = {
   me: () => request<AuthState>("/auth/me"),
 
   /**
-   * Start creating an account.
-   *
-   * Resolves the same way for every well-formed address and signs nobody in:
-   * the account is created later, from the emailed link. Whether the address
-   * already had an account is exactly what the server refuses to say, and a
-   * caller must not try to infer it — the same rule as forgotPassword below.
+   * Identical for every address and signs nobody in; the emailed link creates
+   * the account. Never infer from it whether an account exists.
    */
   signup: (email: string, password: string) =>
     request<{ message: string }>("/auth/signup", {
@@ -94,13 +76,7 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
 
-  /**
-   * Redeem a signup link.
-   *
-   * Called first with no password. In the browser that signed up, that
-   * finishes it; anywhere else the answer is `passwordRequired`, and the page
-   * asks for the password chosen at signup and calls again.
-   */
+  /** Call without a password first; retry with it on `passwordRequired`. */
   verifySignup: (token: string, password?: string) =>
     request<VerifySignupResult>("/auth/verify", {
       method: "POST",
@@ -121,12 +97,8 @@ export const api = {
   twoFactorStatus: () => request<TwoFactorStatus>("/auth/2fa"),
 
   /**
-   * Stage a secret. Nothing is switched on until a code confirms it, which is
-   * what stops a mistyped setup key from locking someone out.
-   *
-   * A 409 means two-factor is already on. Setting it up again then takes a
-   * current code as well, which this never sends: the account page's way to a
-   * new phone is turning it off and on again.
+   * 409 means 2FA is already on. This never sends a code; the UI's path to a
+   * new phone is turning 2FA off and on again.
    */
   startTwoFactor: (password: string) =>
     request<{ secret: string; otpauthUri: string }>("/auth/2fa/setup", {
@@ -160,30 +132,14 @@ export const api = {
       body: JSON.stringify({ challenge, code }),
     }),
 
-  /**
-   * Ask for a reset link.
-   *
-   * Always resolves for any well-formed address, because the server always
-   * answers 202 — telling the caller whether an account exists would turn this
-   * into a way to test a list of addresses for membership. The client must not
-   * reintroduce that distinction by, say, showing a different message when the
-   * response is slow.
-   */
+  /** Always resolves the same way; the UI must not reveal whether an account exists. */
   forgotPassword: (email: string) =>
     request<{ message: string }>("/auth/forgot", {
       method: "POST",
       body: JSON.stringify({ email }),
     }),
 
-  /**
-   * Spend a reset token. On success the caller is signed in.
-   *
-   * `mfaRequired` comes back instead of a user when the account has a second
-   * factor: a reset deliberately does not bypass it here, so the link alone is
-   * not enough. The client cannot know in advance — the server will not say
-   * whether an account has 2FA until a valid token is presented, since that
-   * would be a fact about someone else's account.
-   */
+  /** Signs in on success. `mfaRequired` means call again with a code. */
   resetPassword: (token: string, password: string, code?: string) =>
     request<
       | { mfaRequired: true }
@@ -193,16 +149,7 @@ export const api = {
       body: JSON.stringify({ token, password, ...(code ? { code } : {}) }),
     }),
 
-  /**
-   * Erase the account and everything attached to it. There is no undo.
-   *
-   * `password` is required for a signed-in account and meaningless for a
-   * guest, which has none — the caller decides which it is from `user.guest`
-   * rather than this function guessing. The confirm phrase is sent by this
-   * client rather than surfaced as a parameter: it exists to stop a stray or
-   * mis-wired request reaching the one endpoint that destroys data, and a
-   * caller who could get it wrong is exactly who it is guarding against.
-   */
+  /** `password` is required for members and omitted for guests. */
   deleteAccount: (password?: string) =>
     request<{ deleted: true; hadProfile: boolean }>("/auth/account", {
       method: "DELETE",
@@ -226,20 +173,13 @@ export const api = {
       body: JSON.stringify(profile),
     }),
 
-  // An account holds one profile, so editing is a PUT to the existing row.
-  // Before Phase 2 the form re-POSTed every time and left the old row orphaned
-  // — invisible then, because nothing owned rows at all.
   updateStudent: (studentId: string, profile: ProfileInput) =>
     request<StudentRecord>(`/students/${studentId}`, {
       method: "PUT",
       body: JSON.stringify(profile),
     }),
 
-  /**
-   * `full` opts out of the API's per-tier cap. Only Compare needs it: it looks
-   * schools up by id, so a capped payload makes everything below the cut read
-   * as "not in your matches". List pages want the cap.
-   */
+  /** `full` skips the per-tier cap; only Compare needs it. */
   recommendations: (studentId: string, opts?: { full?: boolean }) =>
     request<RecommendationResponse>(
       `/students/${studentId}/recommendations${opts?.full ? "?full=1" : ""}`
@@ -250,8 +190,7 @@ export const api = {
 
   notes: (studentId: string) => request<NotesResponse>(`/students/${studentId}/notes`),
 
-  // Every field is optional and only what's sent is changed — starring a
-  // school from a card must not wipe the note or the contact recorded on it.
+  // Partial update: only the fields sent are changed.
   saveNote: (
     studentId: string,
     universityId: number,
@@ -271,9 +210,6 @@ export const api = {
   forgetNote: (studentId: string, universityId: number) =>
     request<void>(`/students/${studentId}/notes/${universityId}`, { method: "DELETE" }),
 
-  // `mode` picks the assistant: the admissions advisor or the essay
-  // brainstorm partner. Omitted means advising, which is what the server
-  // defaults to — the two threads are stored separately.
   chat: (question: string, studentId?: string, mode: ChatMode = "advising") =>
     request<{ answer: string; source: LlmProvider; mode: ChatMode }>("/chat", {
       method: "POST",
@@ -296,8 +232,7 @@ export const api = {
 
   // ---- Sharing ----
   //
-  // The first three are owner-only. The fourth takes a token instead of a
-  // session and is the only call in this file that works signed out.
+  // `sharedPlan` takes a token, not a session, and works signed out.
 
   shareLink: (studentId: string) =>
     request<{ link: ShareLink | null }>(`/students/${studentId}/share`),

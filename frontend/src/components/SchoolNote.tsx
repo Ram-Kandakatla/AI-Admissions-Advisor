@@ -1,9 +1,4 @@
-// The star and the notepad, as they appear on every card in the app.
-//
-// Deliberately one component rather than a variant per page: the note on a
-// match card, an explorer row, a comparison column and a tracked application
-// are the same note, and looking different in each place would suggest
-// otherwise. The only thing that varies is whether the textarea starts open.
+// The star and notepad, one component everywhere since it's the same note.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { daysUntil, monthYear, parseLocalDate } from "../dates";
@@ -16,14 +11,7 @@ function todayIso(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/**
- * How long since the last contact, if it is long enough to mention.
- *
- * Null under 30 days on purpose. This line exists to catch a school that has
- * gone quiet, not to comment on every contact a student records — and a
- * reminder that appears the day after you email someone is a reminder people
- * learn to ignore.
- */
+/** Null under 30 days: it flags schools gone quiet, not every recent contact. */
 function stalenessOf(iso: string): { level: "warm" | "cold"; text: string } | null {
   if (!iso) return null;
   const days = -daysUntil(iso);
@@ -35,17 +23,7 @@ function stalenessOf(iso: string): { level: "warm" | "cold"; text: string } | nu
     : { level: "warm", text: `Last contact was ${since}.` };
 }
 
-/**
- * A one-line "here's where the notepad is" line for the top of a page.
- *
- * The star and the note toggle are small controls that nobody goes looking
- * for, and each page puts them somewhere slightly different — a column here, a
- * row at the foot of a table there — so the wording is per page.
- *
- * It retires itself as soon as the student has starred or written anything.
- * A hint that outlives the moment it was useful is just a banner, and this one
- * sits above the content the student actually came for.
- */
+/** Per-page wording; hides itself once the student has starred or written anything. */
 export function NoteHint({
   notes,
   children,
@@ -115,14 +93,8 @@ export default function SchoolNote({
   const [open, setOpen] = useState(alwaysOpen || saved !== "" || contactName !== "" || contactLastAt !== "");
   const box = useRef<HTMLTextAreaElement>(null);
 
-  // Whether a save has completed since this note was opened.
-  //
-  // The status line below is a live region, so it is the only thing telling a
-  // screen reader user what happened to what they just typed. It used to
-  // announce "Saving…" and then fall silent, on the reasoning that silence
-  // means saved — which works when you can see the word disappear, and is
-  // indistinguishable from a failed save when you cannot. Now the end of a
-  // save is announced too.
+  // Lets the live region announce "Saved": silence after "Saving…" is
+  // indistinguishable from a failure for a screen reader user.
   const [justSaved, setJustSaved] = useState(false);
   const wasSaving = useRef(notes.saving);
   useEffect(() => {

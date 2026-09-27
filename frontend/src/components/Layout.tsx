@@ -18,11 +18,7 @@ type NavEntry =
   | { kind: "link"; item: NavItem }
   | { kind: "group"; id: string; label: string; items: NavItem[] };
 
-// Eleven destinations is too many for one flat row, so the two that form a
-// natural pair of jobs — building the list versus working it — collapse into
-// menus. Home, Profile, and Ask stay at the top level: they're the entry, the
-// prerequisite, and the escape hatch, and burying any of them would cost more
-// than the row width it saves.
+// Plan and Research collapse into menus; Home, Profile and Ask stay top level.
 const NAV: NavEntry[] = [
   { kind: "link", item: { to: "/", label: "Home" } },
   { kind: "link", item: { to: "/profile", label: "Your Profile" } },
@@ -52,12 +48,7 @@ const NAV: NavEntry[] = [
   { kind: "link", item: { to: "/chat", label: "Ask Compass" } },
 ];
 
-/**
- * Below this width the nav is a full-height panel with room to spare, so the
- * groups drop their dropdowns and render as labelled sections — no nested
- * menu to tap through on a phone. Keep in sync with the matching breakpoint
- * in global.css.
- */
+/** Below this, menus render as flat sections. Keep in sync with global.css. */
 const COMPACT_NAV = "(max-width: 980px)";
 
 function useCompactNav(): boolean {
@@ -72,29 +63,13 @@ function useCompactNav(): boolean {
   return compact;
 }
 
-/**
- * Does `pathname` sit at or under `to`?
- *
- * `NavLink` answers this for itself, but a collapsed group has to answer it
- * for its children — the closed "Research" button stays highlighted while
- * you're on /majors/computer-science, which is the only way to see where you
- * are once the menu is shut. The prefix has to end at a segment boundary or
- * "/majors" would light up on a hypothetical "/majors-archive".
- */
+/** For highlighting a closed menu; matches whole path segments only. */
 function isUnder(pathname: string, to: string): boolean {
   if (to === "/") return pathname === "/";
   return pathname === to || pathname.startsWith(`${to}/`);
 }
 
-/**
- * The app chrome: header, nav, the two banners, and the footer. Every route
- * renders into the `<Outlet />` in the middle.
- *
- * Split out of App.tsx when the router landed. App owns the state the pages
- * share; this owns the furniture around them, including the two bits of
- * state — which mobile panel is open, which dropdown is open — that no page
- * has any business seeing.
- */
+/** Header, nav, banners and footer around the routed page. */
 export default function Layout({
   theme,
   onToggleTheme,
@@ -141,19 +116,12 @@ export default function Layout({
     };
   }, [openGroup]);
 
-  // Name the tab. Same reason the scroll reset lives here rather than in a
-  // navigation helper: keying it on the location covers the back button and a
-  // typed URL too, and there is exactly one place to look when a title is
-  // wrong.
+  // Keyed on location so back/forward and typed URLs are covered too.
   useEffect(() => {
     document.title = titleFor(pathname, search);
   }, [pathname, search]);
 
-  // Arriving somewhere new closes whatever menu got you there and puts you at
-  // the top of the page. Before the router this rode along inside a `go()`
-  // helper that every caller had to remember to use; keying it on the location
-  // instead means it also covers the back button, a typed URL, and the
-  // in-page links that don't go through the nav at all.
+  // On navigation, close menus and scroll to the top.
   useEffect(() => {
     setMenuOpen(false);
     setOpenGroup(null);
@@ -245,10 +213,7 @@ export default function Layout({
                     className="nav-link nav-group-btn"
                     aria-haspopup="true"
                     aria-expanded={openGroup === entry.id}
-                    // Not aria-current: this button is not the current page,
-                    // it's the branch containing it. The highlight is styling,
-                    // so it travels on a data attribute and leaves aria-current
-                    // meaning exactly one thing on this page.
+                    // Not aria-current: the button contains the page, it isn't the page.
                     data-current={active}
                     onClick={() => setOpenGroup((g) => (g === entry.id ? null : entry.id))}
                   >
@@ -408,15 +373,7 @@ export default function Layout({
   );
 }
 
-/**
- * Shown while a route's chunk downloads.
- *
- * The same spinner every page in the app uses for its own data fetch, so a
- * lazy page that then loads data reads as one continuous wait rather than two
- * different ones. The delay is in CSS (see `.spinner-delayed`): on a warm
- * cache a chunk arrives in a few dozen milliseconds, and a spinner that
- * appears and disappears inside that reads as a flicker, not as progress.
- */
+/** Delayed in CSS (`.spinner-delayed`) so a fast chunk load doesn't flicker. */
 function PageLoading() {
   return <div className="spinner spinner-delayed" role="status" aria-label="Loading" />;
 }

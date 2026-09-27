@@ -1,14 +1,9 @@
-// Application tracker shape + validation/normalization helpers.
+// Application tracker validation.
 //
-// IMPORTANT — on deadlines:
-// data/universities.json carries no per-school deadline dates, and we
-// deliberately do not invent them. Publishing a made-up date for a real
-// university in a tool students plan around is the one failure mode that
-// actually costs someone an application. Instead we seed each application
-// with the *convention* for its decision plan (ED/EA land on Nov 1, RD on
-// Jan 1, and so on) flagged `deadlineIsTypical: true`. The UI labels those
-// as unconfirmed until the student replaces them with the real date off the
-// school's admissions page, which flips the flag to false.
+// Never invent a school's deadline: a wrong date can cost someone an
+// application. Applications start with their plan's convention (ED/EA Nov 1,
+// RD Jan 1, ...) marked `deadlineIsTypical`, which the UI labels as
+// unconfirmed until the student enters the real date.
 
 import type { ApplicationInput, Checklist } from "../types.js";
 

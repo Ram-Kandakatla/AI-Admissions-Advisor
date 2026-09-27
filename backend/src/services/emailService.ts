@@ -1,42 +1,16 @@
-// Sending mail from a Worker.
+// Email via Resend's HTTP API; a Worker has no raw sockets, so SMTP cannot run.
+// With no key, sends report failure rather than pretending to deliver.
 //
-// WHY AN HTTP API AND NOT SMTP
-//
-// A Worker cannot open a TCP socket to port 25/587 — the runtime has no raw
-// sockets for this — so every SMTP library is not merely slower here, it does
-// not run. Transactional mail from Workers is an HTTPS call to a provider, and
-// the only question is which one. (MailChannels used to relay from Workers for
-// free with no account at all, which is what most older Cloudflare tutorials
-// still describe; that offering ended in 2024.)
-//
-// WHY THIS MIRRORS llmService.ts
-//
-// Same shape on purpose: a `createEmailService(env)` factory, the key checked
-// once at construction rather than at each call, and a defined degraded mode
-// when there is no key. That pattern already earns its keep for the LLM — the
-// app runs with no ANTHROPIC_API_KEY — and it earns it twice here, because it
-// means a developer can exercise the emailed flows locally without signing up
-// for anything (see DEV_LOG_EMAIL_LINKS in types.ts).
-//
-// WHAT DEGRADED MODE MEANS HERE, AND WHY IT IS NOT THE LLM'S
-//
-// The chatbot's fallback answers the question worse. There is no worse-but-
-// still-useful way to deliver an email, so this one reports that it could not
-// send, and the route decides what to tell the user. It never pretends.
-//
-// WHAT AN EMAIL HERE MAY SAY
-//
-// Every message is written to be safe in the wrong inbox, because two of the
-// three are sent to whatever address somebody typed. None names the student,
-// the plan, or anything in the account, and none carries a link that does more
-// than its one job.
+// Every message must be safe in the wrong inbox, since most go to an address
+// somebody typed: nothing about the student or account, and no link that does
+// more than its one job.
 
 import { createLogger, errorFields } from "../log.js";
 import type { Env } from "../types.js";
 
 export type EmailProvider = "resend" | "unconfigured";
 
-/** Which message a send was. Logged on failure, where the address may not be. */
+/** Logged on failure in place of the address. */
 export type EmailKind = "password-reset" | "signup-confirmation" | "signup-notice";
 
 export interface SendResult {

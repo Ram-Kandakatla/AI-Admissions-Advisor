@@ -1,18 +1,9 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 /**
- * Did this error come from a route chunk that is no longer on the server?
- *
- * Code-splitting bought a smaller first load and, with it, one new way to
- * fail: a tab left open across a deploy holds an index.js that names chunks by
- * a content hash the server no longer has, so the next navigation asks for a
- * file that 404s. Nothing is wrong with the app or with the tab's data — the
- * page is simply out of date, and a reload fixes it completely.
- *
- * The three strings are the same failure in the three engines. None of them is
- * a stable API, so the check is deliberately loose: matching too eagerly costs
- * a wrong-but-harmless offer to reload, while matching too narrowly leaves
- * someone staring at "something broke" when one button would have fixed it.
+ * A tab open across a deploy requests route chunks that no longer exist; a
+ * reload fixes it. Matched loosely across the three engines' messages, since a
+ * false positive only offers an unneeded reload.
  */
 function isStaleChunkError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -25,12 +16,7 @@ function isStaleChunkError(error: unknown): boolean {
 
 interface Props {
   children: ReactNode;
-  /**
-   * Changing this clears a caught error. Layout passes the pathname, so
-   * navigating away from a page that threw gets you a working app again —
-   * without it the boundary stays broken until a full reload, and every link
-   * in the nav would look dead.
-   */
+  /** Changing this clears the error; Layout passes the pathname so navigation recovers. */
   resetKey?: string;
 }
 
@@ -40,18 +26,8 @@ interface State {
 }
 
 /**
- * Catches a render error under it and shows something designed instead of
- * unmounting the tree to a blank page.
- *
- * A class, because `componentDidCatch` has no hook equivalent — this is the
- * one thing React still has no function-component API for.
- *
- * Used twice, deliberately: once inside Layout around the routed page, where
- * catching an error leaves the header, nav and footer on screen so the app is
- * still navigable; and once around the whole app in main.tsx, for the case the
- * inner one cannot catch — Layout itself throwing. The inner boundary is the
- * one that will fire in practice; the outer one exists so that "in practice"
- * is not load-bearing.
+ * Used twice: inside Layout, so the nav survives a page crash, and around the
+ * whole app in main.tsx for a crash in Layout itself.
  */
 export default class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
@@ -69,11 +45,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // The only console call in the frontend that is not a mistake. There is no
-    // error tracker here yet on purpose — PHASE-4.md defers Sentry until this
-    // app has users who are not the person who wrote it — so the browser
-    // console is the whole of the reporting story, and it should at least
-    // carry the component stack that says *where*.
+    // No error tracker yet, so the console is the only report.
     console.error("Unhandled error in a component", error, info.componentStack);
   }
 
@@ -88,20 +60,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 }
 
-/**
- * The designed error state.
- *
- * Not a red wall: an error the student did not cause and cannot fix does not
- * need to look like an alarm. It is the same card every other surface in the
- * app uses, and the red is confined to the mark — enough to say "this is not
- * a normal page", not enough to say "you have done something wrong".
- *
- * The one thing it goes out of its way to say is that their work is safe,
- * because that is the actual question. Since Phase 2 the profile, notes, and
- * tracker live in D1 behind a session cookie, so a page that crashed took
- * nothing with it — and saying so is only fair given the app spends the rest
- * of its copy telling guests their list is fragile.
- */
+/** Says their work is safe (it lives on the server), since that's what people worry about. */
 function CrashState({ error, onRetry }: { error: Error; onRetry: () => void }) {
   const stale = isStaleChunkError(error);
 
@@ -156,13 +115,7 @@ function CrashState({ error, onRetry }: { error: Error; onRetry: () => void }) {
   );
 }
 
-/**
- * The brand mark with its needle knocked loose.
- *
- * The app's own compass rose, drawn once here with the north needle swung off
- * true and greyed. It says what happened in the app's own vocabulary, which a
- * generic warning triangle could not.
- */
+/** The brand mark with its needle knocked off true. */
 function LostBearing() {
   return (
     <svg className="crash-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
