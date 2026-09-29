@@ -8,7 +8,6 @@
 import { env } from "cloudflare:test";
 import { body, newStudent, post, signUp } from "./helpers.js";
 import { totpCode, timeStep } from "../src/auth/totp.js";
-import { hashResetToken } from "../src/auth/password.js";
 
 export const PASSWORD = "correct horse battery";
 
@@ -38,20 +37,4 @@ export async function enrolled(email: string) {
   const res = await post("/api/auth/2fa/enable", { code: await codeFor(userId) });
   const { recoveryCodes } = await body<{ recoveryCodes: string[] }>(res, 200);
   return { userId, recoveryCodes };
-}
-
-/** Issue a reset token directly, standing in for the emailed link. */
-export async function resetTokenFor(userId: number): Promise<string> {
-  const token = crypto.randomUUID() + crypto.randomUUID();
-  await env.DB.prepare(
-    "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)"
-  )
-    .bind(
-      await hashResetToken(token),
-      userId,
-      new Date().toISOString(),
-      new Date(Date.now() + 3600_000).toISOString()
-    )
-    .run();
-  return token;
 }

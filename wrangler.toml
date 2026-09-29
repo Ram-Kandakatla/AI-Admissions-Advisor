@@ -132,9 +132,7 @@ migrations_dir = "backend/migrations"
 # Filled in from the first successful deploy, 2026-09-20. A Worker is served
 # from <name>.<account-subdomain>.workers.dev, which is why this could not be
 # written down in advance — the account subdomain is not in any config file.
-# Replace again with the custom domain when Phase 7.5 attaches one, and note
-# that APP_ORIGIN (a secret) has to move at the same time or password-reset and
-# signup links will keep pointing here.
+# Replace again with the custom domain when Phase 7.5 attaches one.
 CORS_ORIGIN = "https://college-compass-web.kandakatla-ram.workers.dev"
 
 # LOG_LEVEL is deliberately NOT set here, and its absence is the decision.

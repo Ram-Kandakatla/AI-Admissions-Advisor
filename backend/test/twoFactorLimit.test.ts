@@ -20,7 +20,7 @@ import {
   resetSession,
   useSession,
 } from "./helpers.js";
-import { PASSWORD, codeFor, enrolled, resetTokenFor, secretFor } from "./twoFactorHelpers.js";
+import { PASSWORD, codeFor, enrolled, secretFor } from "./twoFactorHelpers.js";
 import { totpCode, timeStep } from "../src/auth/totp.js";
 import {
   CLAIM_HOLD_MS,
@@ -65,26 +65,10 @@ async function signInFrom(n: number, email: string, code: string): Promise<Respo
   return postFrom(n, "/api/auth/2fa/verify", { challenge, code });
 }
 
-/** Use a reset link from network `n`. Leaving out `code` is how the page asks whether it needs one. */
-function resetFrom(n: number, token: string, code?: string): Promise<Response> {
-  return postFrom(n, "/api/auth/reset", {
-    token,
-    password: "a brand new passphrase",
-    ...(code === undefined ? {} : { code }),
-  });
-}
-
 /** Spend the free wrong codes on signing in, from networks 0 to 4. */
 async function failSignIns(email: string, wrong: string): Promise<void> {
   for (let n = 0; n < FREE_FAILURES; n++) {
     expect((await signInFrom(n, email, wrong)).status).toBe(401);
-  }
-}
-
-/** Spend the free wrong codes on a reset link, from networks 0 to 4. */
-async function failResets(token: string, wrong: string): Promise<void> {
-  for (let n = 0; n < FREE_FAILURES; n++) {
-    expect((await resetFrom(n, token, wrong)).status).toBe(401);
   }
 }
 
@@ -185,14 +169,14 @@ describe("the schedule", () => {
 describe("the claim", () => {
   test("of two attempts at once, one is checked and the other waits", async () => {
     // Signing in cannot run in parallel — an account has one live challenge —
-    // but a reset link and the settings routes can. Through the routes the
-    // timing cannot be pinned down, so this goes to the claim itself.
+    // but the settings routes can. Through the routes the timing cannot be
+    // pinned down, so this goes to the claim itself.
     const store = createStore(env.DB);
     const { id: userId } = await store.createAnonymousUser();
 
     const outcomes = await Promise.all([
-      store.claimSecondFactorAttempt(userId, "reset", CLAIM_HOLD_MS),
-      store.claimSecondFactorAttempt(userId, "reset", CLAIM_HOLD_MS),
+      store.claimSecondFactorAttempt(userId, "password", CLAIM_HOLD_MS),
+      store.claimSecondFactorAttempt(userId, "password", CLAIM_HOLD_MS),
     ]);
     const refused = outcomes.flatMap((o) => (o.claimed ? [] : [o.retryAfterMs]));
     expect(outcomes.filter((o) => o.claimed)).toHaveLength(1);
@@ -202,8 +186,8 @@ describe("the claim", () => {
 
     // Settling the claim — here a first wrong code, which carries no wait —
     // replaces the hold, and the next attempt is let in.
-    await store.recordSecondFactorFailure(userId, "reset", waitAfter(1));
-    expect(await store.claimSecondFactorAttempt(userId, "reset", CLAIM_HOLD_MS)).toEqual({
+    await store.recordSecondFactorFailure(userId, "password", waitAfter(1));
+    expect(await store.claimSecondFactorAttempt(userId, "password", CLAIM_HOLD_MS)).toEqual({
       claimed: true,
       failures: 1,
     });
@@ -230,21 +214,20 @@ describe("wrong codes", () => {
   });
 
   test("each one after that doubles the wait", async () => {
-    const { userId } = await enrolled("doubling@example.com");
-    const token = await resetTokenFor(userId);
+    const email = "doubling@example.com";
+    const { userId } = await enrolled(email);
     const wrong = await wrongCodeFor(userId);
-    resetSession();
 
-    await failResets(token, wrong);
-    await expectLock(userId, "reset", 5, 1 * MINUTE);
+    await failSignIns(email, wrong);
+    await expectLock(userId, "password", 5, 1 * MINUTE);
 
-    await unlock(userId, "reset");
-    expect((await resetFrom(5, token, wrong)).status).toBe(401);
-    await expectLock(userId, "reset", 6, 2 * MINUTE);
+    await unlock(userId, "password");
+    expect((await signInFrom(5, email, wrong)).status).toBe(401);
+    await expectLock(userId, "password", 6, 2 * MINUTE);
 
-    await unlock(userId, "reset");
-    expect((await resetFrom(6, token, wrong)).status).toBe(401);
-    await expectLock(userId, "reset", 7, 4 * MINUTE);
+    await unlock(userId, "password");
+    expect((await signInFrom(6, email, wrong)).status).toBe(401);
+    await expectLock(userId, "password", 7, 4 * MINUTE);
   });
 
   test("once the wait is over, the code refused during it still works", async () => {
@@ -292,49 +275,7 @@ describe("wrong codes", () => {
   });
 });
 
-describe("signing in and resetting keep separate counts", () => {
-  test("someone with the password cannot lock the owner out of recovering by email", async () => {
-    const email = "recover@example.com";
-    const { userId } = await enrolled(email);
-    const wrong = await wrongCodeFor(userId);
-    // Guessing at codes behind the password until sign-in locks.
-    await failSignIns(email, wrong);
-    expect((await signInFrom(FREE_FAILURES, email, wrong)).status).toBe(429);
-
-    // The owner resets through their inbox, with the right code.
-    const token = await resetTokenFor(userId);
-    resetSession();
-    expect((await resetFrom(0, token, await codeFor(userId, 1))).status).toBe(200);
-    // And that right code lifted the sign-in lock in the same step.
-    expect(await countFor(userId, "password")).toBeNull();
-  });
-
-  test("someone with the inbox cannot lock the owner out of signing in", async () => {
-    const email = "signin-still@example.com";
-    const { userId } = await enrolled(email);
-    const token = await resetTokenFor(userId);
-    const wrong = await wrongCodeFor(userId);
-    resetSession();
-
-    // Guessing at codes behind a reset link until it locks.
-    await failResets(token, wrong);
-    const locked = await resetFrom(FREE_FAILURES, token, wrong);
-    expect(locked.status).toBe(429);
-    const b = await body<{ error: string; mfaRequired: boolean }>(locked);
-    // Kept on the code step, and no password hint: this caller came in through
-    // the inbox, not the password.
-    expect(b.mfaRequired).toBe(true);
-    expect(b.error).not.toMatch(/password/i);
-    // None of it spent the link.
-    const link = await env.DB.prepare("SELECT used_at FROM password_resets WHERE user_id = ?")
-      .bind(userId)
-      .first<{ used_at: string | null }>();
-    expect(link?.used_at).toBeNull();
-
-    // The owner signs in as usual.
-    expect((await signInFrom(FREE_FAILURES + 1, email, await codeFor(userId, 1))).status).toBe(200);
-  });
-
+describe("the settings routes share the sign-in count", () => {
   test("the two-factor settings spend the sign-in count", async () => {
     // They are reached with the password, so they draw on its count — which is
     // also what stops a session plus a stolen password from guessing its way to
@@ -351,7 +292,6 @@ describe("signing in and resetting keep separate counts", () => {
       ).toBe(403);
     }
     await expectLock(userId, "password", FREE_FAILURES, 1 * MINUTE);
-    expect(await countFor(userId, "reset")).toBeNull();
 
     const res = await postFrom(FREE_FAILURES, "/api/auth/2fa/disable", {
       password: PASSWORD,
@@ -396,19 +336,13 @@ describe("what is not a guess", () => {
     expect(await countFor(userId, "password")).toBeNull();
   });
 
-  test("asking for the code prompt, or sending a blank code, counts nothing", async () => {
+  test("sending a blank code counts nothing", async () => {
     const email = "asking@example.com";
     const { userId } = await enrolled(email);
-    const token = await resetTokenFor(userId);
-    resetSession();
 
-    // A link with no code is how the reset page learns it needs one.
-    expect(await body(await resetFrom(0, token), 200)).toEqual({ mfaRequired: true });
-    expect(await body(await resetFrom(1, token, ""), 200)).toEqual({ mfaRequired: true });
     // A blank code at sign-in is refused, but nothing was guessed.
     expect((await signInFrom(2, email, "   ")).status).toBe(401);
 
-    expect(await countFor(userId, "reset")).toBeNull();
     expect(await countFor(userId, "password")).toBeNull();
   });
 });

@@ -44,16 +44,6 @@ function isUniqueViolation(err: unknown): boolean {
   return err instanceof Error && /UNIQUE constraint failed/i.test(err.message);
 }
 
-/**
- * A signup waiting on its link. It carries the password hash, so it belongs to
- * the store and the verify route only — never to a response body.
- */
-export interface PendingSignup {
-  email: string;
-  passwordHash: string;
-  guestUserId: number;
-}
-
 // ---- Row shapes as D1 hands them back ----
 
 interface StudentRow {
@@ -621,20 +611,6 @@ export function createStore(db: D1Database) {
     RETURNING *
   `);
 
-  // ---- Pending signups ----
-  const insertPendingSignup = db.prepare(
-    "INSERT INTO pending_signups (token_hash, email, password_hash, guest_user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
-  );
-  // Expiry in the WHERE clause, as for sessions and resets: a stale link is
-  // indistinguishable from a missing one to everything that reads it.
-  const selectLivePendingSignup = db.prepare(
-    "SELECT email, password_hash, guest_user_id FROM pending_signups WHERE token_hash = ? AND expires_at > ?"
-  );
-  const clearPendingSignupsFor = db.prepare(
-    "DELETE FROM pending_signups WHERE email = ? OR guest_user_id = ?"
-  );
-  const sweepPendingSignupRows = db.prepare("DELETE FROM pending_signups WHERE expires_at <= ?");
-
   const insertSession = db.prepare(
     "INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)"
   );
@@ -650,32 +626,10 @@ export function createStore(db: D1Database) {
   // Order matters; see deleteAccount.
   const deleteStudentsOfUser = db.prepare("DELETE FROM students WHERE user_id = ?");
 
-  // ---- Password resets ----
-  const insertReset = db.prepare(
-    "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)"
-  );
-  // Expiry and single-use live in the WHERE, so no caller can forget them.
-  const selectLiveReset = db.prepare(
-    "SELECT * FROM password_resets WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?"
-  );
-  const spendReset = db.prepare(
-    "UPDATE password_resets SET used_at = ? WHERE token_hash = ? AND used_at IS NULL"
-  );
-  const clearResetsForUser = db.prepare("DELETE FROM password_resets WHERE user_id = ?");
-  // Unspent only: the spent row stays so a replay is distinguishable from a
-  // typo. The expiry sweep removes it later.
-  const clearUnusedResetsForUser = db.prepare(
-    "DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL"
-  );
-  const sweepResetRows = db.prepare("DELETE FROM password_resets WHERE expires_at <= ?");
-  const updatePasswordRow = db.prepare(
-    "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND email IS NOT NULL"
-  );
   // Compare-and-set on the old hash — see rehashPassword for why that matters.
   const rehashPasswordRow = db.prepare(
     "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND password_hash = ?"
   );
-  const deleteSessionsForUser = db.prepare("DELETE FROM sessions WHERE user_id = ?");
 
   // ---- Two-factor ----
   // Only while 2FA is off — see stageTotpSecret for why the guard is in the UPDATE.
@@ -763,62 +717,30 @@ export function createStore(db: D1Database) {
     return (await selectUserByEmail.bind(email).first<UserRow>()) != null;
   }
 
-  /** Hold a signup until its emailed link is opened. */
-  async function createPendingSignup(
-    tokenHash: string,
+  /**
+   * Fills in the caller's guest row, so its profile needs no reparenting.
+   * claimUserRow only matches a row with no email, so it can never overwrite an
+   * existing account. "email-taken" also covers losing a double-submit race.
+   */
+  async function claimGuestAccount(
     email: string,
     passwordHash: string,
-    guestUserId: number,
-    ttlMinutes: number
-  ): Promise<void> {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString();
-    await insertPendingSignup
-      .bind(tokenHash, email, passwordHash, guestUserId, now.toISOString(), expiresAt)
-      .run();
-  }
-
-  /** The live signup this token names — or null for every other case. */
-  async function findPendingSignup(tokenHash: string): Promise<PendingSignup | null> {
-    const row = await selectLivePendingSignup
-      .bind(tokenHash, new Date().toISOString())
-      .first<{ email: string; password_hash: string; guest_user_id: number }>();
-    return row
-      ? { email: row.email, passwordHash: row.password_hash, guestUserId: row.guest_user_id }
-      : null;
-  }
-
-  /**
-   * Fills in the guest row that asked, so its profile needs no reparenting.
-   * "email-taken": another signup for the address won first. "stale": this
-   * guest already became an account through a different signup. On success,
-   * all other pending signups for the address and the guest are cleared.
-   */
-  async function completeSignup(
-    pending: PendingSignup
-  ): Promise<
-    { status: "created"; user: UserRecord } | { status: "email-taken" } | { status: "stale" }
-  > {
-    if (await emailTaken(pending.email)) return { status: "email-taken" };
+    guestUserId: number
+  ): Promise<{ status: "created"; user: UserRecord } | { status: "email-taken" }> {
+    if (await emailTaken(email)) return { status: "email-taken" };
 
     let row: UserRow | null;
     try {
       row = await claimUserRow
-        .bind(pending.email, pending.passwordHash, new Date().toISOString(), pending.guestUserId)
+        .bind(email, passwordHash, new Date().toISOString(), guestUserId)
         .first<UserRow>();
     } catch (err) {
       if (isUniqueViolation(err)) return { status: "email-taken" };
       throw err;
     }
-    if (!row) return { status: "stale" };
+    if (!row) return { status: "email-taken" };
 
-    await clearPendingSignupsFor.bind(pending.email, pending.guestUserId).run();
     return { status: "created", user: userFromRow(row)! };
-  }
-
-  /** Housekeeping — expired signups are already unusable, this reclaims space. */
-  async function sweepPendingSignups(): Promise<void> {
-    await sweepPendingSignupRows.bind(new Date().toISOString()).run();
   }
 
   async function createSession(userId: number): Promise<SessionRecord> {
@@ -852,54 +774,9 @@ export function createStore(db: D1Database) {
     await sweepSessionRows.bind(new Date().toISOString()).run();
   }
 
-  /** Newest wins: requesting a new link invalidates any earlier one. */
-  async function createPasswordReset(
-    userId: number,
-    tokenHash: string,
-    ttlMinutes: number
-  ): Promise<{ expiresAt: string }> {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString();
-    await db.batch([
-      clearResetsForUser.bind(userId),
-      insertReset.bind(tokenHash, userId, now.toISOString(), expiresAt),
-    ]);
-    return { expiresAt };
-  }
-
-  /** The live, unspent reset this token names — or null for every other case. */
-  async function findPasswordReset(tokenHash: string): Promise<{ userId: number } | null> {
-    const row = await selectLiveReset
-      .bind(tokenHash, new Date().toISOString())
-      .first<{ user_id: number }>();
-    return row ? { userId: row.user_id } : null;
-  }
-
   /**
-   * One transaction: spend the token (`used_at IS NULL` makes it a
-   * compare-and-set), set the hash (never on a guest row), drop other unspent
-   * tokens, and revoke every session in case an attacker holds one. False if
-   * a concurrent submit spent the token first.
-   */
-  async function resetPassword(
-    tokenHash: string,
-    userId: number,
-    passwordHash: string
-  ): Promise<boolean> {
-    const now = new Date().toISOString();
-    const results = await db.batch([
-      spendReset.bind(now, tokenHash),
-      updatePasswordRow.bind(passwordHash, now, userId),
-      clearUnusedResetsForUser.bind(userId),
-      deleteSessionsForUser.bind(userId),
-    ]);
-    return (results[0]?.meta?.changes ?? 0) > 0;
-  }
-
-  /**
-   * Not resetPassword, which would revoke sessions on a successful login.
-   * The WHERE on the old hash stops this, running in waitUntil, from undoing a
-   * password change that lands while it is in flight.
+   * Upgrades a hash after login. The WHERE on the old hash stops this, running
+   * in waitUntil, from overwriting a newer hash that lands while it is in flight.
    */
   async function rehashPassword(
     userId: number,
@@ -950,8 +827,8 @@ export function createStore(db: D1Database) {
   }
 
   /**
-   * One batch, so 2FA is never on without recovery codes (reset doesn't
-   * bypass 2FA). Also spends `step`, so the confirming code can't sign in.
+   * One batch, so 2FA is never on without recovery codes. Also spends `step`,
+   * so the confirming code can't sign in.
    */
   async function enableTotp(
     userId: number,
@@ -1087,11 +964,6 @@ export function createStore(db: D1Database) {
     await clearAttemptRows.bind(userId).run();
   }
 
-  /** Housekeeping — expired tokens are already unusable, this reclaims space. */
-  async function sweepPasswordResets(): Promise<void> {
-    await sweepResetRows.bind(new Date().toISOString()).run();
-  }
-
   /**
    * The students row must go first. `students.user_id` has no ON DELETE
    * CASCADE (SQLite can't add one to an existing column), so deleting the user
@@ -1118,20 +990,13 @@ export function createStore(db: D1Database) {
     getUser,
     findUserForLogin,
     emailTaken,
-    createPendingSignup,
-    findPendingSignup,
-    completeSignup,
-    sweepPendingSignups,
+    claimGuestAccount,
     createSession,
     getSession,
     deleteSession,
     sweepSessions,
     deleteAccount,
-    createPasswordReset,
-    findPasswordReset,
-    resetPassword,
     rehashPassword,
-    sweepPasswordResets,
     getTotpState,
     stageTotpSecret,
     replaceTotpSecret,

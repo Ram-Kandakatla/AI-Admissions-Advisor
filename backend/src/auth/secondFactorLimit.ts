@@ -2,8 +2,8 @@
 // (1 min → 24 h after five free tries) allows ~380 guesses a year; a fixed
 // "10 an hour" window would allow 87,600.
 
-/** Which count an attempt is charged to: `password` or an emailed `reset` link. */
-export type FirstFactor = "password" | "reset";
+/** Which count an attempt is charged to. Only `password` since reset was removed. */
+export type FirstFactor = "password";
 
 export const FREE_FAILURES = 5;
 const FIRST_WAIT_MS = 60_000;

@@ -32,9 +32,6 @@ const MajorDeepDive = lazy(() => import("./components/MajorDeepDive"));
 const Account = lazy(() => import("./components/Account"));
 const ShareSettings = lazy(() => import("./components/ShareSettings"));
 const AccountSettings = lazy(() => import("./components/AccountSettings"));
-const ForgotPassword = lazy(() => import("./components/ForgotPassword"));
-const ResetPassword = lazy(() => import("./components/ResetPassword"));
-const VerifySignup = lazy(() => import("./components/VerifySignup"));
 const SharedPlanView = lazy(() => import("./components/SharedPlanView"));
 
 const Terms = lazy(() => import("./components/legal/Terms"));
@@ -274,17 +271,6 @@ export default function App() {
 
         {/* The auth pages, /account and the legal pages are all ungated: their
             visitors may have no session or no profile. */}
-        <Route path="/forgot" element={<ForgotPassword />} />
-        <Route
-          path="/reset"
-          element={
-            <ResetPassword
-              onSignedIn={(account, studentId) => onSignedIn(account, studentId, false)}
-            />
-          }
-        />
-        <Route path="/verify" element={<VerifySignup onSignedIn={onSignedIn} />} />
-
         <Route
           path="/account"
           element={
@@ -305,6 +291,11 @@ export default function App() {
           }
         />
 
+        {/* Ungated and outside every profile check, deliberately. A visitor
+            deciding whether to trust Compass with a GPA reads these *before*
+            there is anything to gate on, and a privacy policy you have to sign
+            up to read is not a privacy policy. They are also the destinations
+            a footer link has to reach from anywhere, including from the 404. */}
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/cookies" element={<CookiePolicy />} />

@@ -12,7 +12,6 @@ import {
   generateResetToken,
   hashResetToken,
 } from "../auth/password.js";
-import { createEmailService } from "../services/emailService.js";
 import {
   generateRecoveryCodes,
   generateTotpSecret,
@@ -32,11 +31,10 @@ import {
   ownedStudent,
   rotateSession,
 } from "../middleware/auth.js";
-import { countHit, hashedKey, rateLimit } from "../middleware/rateLimit.js";
+import { rateLimit } from "../middleware/rateLimit.js";
 import { readJson } from "../http.js";
-import { createLogger, errorFields } from "../log.js";
 import type { Context } from "hono";
-import type { AppEnv, Env } from "../types.js";
+import type { AppEnv } from "../types.js";
 
 const auth = new Hono<AppEnv>();
 
@@ -59,40 +57,9 @@ auth.use(
     message: "Too many attempts. Please wait a few minutes and try again.",
   })
 );
-// /verify can ask for the signup password.
-auth.use(
-  "/verify",
-  rateLimit({
-    bucket: "auth",
-    limit: 15,
-    windowMs: 15 * 60 * 1000,
-    message: "Too many attempts. Please wait a few minutes and try again.",
-  })
-);
 // Deletion re-checks the password.
 auth.use(
   "/account",
-  rateLimit({
-    bucket: "auth",
-    limit: 15,
-    windowMs: 15 * 60 * 1000,
-    message: "Too many attempts. Please wait a few minutes and try again.",
-  })
-);
-
-// Mails an address the caller names, so it's limited against spam. Its own
-// bucket: sharing "auth" would let failed logins block the way to reset.
-auth.use(
-  "/forgot",
-  rateLimit({
-    bucket: "forgot",
-    limit: 5,
-    windowMs: 15 * 60 * 1000,
-    message: "Too many reset requests. Please wait a few minutes and try again.",
-  })
-);
-auth.use(
-  "/reset",
   rateLimit({
     bucket: "auth",
     limit: 15,
@@ -148,31 +115,9 @@ function validateCredentials(body: Record<string, unknown>): {
   return { errors, credentials: { email, password } };
 }
 
-/** Longer than a reset link's hour: no account exists yet to take over. */
-const SIGNUP_TTL_HOURS = 24;
-
-/** Per address per hour, from any number of networks. */
-const SIGNUP_MAIL_PER_ADDRESS = 3;
-const SIGNUP_MAIL_WINDOW_MS = 60 * 60 * 1000;
-
-/** From APP_ORIGIN, never a request header (host-header poisoning). */
-function linkTo(env: Env, path: string): string {
-  return `${(env.APP_ORIGIN ?? "").replace(/\/+$/, "")}${path}`;
-}
-
 /**
- * Explicit opt-in, not "no provider configured", so a deployment that loses
- * its key doesn't start logging live links.
- */
-function devLogsEmailLinks(env: Env): boolean {
-  return env.DEV_LOG_EMAIL_LINKS === "true";
-}
-
-/**
- * Creates nothing, and answers every address identically so signup can't
- * reveal which emails have accounts. A new address gets a confirmation link;
- * an existing one gets a "someone tried to sign up" notice. The differing work
- * runs in waitUntil so response time doesn't leak it either.
+ * Creates the account on the spot by filling in the caller's guest row, so
+ * the profile they built as a guest stays theirs. A taken address gets a 409.
  */
 auth.post("/signup", async (c) => {
   const store = c.get("store");
@@ -190,126 +135,21 @@ auth.post("/signup", async (c) => {
     }
   }
 
-  // The guest row the account will claim; also how /verify recognises this browser.
+  // The guest row this signup claims, minted now for a visitor who has none.
   const session = await ensureSession(c);
   const { email, password } = credentials;
-  const log = createLogger(c.env);
-  const mail = createEmailService(c.env);
-
-  c.executionCtx.waitUntil(
-    (async () => {
-      try {
-        // Over the per-recipient cap the send is skipped silently.
-        const { count } = await countHit(
-          c,
-          "signup-mail",
-          await hashedKey("email", email),
-          SIGNUP_MAIL_WINDOW_MS
-        );
-        if (count > SIGNUP_MAIL_PER_ADDRESS) {
-          log.warn("signup email skipped — that address has had its share this hour");
-          return;
-        }
-
-        if (await store.emailTaken(email)) {
-          if (devLogsEmailLinks(c.env)) {
-            log.warn("DEV_LOG_EMAIL_LINKS is on — address already has an account, notice sent");
-          }
-          const sent = await mail.sendSignupNotice(
-            email,
-            linkTo(c.env, "/signin"),
-            linkTo(c.env, "/forgot")
-          );
-          if (!sent.delivered) {
-            log.error("signup notice requested but not delivered", { provider: sent.provider });
-          }
-          return;
-        }
-
-        const token = generateResetToken();
-        await store.createPendingSignup(
-          await hashResetToken(token),
-          email,
-          await hashPassword(password),
-          session.userId,
-          SIGNUP_TTL_HOURS * 60
-        );
-        const confirmUrl = linkTo(c.env, `/verify?token=${token}`);
-
-        if (devLogsEmailLinks(c.env)) {
-          log.warn("DEV_LOG_EMAIL_LINKS is on — signup link written to the log", { confirmUrl });
-        }
-
-        const sent = await mail.sendSignupConfirmation(email, confirmUrl, SIGNUP_TTL_HOURS);
-        if (!sent.delivered) {
-          // The only place this failure surfaces. No address in it.
-          log.error("signup confirmation requested but not delivered", {
-            provider: sent.provider,
-          });
-        }
-      } catch (err) {
-        log.error("signup request failed", errorFields(err));
-      }
-    })()
-  );
-
-  if (Math.random() < 0.01) {
-    c.executionCtx.waitUntil(
-      store.sweepPendingSignups().catch(() => {}) // best-effort housekeeping
-    );
-  }
-
-  return c.json(
-    {
-      message:
-        "Check your inbox to finish creating your account. If that address already has an account, a note saying so is on its way instead.",
-    },
-    202
-  );
-});
-
-/**
- * Against account pre-hijacking (signing up with someone else's address and
- * waiting for them to click): the link completes on its own only in the
- * browser that asked. Anywhere else it answers `passwordRequired` and needs
- * the signup password. A wrong password doesn't spend the link.
- */
-auth.post("/verify", async (c) => {
-  const body = await readJson<Record<string, unknown>>(c);
-  const token = typeof body.token === "string" ? body.token.trim() : "";
-
-  // One message for expired, used and unknown links.
-  const invalid = () =>
-    c.json(
-      { error: "This link has expired or has already been used. Sign up again to get a new one." },
-      400
-    );
-  if (!token) return invalid();
-
-  const store = c.get("store");
-  const pending = await store.findPendingSignup(await hashResetToken(token));
-  if (!pending) return invalid();
-
-  if (c.get("session")?.userId !== pending.guestUserId) {
-    const password = typeof body.password === "string" ? body.password : "";
-    if (!password) return c.json({ passwordRequired: true });
-    if (!(await verifyPassword(password, pending.passwordHash))) {
-      return c.json(
-        { error: "That isn't the password this account was set up with.", passwordRequired: true },
-        401
-      );
-    }
-  }
 
   // Read before the session changes, so the UI can say if a draft is left behind.
   const guestDraft = await ownedStudent(c);
 
-  const result = await store.completeSignup(pending);
+  const result = await store.claimGuestAccount(
+    email,
+    await hashPassword(password),
+    session.userId
+  );
   if (result.status === "email-taken") {
-    // Safe to reveal only now: the caller has proved they hold the inbox.
     return c.json({ error: "This email already has a Compass account. Sign in instead." }, 409);
   }
-  if (result.status === "stale") return invalid();
 
   await rotateSession(c, result.user.id);
   const student = await store.getStudentByUserId(result.user.id);
@@ -323,8 +163,8 @@ auth.post("/verify", async (c) => {
 
 /**
  * Accepts a TOTP or a recovery code everywhere, so no caller can forget
- * recovery codes (reset doesn't bypass 2FA). A matched TOTP step is consumed
- * against replay. Call only through verifySecondFactor.
+ * recovery codes. A matched TOTP step is consumed against replay. Call only
+ * through verifySecondFactor.
  */
 async function checkCode(
   c: Context<AppEnv>,
@@ -350,9 +190,8 @@ async function checkCode(
 
 /**
  * Charges each attempt to the account, since per-network limits don't stop a
- * pool of IPs; see auth/secondFactorLimit.ts. `factor` has no default: with
- * one shared count, a password thief could lock the owner out of reset.
- * `retryAfterMs` means locked and nothing was checked. Empty codes don't count.
+ * pool of IPs; see auth/secondFactorLimit.ts. `retryAfterMs` means locked and
+ * nothing was checked. Empty codes don't count.
  */
 async function verifySecondFactor(
   c: Context<AppEnv>,
@@ -382,18 +221,13 @@ async function verifySecondFactor(
 function tooManyCodes(
   c: Context<AppEnv>,
   retryAfterMs: number,
-  factor: FirstFactor,
   extra: Record<string, unknown> = {}
 ) {
   c.header("Retry-After", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
   // Only shown to someone already past the password.
-  const hint =
-    factor === "password"
-      ? " If these weren't your attempts, someone may know your password — reset it from the sign-in page."
-      : "";
   return c.json(
     {
-      error: `Too many incorrect codes. For this account's protection, try again in ${describeWait(retryAfterMs)}.${hint}`,
+      error: `Too many incorrect codes. For this account's protection, try again in ${describeWait(retryAfterMs)}. If these weren't your attempts, someone may know your password.`,
       ...extra,
     },
     429
@@ -404,13 +238,9 @@ function tooManyCodes(
  * Carries "password already checked" to the code step. Not a half-signed-in
  * session: every ownership check would then need to know about that state.
  */
-async function issueMfaChallenge(
-  c: Context<AppEnv>,
-  userId: number,
-  purpose: "login" | "reset"
-): Promise<string> {
+async function issueMfaChallenge(c: Context<AppEnv>, userId: number): Promise<string> {
   const token = generateResetToken();
-  await c.get("store").createMfaChallenge(userId, await hashResetToken(token), purpose);
+  await c.get("store").createMfaChallenge(userId, await hashResetToken(token), "login");
   return token;
 }
 
@@ -430,12 +260,8 @@ auth.post("/login", async (c) => {
     : await fakeVerify(credentials.password);
 
   if (!ok || !row) {
-    // Everyone gets the "open the link" hint, so it reveals nothing.
     return c.json(
-      {
-        error:
-          "That email and password don't match an account. If you've just signed up, open the link we emailed you first.",
-      },
+      { error: "That email and password don't match an account." },
       401
     );
   }
@@ -455,7 +281,7 @@ auth.post("/login", async (c) => {
   // The guest draft stays untouched until the second factor succeeds.
   const totp = await store.getTotpState(row.id);
   if (totp?.enabled) {
-    return c.json({ mfaRequired: true, challenge: await issueMfaChallenge(c, row.id, "login") });
+    return c.json({ mfaRequired: true, challenge: await issueMfaChallenge(c, row.id) });
   }
 
   // The account's profile wins over a guest draft; the UI says so.
@@ -492,7 +318,7 @@ auth.post("/2fa/verify", async (c) => {
   await store.deleteMfaChallenge(await hashResetToken(challenge));
 
   const result = await verifySecondFactor(c, found.userId, code, "password");
-  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
+  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs);
   if (!result.ok) {
     return c.json(
       { error: "That code isn't right. Please sign in again to get a new attempt." },
@@ -540,148 +366,6 @@ auth.get("/me", async (c) => {
 
 /** Guards against a stray or retried request from a buggy client, not CSRF. */
 const CONFIRM_PHRASE = "DELETE";
-
-const RESET_TTL_MINUTES = 60;
-
-auth.post("/forgot", async (c) => {
-  const body = await readJson<Record<string, unknown>>(c);
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-
-  const store = c.get("store");
-  const log = createLogger(c.env);
-  const email_service = createEmailService(c.env);
-
-  // One identical 202 whether or not the account exists, so this can't be used
-  // to check which addresses have accounts. Don't add a "did you mean to sign
-  // up?" variant.
-  const respond = () =>
-    c.json(
-      {
-        message:
-          "If an account exists for that address, a reset link is on its way. Check your spam folder if it doesn't arrive in a few minutes.",
-      },
-      202
-    );
-
-  // Length before the regex: it backtracks quadratically on a long run of dots.
-  if (!email || email.length > MAX_EMAIL || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return c.json({ error: "Enter a valid email address." }, 400);
-  }
-
-  const row = await store.findUserForLogin(email);
-
-  // After the response, in waitUntil, so timing doesn't reveal the account either.
-  if (row) {
-    c.executionCtx.waitUntil(
-      (async () => {
-        try {
-          const token = generateResetToken();
-          await store.createPasswordReset(
-            row.id,
-            await hashResetToken(token),
-            RESET_TTL_MINUTES
-          );
-
-          const resetUrl = linkTo(c.env, `/reset?token=${token}`);
-
-          if (devLogsEmailLinks(c.env)) {
-            log.warn("DEV_LOG_EMAIL_LINKS is on — reset link written to the log", { resetUrl });
-          }
-
-          const sent = await email_service.sendPasswordReset(
-            email,
-            resetUrl,
-            RESET_TTL_MINUTES
-          );
-          if (!sent.delivered) {
-            // The only place this failure surfaces. No address in it.
-            log.error("password reset requested but not delivered", {
-              provider: sent.provider,
-            });
-          }
-        } catch (err) {
-          log.error("password reset request failed", errorFields(err));
-        }
-      })()
-    );
-  }
-
-  if (Math.random() < 0.01) {
-    c.executionCtx.waitUntil(
-      store.sweepPasswordResets().catch(() => {}) // best-effort housekeeping
-    );
-  }
-
-  return respond();
-});
-
-/**
- * Signs the caller in on success; they have proved more than a login asks.
- * Every other session is revoked first, in case an attacker holds one.
- */
-auth.post("/reset", async (c) => {
-  const body = await readJson<Record<string, unknown>>(c);
-  const token = typeof body.token === "string" ? body.token.trim() : "";
-  const password = typeof body.password === "string" ? body.password : "";
-
-  const errors: string[] = [];
-  if (!token) errors.push("This reset link is missing its token.");
-  if (!password) errors.push("Password is required.");
-  else if (password.length < MIN_PASSWORD) {
-    errors.push(`Password must be at least ${MIN_PASSWORD} characters.`);
-  } else if (password.length > MAX_PASSWORD) {
-    errors.push(`Password must be under ${MAX_PASSWORD} characters.`);
-  }
-  // Before the token lookup, so a too-short password doesn't spend the link.
-  if (errors.length) return c.json({ errors }, 400);
-
-  const store = c.get("store");
-  const reset = await store.findPasswordReset(await hashResetToken(token));
-
-  // One message for expired, used and unknown tokens.
-  const invalid = () =>
-    c.json(
-      { error: "This reset link has expired or has already been used. Request a new one." },
-      400
-    );
-
-  if (!reset) return invalid();
-
-  // Reset does not bypass 2FA, or a hijacked inbox would be a full takeover.
-  // Recovery codes are the way back from a lost phone. Checked before hashing
-  // and spending the token, so a missing code costs neither.
-  const totp = await store.getTotpState(reset.userId);
-  if (totp?.enabled) {
-    const code = typeof body.code === "string" ? body.code : "";
-    if (!code) {
-      // Tells the client to ask for a code. Only reachable with a valid token.
-      return c.json({ mfaRequired: true }, 200);
-    }
-    const result = await verifySecondFactor(c, reset.userId, code, "reset");
-    if (result.retryAfterMs !== undefined) {
-      return tooManyCodes(c, result.retryAfterMs, "reset", { mfaRequired: true });
-    }
-    if (!result.ok) {
-      // The link survives a wrong code; the per-account count bounds guessing.
-      return c.json({ error: "That code isn't right.", mfaRequired: true }, 401);
-    }
-  }
-
-  const passwordHash = await hashPassword(password);
-  const spent = await store.resetPassword(
-    await hashResetToken(token),
-    reset.userId,
-    passwordHash
-  );
-  // Lost a race with a concurrent submit of the same link.
-  if (!spent) return invalid();
-
-  await rotateSession(c, reset.userId);
-  const user = await store.getUser(reset.userId);
-  const student = await store.getStudentByUserId(reset.userId);
-
-  return c.json({ user, studentId: student?.id ?? null });
-});
 
 /**
  * Members retype their password: a session alone (a borrowed laptop) is not
@@ -790,7 +474,7 @@ auth.post("/2fa/setup", async (c) => {
     // A missing code isn't a guess, so it isn't counted.
     if (!code.trim()) return alreadyOn();
     const result = await verifySecondFactor(c, auth_.userId, code, "password");
-    if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
+    if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs);
     if (!result.ok) return c.json({ error: "That code isn't right." }, 403);
     await store.replaceTotpSecret(auth_.userId, secret);
   } else if (!(await store.stageTotpSecret(auth_.userId, secret))) {
@@ -852,7 +536,7 @@ auth.post("/2fa/disable", async (c) => {
 
   const code = typeof body.code === "string" ? body.code : "";
   const result = await verifySecondFactor(c, auth_.userId, code, "password");
-  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
+  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs);
   if (!result.ok) return c.json({ error: "That code isn't right." }, 403);
 
   await store.disableTotp(auth_.userId);
@@ -871,7 +555,7 @@ auth.post("/2fa/recovery-codes", async (c) => {
 
   const code = typeof body.code === "string" ? body.code : "";
   const result = await verifySecondFactor(c, auth_.userId, code, "password");
-  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
+  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs);
   if (!result.ok) return c.json({ error: "That code isn't right." }, 403);
 
   const codes = generateRecoveryCodes();

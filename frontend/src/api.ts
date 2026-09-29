@@ -3,7 +3,6 @@ import type {
   ApplicationMeta,
   ApplicationsResponse,
   AuthState,
-  AuthUser,
   ChatMessage,
   ChatMode,
   LlmProvider,
@@ -17,10 +16,10 @@ import type {
   SchoolNote,
   SharedPlan,
   ShareLink,
+  SignupResult,
   StudentRecord,
   TwoFactorStatus,
   University,
-  VerifySignupResult,
 } from "./types";
 
 /** Carries the HTTP status for the few callers that branch on it. */
@@ -67,20 +66,13 @@ export const api = {
   me: () => request<AuthState>("/auth/me"),
 
   /**
-   * Identical for every address and signs nobody in; the emailed link creates
-   * the account. Never infer from it whether an account exists.
+   * Creates the account and signs in, keeping the guest's profile. A 409 means
+   * the address already has an account.
    */
   signup: (email: string, password: string) =>
-    request<{ message: string }>("/auth/signup", {
+    request<SignupResult>("/auth/signup", {
       method: "POST",
       body: JSON.stringify({ email, password }),
-    }),
-
-  /** Call without a password first; retry with it on `passwordRequired`. */
-  verifySignup: (token: string, password?: string) =>
-    request<VerifySignupResult>("/auth/verify", {
-      method: "POST",
-      body: JSON.stringify({ token, ...(password ? { password } : {}) }),
     }),
 
   login: (email: string, password: string) =>
@@ -130,23 +122,6 @@ export const api = {
     request<Extract<LoginResult, { mfaRequired?: false }>>("/auth/2fa/verify", {
       method: "POST",
       body: JSON.stringify({ challenge, code }),
-    }),
-
-  /** Always resolves the same way; the UI must not reveal whether an account exists. */
-  forgotPassword: (email: string) =>
-    request<{ message: string }>("/auth/forgot", {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    }),
-
-  /** Signs in on success. `mfaRequired` means call again with a code. */
-  resetPassword: (token: string, password: string, code?: string) =>
-    request<
-      | { mfaRequired: true }
-      | { mfaRequired?: false; user: AuthUser; studentId: string | null }
-    >("/auth/reset", {
-      method: "POST",
-      body: JSON.stringify({ token, password, ...(code ? { code } : {}) }),
     }),
 
   /** `password` is required for members and omitted for guests. */

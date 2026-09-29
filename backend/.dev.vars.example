@@ -26,19 +26,3 @@ OPENAI_API_KEY=
 # model goes stale the week after the next one ships.
 # ANTHROPIC_MODEL=claude-opus-4-8
 # OPENAI_MODEL=gpt-4o
-
-# --- Email (password reset, signup confirmation) ----------------------------
-# Resend, over HTTPS — a Worker cannot speak SMTP. With these unset no email
-# leaves, and that now includes signing up: an account is only created from the
-# link its confirmation email carries.
-# RESEND_API_KEY=
-# EMAIL_FROM=Compass <noreply@yourdomain>
-
-# Where emailed links point. Set to the Vite dev server so a logged link can be
-# opened as-is.
-# APP_ORIGIN=http://localhost:5173
-
-# With no Resend key, this is how local signup finishes: reset and signup links
-# are written to the `wrangler dev` log instead of being mailed. LOCAL ONLY — a
-# link in a log is a live credential.
-# DEV_LOG_EMAIL_LINKS="true"

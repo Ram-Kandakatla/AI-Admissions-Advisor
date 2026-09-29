@@ -81,8 +81,8 @@ export default function TwoFactorPanel({ onChanged }: { onChanged: () => void })
           <strong>
             If you lose your phone and these codes, you cannot get back into this account.
           </strong>{" "}
-          A password reset will not let you skip the second factor. Print them, or put them
-          in a password manager.
+          There is no password reset to fall back on. Print them, or put them in a password
+          manager.
         </p>
 
         <ol className="recovery-codes">
@@ -371,9 +371,8 @@ export default function TwoFactorPanel({ onChanged }: { onChanged: () => void })
             <strong>Off.</strong> Your password is the only thing protecting this account.
           </p>
           <p>
-            Turning this on means signing in needs a code from your phone as well. It also
-            means a password reset alone won&apos;t get you back in — which is the point,
-            since anyone who can read your email can start a reset.
+            Turning this on means signing in needs a code from your phone as well — knowing
+            the password alone won&apos;t be enough.
           </p>
           <div className="acct-2fa-actions">
             <button className="btn btn-primary btn-sm" onClick={() => setStage("password")}>

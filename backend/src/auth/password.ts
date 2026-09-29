@@ -88,8 +88,8 @@ export function needsRehash(stored: string | null | undefined): boolean {
 
 // ---- Opaque bearer tokens ----
 //
-// Password-reset links and the login MFA challenge. 256 random bits need a
-// fast hash, not PBKDF2: there is no dictionary to slow down.
+// The login MFA challenge ("reset" in the names is historical). 256 random
+// bits need a fast hash, not PBKDF2: there is no dictionary to slow down.
 
 const TOKEN_BYTES = 32;
 

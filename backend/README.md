@@ -38,7 +38,7 @@ route 500s on a missing table.
 src/
   index.ts          Worker entry, shared by both wrangler configs
   app.ts            the Hono app: middleware stack + every non-auth route
-  routes/auth.ts    signup, login, password reset, 2FA, account deletion
+  routes/auth.ts    signup, login, 2FA, account deletion
   auth/             password hashing, TOTP, the wrong-code limit
   http.ts           JSON body reader (413 / 400 handling)
   crypto.ts         hex, SHA-256, constant-time compare
@@ -77,13 +77,10 @@ first student who asks a question.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/auth/signup` | Start an account — answers "check your inbox" for every address |
-| POST | `/api/auth/verify` | Confirm it from the emailed link — claims the caller's guest profile, signs in |
+| POST | `/api/auth/signup` | Create an account — claims the caller's guest profile, signs in |
 | POST | `/api/auth/login` | Start a session |
 | POST | `/api/auth/logout` | Revoke the session |
 | GET | `/api/auth/me` | Current user + their student id |
-| POST | `/api/auth/forgot` | Email a reset link — the same 202 for every address |
-| POST | `/api/auth/reset` | Set a new password from the link (`code` too if 2FA is on); signs in |
 | DELETE | `/api/auth/account` | Erase the account (`{ confirm: "DELETE", password? }`) |
 | GET | `/api/auth/2fa` | Whether 2FA is on, and recovery codes left |
 | POST | `/api/auth/2fa/setup` | Stage a TOTP secret (password, plus a code if 2FA is already on) |

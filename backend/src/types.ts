@@ -10,20 +10,6 @@ export interface Env {
   OPENAI_API_KEY?: string;
   ANTHROPIC_MODEL?: string;
   OPENAI_MODEL?: string;
-  /** Absent = email-dependent flows report themselves unavailable. */
-  RESEND_API_KEY?: string;
-  /** Must be a sender Resend has verified, or every send is rejected. */
-  EMAIL_FROM?: string;
-  /**
-   * Origin for every emailed link. Configuration, never a request header:
-   * building a reset URL from Host or Origin is host-header poisoning.
-   */
-  APP_ORIGIN?: string;
-  /**
-   * "true" logs emailed links so local dev works without an email provider.
-   * Never in production: a logged link is a live credential.
-   */
-  DEV_LOG_EMAIL_LINKS?: string;
 }
 
 export type AppEnv = {

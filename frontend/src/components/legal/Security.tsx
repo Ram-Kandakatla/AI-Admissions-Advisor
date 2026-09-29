@@ -215,18 +215,9 @@ export default function Security() {
               never true, so no credential can ever match one.
             </li>
             <li>
-              <strong>Nothing tells a stranger whether an address has an account.</strong>{" "}
-              A wrong password and an unknown address get the same answer in the same time,
-              a reset request gets the same answer for every address, and signing up always
-              says to check your inbox. A new address is sent a link to finish; one that
-              already has an account is sent a note saying someone tried. Only the owner of
-              the inbox can see which.
-            </li>
-            <li>
-              <strong>Nobody can set up an account with your address and have you confirm
-              it.</strong> A sign-up link finishes by itself only in the browser that signed
-              up. Opened anywhere else it asks for the password chosen at sign-up, so a link
-              you never asked for does nothing.
+              <strong>A wrong password and an unknown address get the same answer, in the
+              same time.</strong> Login cannot be used to test a list of addresses for
+              membership.
             </li>
             <li>
               <strong>Logs cannot hold student data.</strong> The request log records the
@@ -246,35 +237,17 @@ export default function Security() {
               current code, so someone signed in on a borrowed laptop who also knows your
               password cannot remove it or swap in their own phone. After five wrong codes,
               each further code has to wait — a minute, then two, doubling up to a day —
-              counted per account, so switching networks buys nothing. Signing in and
-              resetting a password keep separate counts, so someone who learns your
-              password cannot also lock you out of recovering the account.
-            </li>
-            <li>
-              <strong>A password reset does not bypass your second factor.</strong> This is
-              the decision that makes 2FA meaningful here rather than decorative: email is
-              already the reset channel, so a reset that skipped the second factor would
-              leave anyone who can read your inbox holding a complete path into your
-              account. The cost is real and worth knowing before you enrol — lose your phone
-              <em>and</em> your recovery codes and the account cannot be recovered, by you
-              or by anyone else.
-            </li>
-            <li>
-              <strong>A password reset revokes every session and every other pending reset
-              token.</strong> Recovering an account is only recovery if it also evicts
-              whoever prompted it — a password change that leaves an attacker signed in has
-              achieved nothing. Reset tokens are 256 bits from the platform CSPRNG, stored
-              as a SHA-256 hash so the table holds nothing usable, single-use, and expire in
-              an hour.
+              counted per account, so switching networks buys nothing. The cost is real and
+              worth knowing before you enrol — lose your phone <em>and</em> your recovery
+              codes and the account cannot be recovered, by you or by anyone else, since
+              there is no password reset to fall back on.
             </li>
             <li>
               <strong>Rate limits are counted in the database</strong>, so they hold across a
               distributed runtime. Per 15 minutes: 30 chat requests per account (per
-              network for guests); 15 attempts per network shared across signing in,
-              signing up, setting a new password, two-factor codes, and deleting an account;
-              5 requests for a reset email; and 50 new guest profiles per network. Separately,
-              any one email address is sent at most 3 sign-up emails an hour, however many
-              networks ask. Two-factor codes are also limited per account, as above.
+              network for guests); 15 attempts per network shared across signing in, signing
+              up, two-factor codes, and deleting an account; and 50 new guest profiles per
+              network. Two-factor codes are also limited per account, as above.
             </li>
             <li>
               <strong>Request bodies are capped at 100 KB</strong>, rejected on the declared
@@ -314,6 +287,12 @@ export default function Security() {
             <li>
               <strong>Two-factor is opt-in, and off by default.</strong> Most accounts are
               still protected by a password alone.
+            </li>
+            <li>
+              <strong>Signing up does not confirm you own the address you typed.</strong>{" "}
+              Creating an account is instant, with no emailed link to open — which also means
+              there is no way to reset a forgotten password. Lose your password and the
+              account cannot be recovered; the only way forward is to create a new one.
             </li>
             <li>
               <strong>Share links are bearer tokens.</strong> Anyone holding the URL can read
