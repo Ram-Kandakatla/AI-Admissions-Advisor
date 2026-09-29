@@ -12,6 +12,7 @@ import { env } from "cloudflare:test";
 import {
   body,
   currentCookie,
+  eventually,
   get,
   newStudent,
   post,
@@ -21,7 +22,7 @@ import {
   signUp,
   useSession,
 } from "./helpers.js";
-import { hashPassword, verifyPassword } from "../src/auth/password.js";
+import { hashPassword, needsRehash, verifyPassword } from "../src/auth/password.js";
 
 const PASSWORD = "correct horse battery";
 
@@ -34,6 +35,31 @@ beforeEach(resetRateLimits);
 // Unique per test, so a run never collides with a row an earlier test wrote.
 let seq = 0;
 const freshEmail = () => `student${seq++}.${crypto.randomUUID().slice(0, 8)}@example.com`;
+
+/**
+ * Build a hash at 100,000 iterations — the cost in use before the Workers free
+ * plan's 10ms CPU cap forced it down to 25,000. Derived independently of
+ * password.ts on purpose: a fixture built by the code under test agrees with
+ * itself no matter what it does.
+ */
+async function hashAtLegacyCost(password: string): Promise<string> {
+  const iterations = 100_000;
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
+    key,
+    256
+  );
+  const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return ["pbkdf2", "SHA-256", iterations, hex(salt), hex(new Uint8Array(bits))].join("$");
+}
 
 describe("password hashing", () => {
   test("a hash verifies against its own password and nothing else", async () => {
@@ -50,11 +76,31 @@ describe("password hashing", () => {
 
   test("the stored form carries its own cost, and survives a null", async () => {
     const stored = await hashPassword(PASSWORD);
-    expect(stored.startsWith("pbkdf2$SHA-256$100000$")).toBe(true);
+    expect(stored.startsWith("pbkdf2$SHA-256$25000$")).toBe(true);
     // An anonymous user row has password_hash NULL by design; reaching one on
     // a login attempt must read as a wrong password, not a 500.
     expect(await verifyPassword(PASSWORD, null)).toBe(false);
     expect(await verifyPassword(PASSWORD, "not-a-hash")).toBe(false);
+  });
+
+  // The claim that lets ITERATIONS move without a migration, and the reason
+  // lowering it to 25,000 stranded nobody. Derived here rather than taken from
+  // hashPassword, which would write today's cost and so assert nothing: if
+  // verifyPassword ever stopped reading the cost out of the string and used
+  // the configured one instead, this is the test that fails.
+  test("a hash written at a superseded cost still verifies", async () => {
+    const legacy = await hashAtLegacyCost(PASSWORD);
+    expect(legacy.startsWith("pbkdf2$SHA-256$100000$")).toBe(true);
+    expect(await verifyPassword(PASSWORD, legacy)).toBe(true);
+    expect(await verifyPassword(PASSWORD + "!", legacy)).toBe(false);
+  });
+
+  test("needsRehash spots a superseded cost and ignores what it cannot parse", () => {
+    expect(needsRehash("pbkdf2$SHA-256$100000$aa$bb")).toBe(true);
+    expect(needsRehash("pbkdf2$SHA-256$25000$aa$bb")).toBe(false);
+    // Nothing to upgrade, and nothing that should throw on the login path.
+    expect(needsRehash(null)).toBe(false);
+    expect(needsRehash("not-a-hash")).toBe(false);
   });
 });
 
@@ -119,6 +165,37 @@ describe("login", () => {
     // Same message, so the response body is not an account-enumeration oracle.
     // fakeVerify() covers the timing half of the same problem.
     expect(await wrong.json()).toEqual(await missing.json());
+  });
+
+  // The upgrade keeps verifyPassword and fakeVerify burning the same cost. Skip
+  // it and a hash left at 100,000 verifies ~4x slower than fakeVerify's 25,000,
+  // which hands back by stopwatch exactly what the shared 401 message withholds.
+  test("logging in upgrades a password hash left at a superseded cost", async () => {
+    const email = freshEmail();
+    const { userId } = await signUp(email);
+    resetSession();
+
+    // Rewind this account to the pre-cap cost, as a row written before the
+    // change would be.
+    const legacy = await hashAtLegacyCost(PASSWORD);
+    await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
+      .bind(legacy, userId)
+      .run();
+
+    // The old hash still works — nobody is locked out by the cost change.
+    await body(await post("/api/auth/login", { email, password: PASSWORD }), 200);
+
+    // The rewrite rides on waitUntil, which SELF.fetch does not await.
+    const upgraded = await eventually(async () => {
+      const row = await env.DB.prepare("SELECT password_hash FROM users WHERE id = ?")
+        .bind(userId)
+        .first<{ password_hash: string }>();
+      return row && row.password_hash !== legacy ? row.password_hash : null;
+    }, "the password hash to be rewritten at the current cost");
+
+    expect(upgraded.startsWith("pbkdf2$SHA-256$25000$")).toBe(true);
+    // Upgraded in place, not reset: the password itself is unchanged.
+    expect(await verifyPassword(PASSWORD, upgraded)).toBe(true);
   });
 
   test("a guest account cannot be logged into", async () => {

@@ -3,45 +3,10 @@ import LegalPage, { Unfilled, type LegalSection } from "./LegalPage";
 import { CONTACT_EMAIL, OPERATOR_NAME, REPO_URL } from "../../legal";
 
 /**
- * The privacy policy.
- *
- * WRITTEN FROM THE CODE, NOT FROM A TEMPLATE
- *
- * Every factual claim below was checked against the thing that implements it,
- * and the specific ones are deliberate: "one cookie named __Host-compass_session"
- * rather than "we may use cookies", "the log records /api/students/:id and
- * never the id" rather than "we log limited technical data". A generic policy
- * is unfalsifiable, which sounds safe and is the opposite — it can neither be
- * relied on by a student nor checked by a parent, and it quietly permits
- * things this app does not do and does not want to start doing.
- *
- * The sources, so the next person can re-check rather than re-derive:
- *   - middleware/auth.ts        the session cookie and its attributes
- *   - log.ts, middleware/requestLog.ts   what a log line may and may not hold
- *   - services/llmService.ts    what leaves for a model provider
- *   - middleware/rateLimit.ts   the one place an IP address is used, and how
- *   - models/studentProfile.ts  the profile fields, exhaustively
- *   - migrations/*.sql          everything that is stored at all
- *   - index.html                what a page load fetches, which since the
- *                               fonts were self-hosted is nothing off-origin
- *
- * WHAT IT USED TO ADMIT
- *
- * Two things, and both were fixed rather than reworded — which is the outcome
- * an honest limitations section is *for*. Writing them down made them
- * embarrassing enough to close.
- *
- * The first was that deleting an account meant emailing a person. §8 now
- * points at /account, and the endpoint behind it erases the profile, notes,
- * tracker, both conversations, every share link, and every session.
- *
- * The second — that the Google Fonts CDN saw
- * every visitor's IP — and it does not any more because the cause was removed
- * rather than the sentence. The fonts are served from this origin now (see
- * scripts/fetch-fonts.mjs), so the app makes no third-party request at all on
- * a page load. If anything ever reintroduces one, this page has to say so
- * again; "no third parties" is a claim about the network tab, and it is
- * checkable in about fifteen seconds.
+ * Written from the code, so update it when these change: middleware/auth.ts
+ * (cookie), log.ts and requestLog.ts (logs), llmService.ts (third parties),
+ * rateLimit.ts (IP use), studentProfile.ts and migrations/ (stored data),
+ * index.html (no off-origin requests).
  */
 export default function Privacy() {
   const sections: LegalSection[] = [

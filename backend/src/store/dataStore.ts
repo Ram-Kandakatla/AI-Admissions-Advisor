@@ -1,20 +1,5 @@
-// Data store for Compass — D1 for everything the student creates.
-//
-// Three things changed from the node:sqlite version, all forced by the Workers
-// runtime rather than chosen:
-//
-//   1. **It's a factory, not a module.** `db.js` opened one DatabaseSync at
-//      import time and every caller shared it. A Worker has no module state
-//      that outlives a request; the D1 binding arrives on `c.env` per request,
-//      so the store is built per request from it.
-//   2. **Every method is async.** D1's prepare().bind().first()/all()/run() all
-//      return Promises. Nothing about the queries changed — only the awaits.
-//   3. **Writes use RETURNING.** The old code wrote then re-read to get the
-//      stored row back, which was two cheap function calls locally but is two
-//      network round trips to D1. `RETURNING *` collapses them into one.
-//
-// Reference data (universities, scholarships) moved to ./staticData.ts — it
-// never lived in SQLite and has no reason to touch this file.
+// D1 storage for everything a student creates. Built per request from the D1
+// binding; writes use RETURNING to save a round trip.
 
 import type { FirstFactor } from "../auth/secondFactorLimit.js";
 import { DEFAULT_CHAT_MODE, type ChatMode } from "../models/chatMode.js";
@@ -32,9 +17,8 @@ import type {
 } from "../types.js";
 
 // --- JSON column helpers -------------------------------------------------
-// Arrays and the checklist object are stored as JSON text. A row written by an
-// older build (or hand-edited) shouldn't crash a request, so parsing failures
-// fall back to the empty value rather than throwing.
+// A malformed JSON column falls back to the empty value rather than failing
+// the request.
 
 function toJson(value: unknown): string {
   return JSON.stringify(value ?? null);
@@ -167,13 +151,7 @@ function applicationFromRow(row: ApplicationRow | null): ApplicationRecord | nul
   return record;
 }
 
-/**
- * `password_hash` is deliberately dropped here.
- *
- * Every route that returns a user returns this shape, so the hash cannot reach
- * a response body by someone forgetting to strip it — the only code that sees
- * it is the login path, which reads the row directly.
- */
+/** Drops `password_hash`, so no route can return it by forgetting to strip it. */
 function userFromRow(row: UserRow | null): UserRecord | null {
   if (!row) return null;
   return {
@@ -181,9 +159,7 @@ function userFromRow(row: UserRow | null): UserRecord | null {
     email: row.email,
     guest: row.email === null,
     createdAt: row.created_at,
-    // Enrolled *and* confirmed. A secret that exists but was never proved
-    // against a real code is not protection, and reporting it as such would
-    // show a user 2FA is on when their app has never generated a working code.
+    // Confirmed only; a staged secret never proved with a code doesn't count.
     twoFactorEnabled: row.totp_enabled_at !== null,
   };
 }
@@ -199,9 +175,7 @@ function noteFromRow(row: SchoolNoteRow | null): SchoolNoteRecord | null {
     universityId: row.university_id,
     starred: Boolean(row.starred),
     note: row.note,
-    // Coalesced because rows written before migration 0005 have no value for
-    // these at all when read through an older cached statement, and `undefined`
-    // reaching the client as a missing field would make the form uncontrolled.
+    // Never undefined: a missing field would make the client's input uncontrolled.
     contactName: row.contact_name ?? "",
     contactRole: row.contact_role ?? "",
     contactLastAt: row.contact_last_at ?? "",
@@ -213,12 +187,6 @@ function noteFromRow(row: SchoolNoteRow | null): SchoolNoteRecord | null {
 
 export type Store = ReturnType<typeof createStore>;
 
-/**
- * Build a store bound to one request's D1 handle.
- *
- * `db.prepare()` is cheap and the statements are re-bound per call, so they
- * are declared once here rather than rebuilt inside each method.
- */
 export function createStore(db: D1Database) {
   // ---- Students ----
 
@@ -232,9 +200,7 @@ export function createStore(db: D1Database) {
 
   const selectStudent = db.prepare("SELECT * FROM students WHERE id = ?");
 
-  // The ownership lookup the whole phase turns on: given a session's user,
-  // which profile may it touch? The UNIQUE index on students.user_id is what
-  // makes "the" profile a well-defined thing to ask for.
+  // The ownership lookup. students.user_id is UNIQUE: one profile per user.
   const selectStudentByUser = db.prepare("SELECT * FROM students WHERE user_id = ?");
 
   const updateStudentRow = db.prepare(`
@@ -246,14 +212,7 @@ export function createStore(db: D1Database) {
     RETURNING *
   `);
 
-  /**
-   * Create a profile owned by `userId`.
-   *
-   * The owner is required rather than optional: an unowned profile is exactly
-   * the hole this phase closes, and making the argument optional would let a
-   * future caller reopen it by omission. Guests are not an exception — they
-   * have a user row too.
-   */
+  /** `userId` is required: an unowned profile is readable by anyone. */
   async function createStudent(
     profile: StudentProfile,
     userId: number
@@ -319,10 +278,8 @@ export function createStore(db: D1Database) {
 
   // ---- Conversations ----
 
-  // Every query below is scoped to (student, mode) since Phase 6.3. The
-  // advisor and the essay assistant keep separate threads, so "this student's
-  // history" is no longer a well-formed question — asking it without a mode
-  // would hand the essay assistant the student's aid questions as context.
+  // Scoped to (student, mode): the advisor and essay assistant keep separate
+  // threads and must not see each other's history.
   const insertMessage = db.prepare(
     "INSERT INTO messages (student_id, role, content, at, mode) VALUES (?, ?, ?, ?, ?)"
   );
@@ -331,10 +288,7 @@ export function createStore(db: D1Database) {
     "SELECT role, content, at FROM messages WHERE student_id = ? AND mode = ? ORDER BY seq"
   );
 
-  // Keep history bounded at the most recent 40 turns, as before — the difference
-  // is that the trim now happens in the table instead of in an array. The 40 is
-  // per mode rather than per student: a long essay session should not evict the
-  // advising thread, and vice versa.
+  // The latest 40 turns per mode, so one thread can't evict the other.
   const trimMessages = db.prepare(`
     DELETE FROM messages
     WHERE student_id = ?
@@ -359,10 +313,8 @@ export function createStore(db: D1Database) {
     content: string,
     mode: ChatMode = DEFAULT_CHAT_MODE
   ): Promise<ChatMessage[]> {
-    // Batched so the insert and the trim land together. On Express these were
-    // two synchronous calls that could not interleave; in a Worker two
-    // concurrent chat requests can, and a trim that runs against a
-    // half-written history would drop the wrong turn.
+    // Batched: concurrent chat requests could otherwise interleave insert and
+    // trim, and the trim would drop the wrong turn.
     await db.batch([
       insertMessage.bind(studentId, role, content, new Date().toISOString(), mode),
       trimMessages.bind(studentId, mode, studentId, mode),
@@ -372,9 +324,7 @@ export function createStore(db: D1Database) {
 
   // ---- Applications ----
   //
-  // One list per student. A student can only track a given university once —
-  // picking a different decision plan for the same school is an edit, not a
-  // second application. That rule is a UNIQUE constraint in the schema.
+  // One per (student, university), enforced by a UNIQUE constraint.
 
   const selectApplications = db.prepare(
     "SELECT * FROM applications WHERE student_id = ? ORDER BY created_at, id"
@@ -491,10 +441,7 @@ export function createStore(db: D1Database) {
 
   // ---- School notes ----
   //
-  // A star and a scrap of text per school, keyed by the pair rather than by an
-  // id of its own: there is exactly one note per school, and every page edits
-  // the same one. A note that is emptied and unstarred is deleted rather than
-  // kept as a blank row — an empty note is the absence of a note.
+  // Keyed by (student, university): one note per school, shared by every page.
 
   const selectNotes = db.prepare(
     "SELECT * FROM school_notes WHERE student_id = ? ORDER BY starred DESC, updated_at DESC, created_at DESC"
@@ -557,12 +504,8 @@ export function createStore(db: D1Database) {
       contactLastAt?: string;
     } = {}
   ): Promise<SchoolNoteRecord | null> {
-    // An empty row is deleted rather than kept — an empty note is the absence
-    // of a note. Phase 6.5 made "empty" a wider question than it was: before
-    // contacts, a school with no star and no text held nothing, and now it can
-    // hold the name of the person handling your application. Leaving this
-    // condition as it was would have deleted that name the moment a student
-    // unstarred the school, with nothing on screen to suggest why.
+    // An empty note is deleted, not stored blank. "Empty" must cover every
+    // field, or unstarring a school would silently delete its contact.
     const holdsNothing =
       !starred &&
       note.trim() === "" &&
@@ -601,9 +544,7 @@ export function createStore(db: D1Database) {
 
   // ---- Share links ----
   //
-  // One per student, enforced by the UNIQUE on student_id rather than by
-  // remembering to check. See migrations/0006_share_links.sql for why revoking
-  // is a delete and why there is no expiry.
+  // One per student (UNIQUE on student_id).
 
   const selectShareByStudent = db.prepare("SELECT * FROM share_links WHERE student_id = ?");
   const selectShareByToken = db.prepare("SELECT * FROM share_links WHERE token = ?");
@@ -617,12 +558,8 @@ export function createStore(db: D1Database) {
   }
 
   /**
-   * Resolve a token to the profile it opens.
-   *
-   * The only unauthenticated read path into a student's data in the whole API.
-   * It returns the id and nothing else — deciding what a holder may then *see*
-   * is the route's job, not the store's, so that decision lives in one
-   * reviewable place instead of being implied by a SELECT here.
+   * The API's only unauthenticated read of student data. Returns the id only;
+   * what a link holder may see is decided in the route.
    */
   async function findShareLink(token: unknown): Promise<ShareLinkRecord | null> {
     if (typeof token !== "string" || token === "") return null;
@@ -639,13 +576,7 @@ export function createStore(db: D1Database) {
     return shareFromRow(row)!;
   }
 
-  /**
-   * Mint a new link, invalidating the old one.
-   *
-   * Batched so there is no window in which the student has no link at all —
-   * and, more importantly, none in which a second caller could insert against
-   * the UNIQUE and fail.
-   */
+  /** Batched, so a concurrent caller can't hit the UNIQUE between delete and insert. */
   async function rotateShareLink(studentId: string): Promise<ShareLinkRecord> {
     const token = crypto.randomUUID();
     await db.batch([
@@ -662,8 +593,7 @@ export function createStore(db: D1Database) {
 
   // ---- Accounts & sessions ----
   //
-  // Every visitor who owns anything has a users row, guest or not. See
-  // migrations/0003_auth.sql for why that is one table rather than two.
+  // Guests and members share the users table; a guest has a NULL email.
 
   const insertUser = db.prepare(
     "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?) RETURNING *"
@@ -671,14 +601,10 @@ export function createStore(db: D1Database) {
 
   const selectUser = db.prepare("SELECT * FROM users WHERE id = ?");
 
-  // Only ever called with a non-null email, so an anonymous row (email NULL)
-  // can never match: `NULL = 'x'` is not true in SQL. That is what makes a
-  // guest account unreachable by login without a check to remember.
+  // `NULL = 'x'` is never true, so a guest row can't be reached by login.
   const selectUserByEmail = db.prepare("SELECT * FROM users WHERE email = ?");
 
-  // `AND email IS NULL` is the guard that makes claiming safe: it can only
-  // ever fill in a guest row, never overwrite the email or password of an
-  // account that already exists.
+  // `AND email IS NULL`: a claim can fill in a guest row, never overwrite an account.
   const claimUserRow = db.prepare(`
     UPDATE users SET email = ?, password_hash = ?, updated_at = ?
     WHERE id = ? AND email IS NULL
@@ -697,10 +623,13 @@ export function createStore(db: D1Database) {
 
   const sweepSessionRows = db.prepare("DELETE FROM sessions WHERE expires_at <= ?");
 
-  // The two halves of erasing an account. Kept as separate statements rather
-  // than one because they must run in this order — see deleteAccount below,
-  // where the ordering is the entire subtlety.
+  // Order matters; see deleteAccount.
   const deleteStudentsOfUser = db.prepare("DELETE FROM students WHERE user_id = ?");
+
+  // Compare-and-set on the old hash — see rehashPassword for why that matters.
+  const rehashPasswordRow = db.prepare(
+    "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND password_hash = ?"
+  );
 
   // ---- Two-factor ----
   // Only while 2FA is off — see stageTotpSecret for why the guard is in the UPDATE.
@@ -765,9 +694,7 @@ export function createStore(db: D1Database) {
 
   const deleteUserRow = db.prepare("DELETE FROM users WHERE id = ?");
 
-  /** Sessions last 30 days from creation. Not extended on use — a fixed life
-   *  means a stolen cookie has a definite expiry rather than one the thief can
-   *  renew indefinitely just by continuing to use it. */
+  /** Fixed from creation, not extended on use, so a stolen cookie still expires. */
   const SESSION_DAYS = 30;
 
   async function createAnonymousUser(): Promise<UserRecord> {
@@ -781,13 +708,7 @@ export function createStore(db: D1Database) {
     return userFromRow(await selectUser.bind(id).first<UserRow>());
   }
 
-  /**
-   * The one place a password hash leaves the database.
-   *
-   * Returns the raw row rather than a UserRecord precisely because the login
-   * route needs `password_hash`, and naming that exception here keeps every
-   * other caller on the shape that cannot leak it.
-   */
+  /** The one place a password hash leaves the database. */
   async function findUserForLogin(email: string): Promise<UserRow | null> {
     return (await selectUserByEmail.bind(email).first<UserRow>()) ?? null;
   }
@@ -797,17 +718,9 @@ export function createStore(db: D1Database) {
   }
 
   /**
-   * Create an account by filling in the caller's guest row.
-   *
-   * Still a claim rather than a create: the row keeps its id, so the profile it
-   * owns needs no reparenting. `email IS NULL` in claimUserRow is the guard
-   * that makes this safe — it can only ever fill in a guest row, never
-   * overwrite the email or password of an account that already exists.
-   *
-   * "email-taken" also covers the race where the caller's own guest row lost
-   * a concurrent double-submit of the same form: claimUserRow's guard then
-   * finds the row no longer eligible, and nothing was created either way, so
-   * reporting it the same as an already-registered address is safe.
+   * Fills in the caller's guest row, so its profile needs no reparenting.
+   * claimUserRow only matches a row with no email, so it can never overwrite an
+   * existing account. "email-taken" also covers losing a double-submit race.
    */
   async function claimGuestAccount(
     email: string,
@@ -842,14 +755,7 @@ export function createStore(db: D1Database) {
     return { id, userId, expiresAt };
   }
 
-  /**
-   * Look up a live session.
-   *
-   * Expiry is enforced in the WHERE clause, not by the caller: an expired row
-   * is indistinguishable from a missing one to every consumer, so there is no
-   * path where a stale session is read and then forgotten about. ISO-8601 UTC
-   * strings compare correctly with `>`, which is why the column is TEXT.
-   */
+  /** Expiry is in the WHERE; ISO-8601 UTC text compares correctly with `>`. */
   async function getSession(sessionId: unknown): Promise<SessionRecord | null> {
     if (typeof sessionId !== "string" || sessionId === "") return null;
     const row = await selectSession
@@ -869,52 +775,20 @@ export function createStore(db: D1Database) {
   }
 
   /**
-   * Erase an account and everything it owns. There is no undo.
-   *
-   * WHY THE ORDER IS LOAD-BEARING
-   *
-   * Almost every table here cascades, so the obvious implementation — delete
-   * the users row and let the database do the rest — looks correct and is not.
-   * `students.user_id` was added by migrations/0003_auth.sql as
-   * `ALTER TABLE students ADD COLUMN user_id INTEGER REFERENCES users(id)`,
-   * with **no ON DELETE clause**, so it defaults to NO ACTION. SQLite cannot
-   * add a cascade to an existing column, and D1 has foreign keys enforced, so
-   * deleting the user first does not orphan the student — it fails outright on
-   * a constraint violation, and the account stays exactly where it was.
-   *
-   * Deleting the student first is therefore not a tidiness choice, it is the
-   * only order that works. It is also the order that does the most: students
-   * is the parent of everything a person actually typed, and all four of those
-   * children *do* cascade —
-   *
-   *   students -> messages        (both chat modes)
-   *            -> applications    (and their checklists)
-   *            -> school_notes    (notes, stars, contacts)
-   *            -> share_links     (so a shared URL dies with the account)
-   *
-   * then users -> sessions, which signs the person out of every device at
-   * once rather than only the one they clicked in.
-   *
-   * WHAT IS DELIBERATELY LEFT BEHIND
-   *
-   * Rows in `rate_limits`. They are keyed by a SHA-256 of the client address,
-   * or for a signed-in chat by the numeric user id — which names nothing once
-   * this delete has run — and they expire on their own within the window. Deleting them would also hand anyone a
-   * free way to reset their own limit by making and destroying an account.
-   *
-   * Returns whether a profile was among the deleted rows — the caller uses it
-   * for nothing security-relevant, only to say something true afterwards, and
-   * an account that never finished a profile is a real and unremarkable case.
+   * Upgrades a hash after login. The WHERE on the old hash stops this, running
+   * in waitUntil, from overwriting a newer hash that lands while it is in flight.
    */
-  /**
-   * The enrolled secret, for verification. The one place it leaves the table.
-   *
-   * Returns the raw column rather than putting it on UserRecord, deliberately:
-   * UserRecord is what /auth/me serialises to the browser, and a secret that
-   * rides along on the shape every route already returns is one careless
-   * `c.json(user)` away from being published. Naming the exception here keeps
-   * every other caller on a type that cannot leak it.
-   */
+  async function rehashPassword(
+    userId: number,
+    previousHash: string,
+    upgradedHash: string
+  ): Promise<void> {
+    await rehashPasswordRow
+      .bind(upgradedHash, new Date().toISOString(), userId, previousHash)
+      .run();
+  }
+
+  /** The one place the TOTP secret leaves the table; never put it on UserRecord. */
   async function getTotpState(
     userId: number
   ): Promise<{ secret: string | null; enabled: boolean; lastStep: number | null } | null> {
@@ -928,12 +802,8 @@ export function createStore(db: D1Database) {
   }
 
   /**
-   * Stage a secret, unconfirmed, on an account with 2FA off.
-   *
-   * False, with nothing written, if 2FA is on: replacing a second factor that
-   * works takes a current code first, and then it is replaceTotpSecret. The
-   * guard is in the UPDATE rather than only in the route's earlier read, so 2FA
-   * switched on in another tab between the two is refused, not overwritten.
+   * False if 2FA is already on (use replaceTotpSecret). The guard is in the
+   * UPDATE so 2FA enabled in another tab since the route's read isn't overwritten.
    */
   async function stageTotpSecret(userId: number, secret: string): Promise<boolean> {
     const { meta } = await stageTotpSecretRow
@@ -943,15 +813,9 @@ export function createStore(db: D1Database) {
   }
 
   /**
-   * Set it up again on a new phone: 2FA off and a new secret staged, in one write.
-   *
-   * Only once the route has checked a current second factor. This removes the
-   * factor as surely as disableTotp does, so it needs the same proofs — without
-   * them a password alone could switch 2FA off and enrol another phone. It also
-   * clears what disableTotp clears: the recovery codes and wrong-code counts
-   * belonged to the old secret, and a sign-in left waiting for a code must not
-   * become one that a code from the new phone can finish. 2FA stays off until
-   * /2fa/enable confirms the new secret, exactly as on first enrollment.
+   * Call only after checking a current second factor: this switches 2FA off as
+   * surely as disableTotp, and clears the same recovery codes, counts and
+   * pending challenges. 2FA stays off until /2fa/enable confirms the new secret.
    */
   async function replaceTotpSecret(userId: number, secret: string): Promise<void> {
     await db.batch([
@@ -963,14 +827,8 @@ export function createStore(db: D1Database) {
   }
 
   /**
-   * Confirm enrollment and issue recovery codes, atomically.
-   *
-   * The codes are the only thing standing between a lost phone and a lost
-   * account — there is no password reset to fall back on — so they must not be
-   * able to fail to exist after 2FA is switched on. One batch, all or nothing.
-   *
-   * `step` is recorded as spent in the same write: the code just used to prove
-   * the app works must not also be usable to log in with.
+   * One batch, so 2FA is never on without recovery codes. Also spends `step`,
+   * so the confirming code can't sign in.
    */
   async function enableTotp(
     userId: number,
@@ -998,12 +856,7 @@ export function createStore(db: D1Database) {
     ]);
   }
 
-  /**
-   * Record a spent time-step. False means it was already spent — a replay.
-   *
-   * The guard is in the UPDATE rather than in a read-then-write, so two
-   * requests presenting the same code at the same moment cannot both win.
-   */
+  /** False on replay. Guarded in the UPDATE so two identical codes can't both win. */
   async function consumeTotpStep(userId: number, step: number): Promise<boolean> {
     const { meta } = await advanceTotpStepRow.bind(step, userId, step).run();
     return meta.changes > 0;
@@ -1076,16 +929,9 @@ export function createStore(db: D1Database) {
   }
 
   /**
-   * Claim the right to check one code for this account and factor.
-   *
-   * The claim is the upsert above, and it is what stops two guesses sent
-   * together from both being checked: whichever lands first pushes the lock
-   * ahead by `holdMs`, and the other finds the account locked. The caller then
-   * settles it — a failure recorded, or the rows cleared — which replaces the
-   * hold with the real lock. If the Worker dies in between, the hold runs out
-   * by itself and the attempt is not counted.
-   *
-   * Refused, it reports how long until the lock lifts, for Retry-After.
+   * Serialises guesses: the first claim pushes the lock ahead by `holdMs`, so a
+   * simultaneous second guess finds it locked. The caller then records the
+   * outcome, replacing the hold. Refused, it returns the wait for Retry-After.
    */
   async function claimSecondFactorAttempt(
     userId: number,
@@ -1103,13 +949,7 @@ export function createStore(db: D1Database) {
     return { claimed: false, retryAfterMs: Math.max(0, until - now) };
   }
 
-  /**
-   * Count a wrong code, and set the wait before the next one.
-   *
-   * The caller computes the wait from the count its claim returned. That is
-   * safe because the claim has already serialised attempts on this account and
-   * factor, so nothing else can have moved the count in between.
-   */
+  /** Safe to compute the wait from the claim's count: the claim serialised attempts. */
   async function recordSecondFactorFailure(
     userId: number,
     factor: FirstFactor,
@@ -1124,17 +964,20 @@ export function createStore(db: D1Database) {
     await clearAttemptRows.bind(userId).run();
   }
 
+  /**
+   * The students row must go first. `students.user_id` has no ON DELETE
+   * CASCADE (SQLite can't add one to an existing column), so deleting the user
+   * first fails on the foreign key. Everything else cascades from these two.
+   *
+   * `rate_limits` rows are deliberately kept: they hold only hashes, expire on
+   * their own, and deleting them would make delete-and-recreate a limit reset.
+   */
   async function deleteAccount(userId: number): Promise<{ hadProfile: boolean }> {
-    // A batch, so this is one transaction: a failure between the two statements
-    // would otherwise leave an account with no profile and no way to notice.
-    // D1 rolls the whole batch back.
+    // One batch, so D1 rolls back both statements together.
     const results = await db.batch([
       deleteStudentsOfUser.bind(userId),
       deleteUserRow.bind(userId),
     ]);
-    // Indexed rather than destructured: batch() is typed as a plain array, so
-    // `noUncheckedIndexedAccess` makes the first element possibly-undefined
-    // even though a two-statement batch always returns two results.
     return { hadProfile: (results[0]?.meta?.changes ?? 0) > 0 };
   }
 
@@ -1153,6 +996,7 @@ export function createStore(db: D1Database) {
     deleteSession,
     sweepSessions,
     deleteAccount,
+    rehashPassword,
     getTotpState,
     stageTotpSecret,
     replaceTotpSecret,

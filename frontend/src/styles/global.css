@@ -1758,10 +1758,7 @@ table.uni-table {
    ========================================================================= */
 
 .sec-hd {
-  /* A real <h2> since the accessibility pass — it was a styled <div>, which
-     looked like a section label and was invisible to a screen reader's
-     heading list. These two lines undo what the h1-h4 base rule would
-     otherwise impose on it, so it looks exactly as it did as a div. */
+  /* An <h2> styled as a label; these undo the h1-h4 base rule. */
   font-family: var(--font-body);
   line-height: 1.4;
   font-size: 11px;
@@ -3853,6 +3850,34 @@ table.cmp-table {
 }
 /* The qualifier is part of the date, not a footnote to it — a deadline this
    app has not verified must never read as one it has. */
+/* Marks an avgGPA Compass estimated from SAT rather than read from the school.
+   Quieter than .sch-unconfirmed on purpose: an unconfirmed deadline is something
+   a student must act on, while an estimated GPA is a confidence note. */
+.gpa-est {
+  font-size: 9.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  /* --txm, not --txf: the faint token measures 2.60:1 on a card in dark mode and
+     2.22:1 in light, both under the 4.5 AA floor. This is the same trap the
+     legal-page section numbers fell into. A qualifier on a number is content —
+     if it is unreadable the number reads as reported. */
+  color: var(--txm);
+  border: 0.5px solid var(--s3);
+  border-radius: var(--rs);
+  padding: 0 3px;
+  margin-left: 4px;
+  vertical-align: 1.5px;
+  cursor: help;
+}
+/* "test-blind" in place of an SAT average. Same restraint as .gpa-est, and the
+   same --txm floor for contrast. */
+.sat-none {
+  font-size: 10.5px;
+  color: var(--txm);
+  font-style: italic;
+  cursor: help;
+}
 .sch-unconfirmed {
   font-size: 9.5px;
   font-weight: 500;

@@ -4,8 +4,10 @@ import { api } from "../api";
 import { MAX_COMPARE } from "../compare";
 import { csvFilename, downloadCsv, recommendationsToCsv } from "../exportList";
 import SchoolNote, { NoteHint, StarButton } from "./SchoolNote";
+import { GpaValue, SatValue } from "./GpaValue";
 import type { NotesStore } from "../useSchoolNotes";
 import type { Recommendation, RecommendationResponse, StudentRecord, Tier } from "../types";
+import { TIER_ORDER, tierVar } from "../tiers";
 
 const TIER_META: Record<Tier, { title: string; blurb: string }> = {
   reach: { title: "Reach", blurb: "Ambitious — apply, but don't count on them." },
@@ -56,6 +58,13 @@ export default function Recommendations({
   if (!data) return <div className="spinner" aria-label="Loading matches" />;
 
   const total = data.counts.reach + data.counts.target + data.counts.safety;
+  // What actually rendered, after the API's per-tier cap. Kept separate from
+  // `total` so the headline can stay truthful about how many schools fit while
+  // the page is honest about how many it is showing.
+  const shownTotal =
+    data.recommendations.reach.length +
+    data.recommendations.target.length +
+    data.recommendations.safety.length;
 
   return (
     <div>
@@ -79,6 +88,13 @@ export default function Recommendations({
         <p className="lead">
           Sorted by how you stack up on GPA, tests, major fit, region, and budget. Match scores are a
           guide, not a verdict — admissions weigh essays and context too.
+          {shownTotal < total && (
+            <>
+              {" "}
+              Showing the <strong>{shownTotal}</strong> strongest — <Link to="/explore">browse
+              every school</Link> to see the rest.
+            </>
+          )}
         </p>
         <NoteHint notes={notes}>
           Tap the star beside a match score to save a school, or <strong>Add a note</strong> to write
@@ -126,7 +142,7 @@ export default function Recommendations({
           </div>
 
           <div className="rec-summary">
-            {(["reach", "target", "safety"] as Tier[]).map((t) => (
+            {TIER_ORDER.map((t) => (
               <div className={`rec-stat ${t}`} key={t}>
                 <div className="num">{data.counts[t]}</div>
                 <div className="label">{TIER_META[t].title}</div>
@@ -135,14 +151,20 @@ export default function Recommendations({
             ))}
           </div>
 
-          {(["reach", "target", "safety"] as Tier[]).map((t) =>
+          {TIER_ORDER.map((t) =>
             data.recommendations[t].length > 0 ? (
               <section className={`tier-block ${t}`} key={t}>
                 <div className="tier-head" style={tierVar(t)}>
                   <span className="tier-dot" />
                   <h2>{TIER_META[t].title} schools</h2>
                   <span className="count">
-                    {data.recommendations[t].length} · {TIER_META[t].blurb}
+                    {/* The summary stat above shows the true total, so a tier
+                        that was capped has to say so here — otherwise the two
+                        numbers contradict each other with no explanation. */}
+                    {data.recommendations[t].length < data.counts[t]
+                      ? `${data.recommendations[t].length} strongest of ${data.counts[t]}`
+                      : data.recommendations[t].length}{" "}
+                    · {TIER_META[t].blurb}
                   </span>
                 </div>
                 <div className="uni-grid">
@@ -183,15 +205,6 @@ export default function Recommendations({
       )}
     </div>
   );
-}
-
-function tierVar(t: Tier): React.CSSProperties {
-  const map: Record<Tier, string> = {
-    reach: "var(--orange)",
-    target: "var(--green)",
-    safety: "var(--blue)",
-  };
-  return { ["--tier" as string]: map[t] } as React.CSSProperties;
 }
 
 function UniCard({
@@ -243,10 +256,10 @@ function UniCard({
 
       <div className="uni-stats">
         <span>
-          Avg GPA <b>{uni.avgGPA}</b>
+          Avg GPA <b><GpaValue value={uni.avgGPA} source={uni.gpaSource} /></b>
         </span>
         <span>
-          Avg SAT <b>{uni.avgSAT}</b>
+          Avg SAT <b><SatValue value={uni.avgSAT} /></b>
         </span>
         <span>
           Admit <b>{uni.acceptanceRate}%</b>

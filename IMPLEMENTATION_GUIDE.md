@@ -781,7 +781,7 @@ elsewhere, add the CNAME the dashboard shows you.
 Since other projects are landing on this same Cloudflare account, pick a
 naming convention now rather than after the fifth project shows up in the
 dashboard — e.g. `<project>-web` for the Pages project name and
-`<project>-db` for its D1 database (`compass-web`, `compass-db`).
+`<project>-db` for its D1 database (`college-compass-web`, `compass-db`).
 
 ### 7.7 Smoke-test before calling it done
 
@@ -908,12 +908,16 @@ paid plan that does not exist yet; [PHASE-7.md](PHASE-7.md) is the runbook.
       total). Until then there is no global limit at all — LLM spend is still
       capped by the in-code `/api/chat` limiter. *(Phase 1.3 —
       [PHASE-1.md](PHASE-1.md#left-for-deploy-day-the-global-rate-limit))*
-- [ ] **Blocked, not pending — PBKDF2 vs. the plan.** Free caps CPU at 10ms
-      per invocation; 100k iterations costs 40–60ms, so signup and login
-      **fail outright** there. Settle before the first real signup, by paying
-      for Workers Paid or lowering `ITERATIONS` in
-      [`backend/src/auth/password.ts`](backend/src/auth/password.ts).
-      *(Phase 2.3 —
+- [x] **PBKDF2 vs. the plan — settled 2026-09-17 by staying on Free.**
+      `ITERATIONS` in [`backend/src/auth/password.ts`](backend/src/auth/password.ts)
+      is now **25,000**, not 100k. The old "40–60ms" figure was an estimate and
+      measured wrong: 100k costs ~7.6ms and 25k ~2.1ms on an M-series laptop,
+      so the squeeze was real but smaller than written. Lowering it also added a
+      rehash-on-login path — `fakeVerify` burns the configured cost while
+      `verifyPassword` burns the stored one, so the two must be kept converged
+      or login becomes an enumeration oracle by stopwatch. **Confirm the real
+      Workers CPU cost during the smoke test**; 25k has only been measured on a
+      laptop. *(Phase 2.3 —
       [PHASE-2.md](PHASE-2.md#left-for-deploy-day-the-free-plan-cpu-limit))*
 
 ### Blocked on spend or a decision outside the codebase
@@ -1038,10 +1042,10 @@ land rather than trusting memory.
 - [x] Chat rate limiter re-keyed from IP to account — the follow-up PHASE-1.md
       left open. Guests still key on IP, deliberately.
 - [x] 143 tests passing (was 111), incl. per-route 401 *and* 403 coverage
-- [ ] **Deploy-day leftover:** PBKDF2 at 100k iterations costs ~40-60ms CPU,
-      over the Workers **free** plan's 10ms limit. Fine on Workers Paid; on free,
-      lower `ITERATIONS` in `backend/src/auth/password.ts`. See
-      [PHASE-2.md](PHASE-2.md#left-for-deploy-day-the-free-plan-cpu-limit).
+- [x] **Deploy-day leftover — done 2026-09-17.** `ITERATIONS` lowered to 25,000
+      to fit the Workers free plan's 10ms CPU limit, with rehash-on-login added
+      so stored hashes converge on the configured cost. See the Phase 7 entry
+      below and [PHASE-2.md](PHASE-2.md#left-for-deploy-day-the-free-plan-cpu-limit).
 - [x] Password reset — built after Phase 6 on Resend, rather than arriving
       with 6.1 as this line predicted. See the post-Phase-6 block below
 - [ ] *Not built:* email verification at signup. Same provider, still open —
@@ -1173,11 +1177,11 @@ land rather than trusting memory.
 are not numbered phases in this guide, landed between Phase 7's code half and its
 account half
 - [x] **Dead imports caught by the backend checker**, and the four it found cleared
-      ([#10](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/10))
+      ([#10](https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/pull/10))
 - [x] **Legal and trust pages** — privacy, terms, and a security page, written from
       the code rather than a template: they name `compass_session`, PBKDF2 100k, and
       the `/api/students/:id` log patterns. Writing the limitations down is what got
-      two of them fixed — see the next two items ([#11](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/11))
+      two of them fixed — see the next two items ([#11](https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/pull/11))
 - [x] **A cookie notice that is a notice, not a consent gate.** Compass sets exactly
       one strictly-necessary cookie, so an Accept/Reject pair would offer a choice
       that does not exist. One button, and a test asserting there is exactly one.
@@ -1196,21 +1200,21 @@ account half
       first fails on a constraint rather than orphaning anything. A member retypes
       their password (**403** on a wrong one, not 401 — 401 would sign them out over
       a typo); a guest has no password to retype. Offers a CSV export first, because
-      erasure and portability are different rights ([#12](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/12))
+      erasure and portability are different rights ([#12](https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/pull/12))
 - [x] **Password reset over Resend** — a Worker has no raw sockets, so SMTP libraries
       do not run at all, and MailChannels' free Workers relay ended in 2024.
       `/auth/forgot` answers 202 with byte-identical bodies for every case, at equal
       speed via `executionCtx.waitUntil`, so it is not an enumeration oracle over
       teenagers' addresses. Tokens are SHA-256, not PBKDF2 — iterating defends a
       *low-entropy* secret, and there is no dictionary for 256 random bits. A
-      successful reset revokes every session ([#13](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/13))
+      successful reset revokes every session ([#13](https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/pull/13))
 - [x] **TOTP two-factor auth**, hand-written in `backend/src/auth/totp.ts` to hold the
       zero-dependency rule, and **verified against all six RFC 6238 Appendix B
       vectors** — a hand-rolled standard tested only against itself agrees with
       itself, not with Google Authenticator. Login stops at an `mfa_challenges` row
       rather than a half-authenticated session, and password reset deliberately does
       **not** bypass 2FA: email is already the reset channel, so bypassing would
-      leave the inbox a full takeover path ([#14](https://github.com/kandakatla-ram/AI-Admissions-Advisor/pull/14))
+      leave the inbox a full takeover path ([#14](https://github.com/Ram-Kandakatla/AI-Admissions-Advisor/pull/14))
 - [x] 666 tests passing, up from 465 at Phase 6 — backend 311, frontend 355
 - [ ] *Not built:* email verification at signup. The provider is in place now, so
       this is the one thing still standing between §6.1 and its reminder emails
@@ -1221,15 +1225,23 @@ account half
 
 **Phase 7 — Cloudflare Pages + Workers hosting** — **code half done**, account
 half is a runbook in [PHASE-7.md](PHASE-7.md)
-- [x] Architecture chosen — Option A (Pages + Functions), kept deliberately even
-      though Cloudflare now recommends Workers for new projects
-- [x] `functions/api/[[route]].ts` + `backend/src/pages.ts` — the adapter is not
-      where §7.1 puts it, because `hono` cannot resolve from `functions/`
-- [x] Root `wrangler.toml` in Pages mode — the deployed config, in git rather
-      than in dashboard fields. Duplicates compatibility settings and the DB
-      binding from `backend/wrangler.toml`, which vitest still reads
-- [x] `[env.preview]` binding a separate `compass-db-preview`, so an unreviewed
-      PR preview cannot write to real student data
+- [x] ~~Architecture chosen — Option A (Pages + Functions)~~ **Migrated to
+      Workers with static assets, 2026-09-18.** Not a reconsideration: the
+      dashboard no longer offers a Pages creation flow, and Workers Builds
+      injects Workers-scoped credentials that cannot authenticate a Pages
+      deploy (`Authentication error [code: 10000]`). PHASE-7.md predicted the
+      migration and it cost what it predicted
+- [x] ~~`functions/api/[[route]].ts` + `backend/src/pages.ts`~~ **both deleted.**
+      The root config points `main` at `backend/src/index.ts` directly — which
+      works for the same reason the adapter had to live in `backend/` in the
+      first place, so the constraint outlived the workaround
+- [x] Root `wrangler.toml` — the deployed config, in git rather than in
+      dashboard fields. Duplicates compatibility settings and the DB binding
+      from `backend/wrangler.toml`, which vitest still reads
+- [ ] `[env.preview]` binding a separate `compass-db-preview` — **written but
+      inert.** Pages applied it to previews automatically; Workers needs
+      `--env preview` passed explicitly, so non-production builds are switched
+      **off** rather than risk a PR preview bound to production D1
 - [x] `LOG_LEVEL` deliberately **not** declared — declaring it would freeze the
       dashboard field Phase 4 created it for
 - [x] `frontend/public/_headers` — closes PHASE-6's deferred `Referrer-Policy`
@@ -1238,18 +1250,21 @@ half is a runbook in [PHASE-7.md](PHASE-7.md)
 - [x] Remote migrations moved to root scripts (`db:migrate:remote`,
       `db:migrate:preview`) — the backend's version could only ever have failed,
       resolving against a config with a placeholder database id
-- [x] CI builds the Pages Functions bundle, the only step exercising the deploy path
-- [x] Verified locally end-to-end with `npm run preview` (`wrangler pages dev`):
-      D1 reachable through the Function, deep SPA routes served, headers applied
-- [ ] Wrangler login, D1 databases created, Pages project connected to GitHub
+- [x] CI bundles the deployed Worker (`wrangler deploy --dry-run`), the only
+      step exercising the deploy path
+- [x] Verified locally end-to-end with `npm run preview` (`wrangler dev` on the
+      root config): D1 reachable from the Worker, `/api/*` not swallowed by the
+      SPA fallback, deep routes served, `_headers` applied — including the
+      load-bearing `/shared/*` append order, which survived the migration
+- [x] Wrangler login, D1 databases created and migrated
+- [ ] Worker connected to GitHub and building green
 - [ ] Migrations applied to both databases
-- [ ] Secrets set on Production — `ANTHROPIC_API_KEY`, and since password reset
-      landed also `RESEND_API_KEY`, `EMAIL_FROM` and `APP_ORIGIN`; Preview
-      deliberately none
+- [ ] Secrets set on Production — `ANTHROPIC_API_KEY` only (the email
+      secrets went with password reset); Preview deliberately none
 - [ ] Custom domain attached — also unblocks the five `compass.example.com`
       placeholders (three in `index.html`, two in `.well-known/security.txt`)
       and the WAF rule below
-- [x] Naming convention picked — `compass-web`, `compass-db`, `compass-db-preview`
+- [x] Naming convention picked — `college-compass-web`, `compass-db`, `compass-db-preview`
 - [ ] Post-deploy smoke test (incl. second-device data check)
 - [ ] **Blocked, not pending:** the global rate limit. WAF rate limiting rules
       are zone-scoped, so there is nothing to attach one to until a custom
@@ -1257,9 +1272,10 @@ half is a runbook in [PHASE-7.md](PHASE-7.md)
       plan (Free and Pro cap it at 1 minute; Free allows one rule total). Until
       then there is no global limit at all. LLM spend is still capped by the
       in-code `/api/chat` limiter
-- [ ] **Blocked, not pending:** PBKDF2 vs. the plan. Free caps CPU at 10ms per
-      invocation (confirmed current); 100k iterations costs 40–60ms, so signup
-      and login **fail outright** on Free. Settle before the first real signup
+- [x] **PBKDF2 vs. the plan — settled 2026-09-17.** Stayed on Free and lowered
+      `ITERATIONS` to 25,000 (the "40–60ms" estimate measured ~7.6ms). Carries a
+      rehash-on-login path so `verifyPassword` and `fakeVerify` stay converged;
+      the real Workers CPU cost is still unmeasured outside a laptop
 
 **Phase 8 — Post-launch operations**
 - [ ] Backup plan beyond D1's Time Travel window confirmed

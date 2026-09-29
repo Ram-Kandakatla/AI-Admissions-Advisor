@@ -36,17 +36,21 @@ route 500s on a missing table.
 
 ```
 src/
-  index.ts          Worker entry — three lines, so Phase 7 can add a Pages
-                    Functions entry beside it without moving any routes
-  app.ts            the Hono app: middleware stack + every route
+  index.ts          Worker entry, shared by both wrangler configs
+  app.ts            the Hono app: middleware stack + every non-auth route
+  routes/auth.ts    signup, login, 2FA, account deletion
+  auth/             password hashing, TOTP, the wrong-code limit
   http.ts           JSON body reader (413 / 400 handling)
+  crypto.ts         hex, SHA-256, constant-time compare
+  math.ts           round, clamp
+  log.ts            structured JSON logging
   types.ts          bindings, domain types, Hono's context types
   models/           validation and normalization — pure, no I/O
-  services/         recommendation, scholarship, major-insight engines; the LLM client
+  services/         recommendation, scholarship, major-insight engines; LLM and email clients
   store/
     dataStore.ts    createStore(db) — the async D1 factory
     staticData.ts   universities/scholarships, imported not read (no filesystem)
-  middleware/       rate limiting, body cap
+  middleware/       sessions, rate limiting, CSRF guard, body cap, request log
 migrations/         D1 schema, applied by wrangler and by the test setup
 test/               Vitest suites, run inside workerd against a real D1
 ```
@@ -77,6 +81,13 @@ first student who asks a question.
 | POST | `/api/auth/login` | Start a session |
 | POST | `/api/auth/logout` | Revoke the session |
 | GET | `/api/auth/me` | Current user + their student id |
+| DELETE | `/api/auth/account` | Erase the account (`{ confirm: "DELETE", password? }`) |
+| GET | `/api/auth/2fa` | Whether 2FA is on, and recovery codes left |
+| POST | `/api/auth/2fa/setup` | Stage a TOTP secret (password, plus a code if 2FA is already on) |
+| POST | `/api/auth/2fa/enable` | Confirm with a code; returns recovery codes once |
+| POST | `/api/auth/2fa/disable` | Turn 2FA off (password + code) |
+| POST | `/api/auth/2fa/recovery-codes` | Replace the recovery codes (password + code) |
+| POST | `/api/auth/2fa/verify` | Finish a login that stopped at the second factor |
 | GET | `/api/health` | Service + LLM + D1 status |
 | GET | `/api/meta` | Majors / regions / need levels for form dropdowns |
 | GET | `/api/universities` | All universities. Filters: `region`, `major`, `maxTuition`, `search` |
@@ -95,8 +106,12 @@ first student who asks a question.
 | POST | `/api/students/:id/applications` | Track a university |
 | PATCH | `/api/students/:id/applications/:appId` | Update one application |
 | DELETE | `/api/students/:id/applications/:appId` | Stop tracking |
-| POST | `/api/chat` | Ask the chatbot (`{ studentId?, question }`) — rate limited, 30/15min per account (per IP for guests) |
-| GET | `/api/students/:id/chat` | Conversation history |
+| POST | `/api/chat` | Ask the chatbot (`{ studentId?, question, mode? }`) — rate limited, 30/15min per account (per IP for guests) |
+| GET | `/api/students/:id/chat` | One thread's history (`?mode=advising\|essay`) |
+| GET | `/api/students/:id/share` | The student's share link, if any |
+| POST | `/api/students/:id/share` | Create it, or `{ rotate: true }` to replace it |
+| DELETE | `/api/students/:id/share` | Revoke it |
+| GET | `/api/shared/:token` | The read-only shared plan — no session; the token is the credential |
 
 > **Every `/api/students/:id` route is behind an ownership check** (Phase 2).
 > The session cookie names an account; the account owns at most one profile;
@@ -138,10 +153,79 @@ are grouped into **reach / target / safety** by selectivity and GPA distance, ea
 a `matchScore` and plain-English `reasons`. See
 [`src/services/recommendationEngine.ts`](src/services/recommendationEngine.ts).
 
-Data lives in [`data/universities.json`](data/universities.json) (42 schools) and
+**A GPA gap means different things at different admission rates.** `classifyTier` used to
+read `acceptanceRate > 40` as a binary, so a school admitting 98% of applicants and one
+admitting 41% were treated identically and the whole decision rested on `gpaGap` — which
+put Cal State Stanislaus (98.1% admit) in "reach" for a 3.2 student, along with 69 other
+schools admitting ≥85%. The thresholds now widen as admission gets easier: a student must
+be 0.6 below the typical admit before an open-admission school counts as a reach, and may
+sit 0.3 below and still call it a safety. Two invariants hold regardless — under 12% admit
+is a reach for everyone, and nothing at or under 40% is ever a safety. The change only ever
+moves a school toward "easier", so it cannot newly discourage a student; a test asserts
+that across the whole input space.
+
+**The SAT term is scored only when it is independent evidence.** Most schools' `avgGPA`
+is interpolated from their `avgSAT` (see below), which makes `gpaGap` and `satGap` the
+same measurement — scoring both would earn such a school up to 26 points from one number
+where a school with a single signal earns 18. So the SAT term is skipped for
+`gpaSource: "estimated-sat"`, and for test-blind schools, which have no SAT at all. A
+curated school keeps both, because there the two figures really are separate.
+
+Data lives in [`data/universities.json`](data/universities.json) (757 schools) and
 [`data/scholarships.json`](data/scholarships.json) (45 awards). Profiles, chat history,
 tracked applications, and school notes live in D1 — see
 [`src/store/dataStore.ts`](src/store/dataStore.ts).
+
+`/students/:id/recommendations` returns the **20 strongest per tier**, with `counts`
+carrying the true totals so the page can say what it held back. Uncapped, a mid-range
+student matched ~550 schools, which rendered 16,500 DOM nodes and turned "Save as PDF"
+(`window.print()`) into a 64-page document. Browsing the whole set is what `/explore` is
+for.
+
+## Where the university data comes from
+
+715 of the 757 schools are imported from the U.S. Department of Education's
+[College Scorecard](https://collegescorecard.ed.gov/data/) (public domain). The other 42
+are the original hand-curated set and are preserved exactly — the importer matches them
+by IPEDS `UNITID`, never by name.
+
+Re-import after a Scorecard release (roughly annual) with the institution-level CSV:
+
+```
+npm run data:import -- --csv ~/Downloads/Most-Recent-Cohorts-Institution.csv
+```
+
+It is idempotent — re-running against the same CSV produces a byte-identical file. See
+[`scripts/import-scorecard.mjs`](scripts/import-scorecard.mjs) for the selection rules
+and field mappings, which carry the reasoning inline. Three things worth knowing:
+
+- **GPA is estimated, and labelled.** No federal dataset publishes average admit GPA —
+  only each school's own Common Data Set does, in a PDF that is frequently blank. Every
+  imported school carries an estimate and the UI marks it, so an inferred figure never
+  reads as a reported one. `gpaSource` says which: `estimated-sat` interpolates from the
+  SAT average (RMSE 0.090 against the curated schools), `estimated-profile` fits from
+  admission rate and first-year retention (RMSE 0.152; 0.067 out of sample against the
+  curated schools' reported figures). The curated 42 keep their real numbers as
+  `curated`.
+- **`avgSAT` is nullable, and null means test-blind.** 143 schools report no SAT average
+  because they do not consider one — the whole UC and CSU systems, and Caltech. That is
+  a fact about the school, not a gap in the data, so it is not filled in: `evaluate()`
+  skips test fit for them rather than scoring a student against a hurdle that does not
+  exist.
+- **Retention is in the `estimated-profile` fit for a structural reason, not accuracy.**
+  `classifyTier` reads `acceptanceRate` *and* `gpaGap`. With GPA fitted from admission
+  rate alone the second derived from the first, so the classifier had one school-side
+  signal wearing two hats: every test-blind school in the 60–80% admit band shared a
+  0.14-wide GPA range and therefore one tier, where SAT-reporting schools in that band
+  spread 1.09 wide across all three. It also floored at 3.18, making `gpaGap <= -0.1`
+  unreachable below a 3.28 GPA — a 3.2 student got safeties from 13% of SAT-reporting
+  schools and **0%** of test-blind ones, which is every CSU. Adding retention (the
+  stronger of the two predictors, R² 0.668 against 0.386) restored the spread to 0.84
+  wide and that student to 19%. A least-squares fit is right here where it is wrong for
+  `GPA_ANCHORS`: the test-blind schools fall *inside* the 572-school training domain.
+- **Majors are coarse.** They are derived from 2-digit CIP degree shares and mapped onto
+  the existing 22-major vocabulary, capped at the 8 largest per school. CIP cannot
+  separate Physics from Chemistry, so a school with either is credited with both.
 
 `data/compass.db` is the pre-D1 SQLite file. Nothing reads it any more; it is
 kept only so the profiles in it aren't destroyed by the migration.

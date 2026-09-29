@@ -36,6 +36,66 @@ describe("recommendationsToCsv", () => {
     expect(rows(csv)[0]).toMatch(/^Tier,University,City,State,Region,Type,Setting,Match score,/);
   });
 
+  it("marks an estimated GPA in the value itself", () => {
+    // A spreadsheet has no tooltip, and the file outlives the page it came
+    // from. Without this an inferred figure reads as one the school published.
+    const csv = recommendationsToCsv(
+      recommendationResponse({
+        target: [recommendation({ avgGPA: 3.42, gpaSource: "estimated-sat" })],
+      })
+    );
+    expect(rows(csv)[1]).toContain("3.42 (est)");
+  });
+
+  it("leaves a curated GPA unmarked", () => {
+    const csv = recommendationsToCsv(
+      recommendationResponse({ target: [recommendation({ avgGPA: 3.95, gpaSource: "curated" })] })
+    );
+    expect(rows(csv)[1]).toContain("3.95");
+    expect(rows(csv)[1]).not.toContain("(est)");
+  });
+
+  it("writes test-blind rather than an empty SAT cell", () => {
+    const csv = recommendationsToCsv(
+      recommendationResponse({ target: [recommendation({ avgSAT: null })] })
+    );
+    expect(rows(csv)[1]).toContain("test-blind");
+  });
+
+  it("says so when the API trimmed the list", () => {
+    // The page says "20 strongest of 154" on screen; the file had nowhere to
+    // put that and so read as the complete list.
+    const csv = recommendationsToCsv(
+      recommendationResponse(
+        { target: [recommendation({ name: "Target U" })] },
+        { target: 154 }
+      )
+    );
+    expect(csv).toContain("1 of 154 target");
+    expect(csv).toMatch(/not all of them/i);
+  });
+
+  it("stays a clean rectangle when nothing was trimmed", () => {
+    // The note is the only thing that may break the table shape, so it must not
+    // appear in the ordinary case.
+    const csv = recommendationsToCsv(
+      recommendationResponse({ target: [recommendation({ name: "Target U" })] })
+    );
+    expect(csv).not.toMatch(/not all of them/i);
+    expect(rows(csv)).toHaveLength(2);
+  });
+
+  it("keeps the trimmed note off the data rows", () => {
+    const csv = recommendationsToCsv(
+      recommendationResponse({ target: [recommendation({ name: "Target U" })] }, { target: 99 })
+    );
+    const lines = csv.split("\r\n");
+    // header, one school, blank, note
+    expect(lines[1]).toContain("Target U");
+    expect(lines[2]).toBe("");
+    expect(lines[3]).toMatch(/not all of them/i);
+  });
+
   it("writes reach, then target, then safety", () => {
     // A student reads this list top-down as an ambition ladder. Object key
     // order is not a guarantee, so the exporter walks an explicit tier order.

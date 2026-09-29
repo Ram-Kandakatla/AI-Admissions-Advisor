@@ -57,15 +57,28 @@ jobs:
       # No API keys are set, which pins the chat route to its offline fallback.
       - run: npm run test --prefix backend
 
-      # Bundle functions/api/[[route]].ts the way Cloudflare Pages will, using
-      # the root wrangler.toml. This is the only step that exercises the deploy
-      # path, and it is here because the failure it catches is invisible
-      # everywhere else: functions/ has no node_modules above it, so a package
-      # imported from that directory resolves locally in an editor and then
-      # fails in Cloudflare's build. Cheap — a few seconds — and the alternative
-      # is finding out from a red deploy after the merge.
-      - name: Build the Pages Functions bundle
-        run: backend/node_modules/.bin/wrangler pages functions build --outfile=/tmp/functions.js
+      # Bundle the deployed Worker the way Cloudflare will, using the root
+      # wrangler.toml. This is the only step that exercises the deploy path,
+      # and it stays for the reason it was added: module resolution for the
+      # entry point depends on where the entry file sits, so a bad `main` or a
+      # misplaced import resolves in an editor and then fails in Cloudflare's
+      # build. --dry-run bundles and validates without deploying, and needs no
+      # credentials — confirmed, this job has none.
+      #
+      # The empty frontend/dist is not a placeholder for something better.
+      # wrangler refuses to start if assets.directory is missing, and this job
+      # has no reason to spend a minute building a frontend it does not check —
+      # the frontend job below builds the real one. An empty directory reads as
+      # "0 files" and bundles the Worker exactly the same way, which is the part
+      # under test here.
+      #
+      # --env="" says "the top-level environment" out loud. [env.preview] exists,
+      # so without it wrangler warns that it is guessing, and CI would stop
+      # matching the command the dashboard actually runs.
+      - name: Build the deployed Worker bundle
+        run: |
+          mkdir -p frontend/dist
+          backend/node_modules/.bin/wrangler deploy --dry-run --env="" --outdir=/tmp/worker-build
 
   frontend:
     name: Frontend (jsdom)

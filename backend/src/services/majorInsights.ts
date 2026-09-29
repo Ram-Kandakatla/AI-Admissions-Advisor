@@ -1,14 +1,8 @@
-// Major deep-dive: what the dataset can honestly say about one field of study.
-//
-// IMPORTANT — on what this does NOT do:
-// It would be easy to attach prose to each school/major pair ("top-10 robotics
-// program", "strong Google recruiting", "join the HCI lab"). We don't, because
-// none of that is in the dataset and a student who repeats an invented detail
-// in an essay or interview is worse off than one who had nothing. Every number
-// below is computed from data/universities.json; everything qualitative is
-// either a question for the student to research or a handoff to the chatbot,
-// which can answer with its own knowledge and its own caveats.
+// Major deep dive, computed only from the dataset. No invented prose about
+// programs ("top-10 robotics"): a student could repeat it in an essay.
+// Qualitative questions go to the student's own research or the chatbot.
 
+import { round } from "../math.js";
 import { loadUniversities } from "../store/staticData.js";
 import { classifyTier } from "./recommendationEngine.js";
 import type { StudentRecord, Tier, University } from "../types.js";
@@ -60,11 +54,17 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
 }
 
+/** The SAT averages that actually exist — test-blind schools report none. */
+function reportedSats(schools: University[]): number[] {
+  return schools.map((u) => u.avgSAT).filter((s): s is number => s !== null);
+}
+
 function spread(values: number[]): Spread | null {
-  if (values.length === 0) return null;
+  const mid = median(values);
+  if (mid === null) return null;
   return {
     min: Math.min(...values),
-    median: round(median(values), 2),
+    median: round(mid, 2),
     max: Math.max(...values),
   };
 }
@@ -75,12 +75,6 @@ function tally(items: string[]): { key: string; count: number }[] {
   return [...counts.entries()]
     .map(([key, count]) => ({ key, count }))
     .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
-}
-
-function round(n: number | null, places = 2): number | null {
-  if (n === null) return null;
-  const f = 10 ** places;
-  return Math.round(n * f) / f;
 }
 
 /**
@@ -102,7 +96,10 @@ export function majorInsights(
   const selectivity = spread(schools.map((u) => u.acceptanceRate));
   const tuition = spread(schools.map((u) => u.tuition));
   const avgGPA = spread(schools.map((u) => u.avgGPA));
-  const avgSAT = spread(schools.map((u) => u.avgSAT));
+  // Test-blind schools report no SAT, so they are excluded from the SAT spread
+  // rather than counted as a zero — a single null would drag `min` to 0 and make
+  // the median meaningless. spread() returns null if none of them report one.
+  const avgSAT = spread(reportedSats(schools));
 
   // --- Which other majors travel with this one ---
   // Useful for a student who might switch: a school strong on adjacent fields
@@ -122,7 +119,7 @@ export function majorInsights(
   if (student && typeof student.gpa === "number") {
     const tiers: Record<Tier, number> = { reach: 0, target: 0, safety: 0 };
     for (const uni of schools) {
-      tiers[classifyTier(uni, round(uni.avgGPA - student.gpa, 2) ?? 0)] += 1;
+      tiers[classifyTier(uni, round(uni.avgGPA - student.gpa, 2))] += 1;
     }
 
     const gpas = schools.map((u) => u.avgGPA);
@@ -131,10 +128,10 @@ export function majorInsights(
     position = {
       tiers,
       gpa: student.gpa,
-      medianGPA: round(medianGPA, 2),
+      medianGPA: medianGPA === null ? null : round(medianGPA, 2),
       gpaGapToMedian: medianGPA === null ? null : round(student.gpa - medianGPA, 2),
       satScore: student.satScore ?? null,
-      medianSAT: student.satScore ? median(schools.map((u) => u.avgSAT)) : null,
+      medianSAT: student.satScore ? median(reportedSats(schools)) : null,
       // How many of these schools the student could afford at sticker price.
       affordable:
         student.financialNeed === "high"
@@ -180,6 +177,8 @@ export function majorInsights(
         setting: u.setting,
         type: u.type,
         avgGPA: u.avgGPA,
+        // So the table can mark estimated GPAs as estimates.
+        gpaSource: u.gpaSource,
         avgSAT: u.avgSAT,
         acceptanceRate: u.acceptanceRate,
         tuition: u.tuition,
@@ -191,7 +190,7 @@ export function majorInsights(
           : [],
         tier:
           student && typeof student.gpa === "number"
-            ? classifyTier(u, round(u.avgGPA - student.gpa, 2) ?? 0)
+            ? classifyTier(u, round(u.avgGPA - student.gpa, 2))
             : null,
       }))
       .sort((a, b) => a.acceptanceRate - b.acceptanceRate),

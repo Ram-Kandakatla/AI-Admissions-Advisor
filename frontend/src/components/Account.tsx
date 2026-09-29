@@ -5,14 +5,6 @@ import type { AuthUser, StudentRecord } from "../types";
 
 export type AccountMode = "signup" | "login";
 
-/**
- * Sign in / create an account.
- *
- * Composed like the hero rather than as a centred card in an empty page: the
- * left column says what an account is actually for, the right one is the form.
- * A visitor lands here holding an unsaved list, so the page has a job beyond
- * collecting a password — it has to answer "why would I".
- */
 export default function Account({
   mode,
   guestProfile,
@@ -27,14 +19,7 @@ export default function Account({
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  /**
-   * The challenge from a login that stopped at the second factor.
-   *
-   * Non-null means the password was accepted and this screen is now asking for
-   * a code. Held in state rather than pushed to its own route on purpose: the
-   * challenge is a short-lived credential, and a URL is the one place in a
-   * browser that gets bookmarked, shared, and kept in history.
-   */
+  // A credential, so kept in state and never put in the URL.
   const [challenge, setChallenge] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const emailRef = useRef<HTMLInputElement>(null);
@@ -76,12 +61,7 @@ export default function Account({
     }
   };
 
-  /**
-   * The second step. A wrong code costs a whole new sign-in, because the
-   * server spends the challenge whether or not the code was right — otherwise
-   * the five-minute window becomes an unlimited guessing budget against six
-   * digits. Saying so on the screen is fairer than letting it surprise anyone.
-   */
+  // A wrong code spends the challenge, so the screen warns it means signing in again.
   const submitCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!challenge || busy) return;
@@ -124,10 +104,7 @@ export default function Account({
                 id="mfa-code"
                 type="text"
                 value={code}
-                // `one-time-code` is what lets iOS and Android offer the code
-                // from the notification shade. inputMode numeric brings up the
-                // number pad without blocking a recovery code, which has
-                // letters in it — so this is deliberately not type="number".
+                // Not type="number": recovery codes contain letters.
                 autoComplete="one-time-code"
                 inputMode="numeric"
                 autoCorrect="off"

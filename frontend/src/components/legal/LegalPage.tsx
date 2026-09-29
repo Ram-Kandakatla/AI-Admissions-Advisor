@@ -3,24 +3,8 @@ import { Link } from "react-router-dom";
 import { formatLegalDate, isUnfilled, LEGAL_UPDATED } from "../../legal";
 
 /**
- * The frame the four legal pages share: title, date, contents, sections.
- *
- * WHY A SHARED FRAME AND NOT FOUR HAND-BUILT PAGES
- *
- * These documents are read in a particular way — nobody reads one end to end.
- * Someone arrives from a footer link with one question ("does this sell my
- * data", "can I delete my account", "who do I email about a bug") and needs to
- * find the paragraph that answers it. That makes the furniture — a contents
- * list of real anchors, a stable heading rhythm, a visible last-changed date —
- * the functional part of the page rather than decoration, and it has to be
- * identical across all four or the reader has to relearn it each time.
- *
- * WHY THE HEADINGS CARRY IDS
- *
- * So a paragraph can be linked to. "See /privacy#ai" in a support reply, or in
- * a school's own handout, is worth more than "see the privacy policy", and a
- * legal document that cannot be cited at the section level tends not to be
- * cited at all.
+ * The shared frame for the four legal pages, so contents, headings and date
+ * work the same everywhere. Headings carry ids so sections can be linked.
  */
 
 export interface LegalSection {
@@ -40,17 +24,7 @@ export default function LegalPage({
   eyebrow: string;
   title: string;
   lead: ReactNode;
-  /**
-   * The plain-language précis, above the contents.
-   *
-   * Not optional by accident — every one of these pages has one. A legal
-   * document aimed at sixteen-year-olds and their parents that opens with
-   * defined terms has already lost most of the people it is written for, and
-   * the summary is the only part many readers will read. It is deliberately
-   * *not* marked as non-binding boilerplate ("this summary is for convenience
-   * only and the full terms govern"): that sentence exists to let the summary
-   * be less true than the document, which is not a trade this app wants.
-   */
+  /** Plain-language summary. Required, and not labelled non-binding: it must be as true as the rest. */
   summary: ReactNode;
   sections: LegalSection[];
   footer?: ReactNode;
@@ -113,19 +87,7 @@ export default function LegalPage({
   );
 }
 
-/**
- * A value that has not been filled in yet, rendered so it cannot be skimmed
- * past.
- *
- * The alternative was to leave the placeholder as plain text, and the reason
- * not to is that plain text is exactly what gets deployed by accident. A legal
- * page that says "governed by the laws of [YOUR STATE]" in the same type as
- * everything around it looks finished at a glance; the same string with a
- * marked background does not. It also carries a title attribute so anyone
- * hovering in a review gets told what to do about it, and it is a <mark>,
- * which means assistive technology announces it as highlighted rather than
- * reading it as ordinary prose.
- */
+/** Highlighted so an unfilled placeholder can't ship looking finished. */
 export function Unfilled({ children }: { children: string }) {
   if (!isUnfilled(children)) return <>{children}</>;
   return (
@@ -135,16 +97,7 @@ export function Unfilled({ children }: { children: string }) {
   );
 }
 
-/**
- * A small definition-style table, used by the cookie inventory and the
- * security scope list.
- *
- * A real <table> rather than a grid of divs: this is tabular data with a
- * header row, and the semantics are what let a screen reader announce "Purpose,
- * column 2" instead of reading nine unlabelled cells in a row. It scrolls
- * inside its own container on a narrow screen so the page body never scrolls
- * sideways.
- */
+/** Scrolls inside its own container on narrow screens. */
 export function LegalTable({
   caption,
   head,

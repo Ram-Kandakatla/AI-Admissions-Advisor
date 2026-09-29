@@ -79,7 +79,8 @@ export interface University {
   name: string;
   shortName: string;
   avgGPA: number;
-  avgSAT: number;
+  /** Null for a test-blind school, which reports no SAT average at all. */
+  avgSAT: number | null;
   majors: string[];
   acceptanceRate: number;
   tuition: number;
@@ -88,6 +89,17 @@ export interface University {
   state: string;
   setting?: string;
   type?: string;
+  unitid?: number;
+  /**
+   * Where avgGPA came from. No federal dataset publishes average admit GPA, so
+   * every imported school carries an estimate — from its SAT average, or from
+   * its admission rate when it is test-blind and has no SAT. Only the
+   * hand-curated schools are reported figures. Rendered as an "est." marker,
+   * see <GpaValue>.
+   */
+  gpaSource?: "curated" | "estimated-sat" | "estimated-profile";
+  testPolicy?: "required" | "recommended" | "optional" | "not-used" | null;
+  enrollment?: number;
 }
 
 export type Tier = "reach" | "target" | "safety";
@@ -104,8 +116,11 @@ export interface Recommendation extends University {
 
 export interface RecommendationResponse {
   studentId: string;
+  /** True totals per tier, before the per-tier cap below. */
   counts: Record<Tier, number>;
+  /** The strongest matches per tier, capped by the API at `shownPerTier`. */
   recommendations: Record<Tier, Recommendation[]>;
+  shownPerTier?: number;
 }
 
 export interface Meta {
@@ -132,7 +147,8 @@ export interface MajorSchool {
   setting: string;
   type: string;
   avgGPA: number;
-  avgSAT: number;
+  gpaSource?: "curated" | "estimated-sat" | "estimated-profile";
+  avgSAT: number | null;
   acceptanceRate: number;
   tuition: number;
   /** Which of the student's other intended majors this school also offers. */
@@ -147,7 +163,13 @@ export interface MajorInsights {
   selectivity: Spread;
   tuition: Spread;
   avgGPA: Spread;
-  avgSAT: Spread;
+  /**
+   * Null when no school offering this major reports an SAT average. Test-blind
+   * schools are excluded from the spread rather than counted as zero, so a major
+   * taught only by them has nothing to average — see reportedSats() in
+   * majorInsights.ts.
+   */
+  avgSAT: Spread | null;
   regions: { key: string; count: number }[];
   settings: { key: string; count: number }[];
   types: { key: string; count: number }[];
@@ -339,7 +361,7 @@ export interface ChatMessage {
   source?: LlmProvider;
 }
 
-// ---- Sharing (Phase 6.7) ----
+// ---- Sharing ----
 
 export interface ShareLink {
   token: string;
@@ -387,7 +409,11 @@ export interface SharedPlan {
     careerGoals: string;
     preferredRegions: string[];
   };
+  /** The strongest per tier — capped by the API, like the matches page. */
   recommendations: Record<Tier, Recommendation[]>;
+  /** True totals per tier, before that cap. */
+  recommendationCounts: Record<Tier, number>;
+  shownPerTier: number;
   scholarships: Record<Tier, Scholarship[]>;
   applications: SharedApplication[];
   notes: SchoolNote[];

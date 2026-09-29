@@ -46,9 +46,7 @@ export default function ShareSettings({ student }: { student: StudentRecord }) {
     };
   }, [student.id]);
 
-  // Built here rather than server-side: the API has no idea what origin the
-  // app is served from, and in Phase 7 that is a custom domain it is never
-  // told about.
+  // Built client-side: only the browser knows the origin the app is served from.
   const url = link ? `${window.location.origin}/shared/${link.token}` : "";
 
   const run = async (action: () => Promise<void>) => {

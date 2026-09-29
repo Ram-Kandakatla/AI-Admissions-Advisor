@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { majorFromSlug, slugifyMajor } from "../slug";
-import type { MajorInsights, MajorSchool, StudentRecord, Tier } from "../types";
+import { GpaValue } from "./GpaValue";
+import type { MajorInsights, MajorSchool, StudentRecord } from "../types";
+import { TIER_LABEL, TIER_ORDER } from "../tiers";
 
 // Everything on this page is computed from the university dataset. There is
 // deliberately no prose about what a given program is *like* — that isn't in
@@ -14,12 +16,6 @@ const money = new Intl.NumberFormat(undefined, {
   currency: "USD",
   maximumFractionDigits: 0,
 });
-
-const TIER_LABEL: Record<Tier, string> = {
-  reach: "Reach",
-  target: "Target",
-  safety: "Safety",
-};
 
 export default function MajorDeepDive({
   student,
@@ -230,7 +226,7 @@ function Position({ data }: { data: MajorInsights }) {
     <section className="md-section">
       <h2 className="sec-hd">Where you stand</h2>
       <div className="rec-summary">
-        {(["reach", "target", "safety"] as Tier[]).map((t) => (
+        {TIER_ORDER.map((t) => (
           <div className={`rec-stat ${t}`} key={t}>
             <div className="num">{p.tiers[t]}</div>
             <div className="label">{TIER_LABEL[t]}</div>
@@ -385,7 +381,7 @@ function SchoolRow({ school, showTier }: { school: MajorSchool; showTier: boolea
         </td>
       )}
       <td>{school.acceptanceRate}%</td>
-      <td>{school.avgGPA}</td>
+      <td><GpaValue value={school.avgGPA} source={school.gpaSource} /></td>
       <td>{money.format(school.tuition)}</td>
       <td>
         {school.alsoCovers.length > 0 ? (

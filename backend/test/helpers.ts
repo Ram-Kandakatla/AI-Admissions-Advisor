@@ -121,6 +121,25 @@ export async function newStudent(
   return record.id;
 }
 
+/**
+ * Poll for work a route finished in waitUntil, after it had already answered.
+ * A test asserting something did *not* happen must first wait for a positive
+ * signal from the same task, or it only proves the task hadn't got there yet.
+ */
+export async function eventually<T>(
+  check: () => Promise<T | null | undefined | false>,
+  what: string,
+  timeoutMs = 5000
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await check();
+    if (value) return value as T;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 /** A brand-new account, returning the session cookie it ends with. */
 export async function signUp(
   email: string,

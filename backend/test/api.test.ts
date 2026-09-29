@@ -43,6 +43,70 @@ describe("API endpoints", () => {
     expect(recs.recommendations).toHaveProperty("safety");
   });
 
+  test("caps each tier but reports the true total", async () => {
+    // At 614 schools a mid-range student matches several hundred. Returning them
+    // all rendered 16,500 DOM nodes and made "Save as PDF" a 64-page document,
+    // so the API sends the strongest per tier — and `counts` must keep telling
+    // the truth about how many there were, or the page cannot say what it hid.
+    const create = await body(
+      await post("/api/students", {
+        name: "Ben",
+        gpa: 3.4,
+        satScore: 1150,
+        interestedMajors: ["Business"],
+        financialNeed: "high",
+      }),
+      201
+    );
+
+    const recs = await body(await get(`/api/students/${create.id}/recommendations`), 200);
+    const cap = recs.shownPerTier;
+    expect(cap).toBeGreaterThan(0);
+
+    let sawCappedTier = false;
+    for (const tier of ["reach", "target", "safety"] as const) {
+      const shown = recs.recommendations[tier];
+      expect(shown.length).toBeLessThanOrEqual(cap);
+      expect(shown.length).toBeLessThanOrEqual(recs.counts[tier]);
+      if (recs.counts[tier] > cap) {
+        sawCappedTier = true;
+        expect(shown).toHaveLength(cap);
+      }
+      // The cap must keep the best matches, not an arbitrary slice.
+      const scores = shown.map((r: { matchScore: number }) => r.matchScore);
+      expect([...scores].sort((a, b) => b - a)).toEqual(scores);
+    }
+    expect(sawCappedTier, "expected this profile to overflow at least one tier").toBe(true);
+  });
+
+  test("full=1 opts out of the cap", async () => {
+    // Compare looks schools up by id, so against a capped payload every school
+    // below the cut renders "Not in your matches" — for a school that is in
+    // them. This is the escape hatch that keeps that page honest.
+    const create = await body(
+      await post("/api/students", {
+        name: "Bea",
+        gpa: 3.4,
+        satScore: 1150,
+        interestedMajors: ["Business"],
+        financialNeed: "high",
+      }),
+      201
+    );
+
+    const capped = await body(await get(`/api/students/${create.id}/recommendations`), 200);
+    const full = await body(await get(`/api/students/${create.id}/recommendations?full=1`), 200);
+
+    expect(full.shownPerTier).toBeNull();
+    expect(full.counts).toEqual(capped.counts);
+    for (const tier of ["reach", "target", "safety"] as const) {
+      expect(full.recommendations[tier]).toHaveLength(full.counts[tier]);
+      expect(full.recommendations[tier].length).toBeGreaterThanOrEqual(
+        capped.recommendations[tier].length
+      );
+    }
+  });
+
   test("POST /api/chat returns an answer in fallback mode", async () => {
     const b = await body(await post("/api/chat", { question: "How does the FAFSA work?" }), 200);
     expect(typeof b.answer).toBe("string");

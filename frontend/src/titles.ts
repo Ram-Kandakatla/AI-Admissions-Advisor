@@ -1,18 +1,9 @@
-// What the browser tab says.
-//
-// Before the router there was one title for the whole app, and it was correct:
-// there was one URL. Now there are thirteen, and every one of them can be
-// bookmarked, reopened from history, or sat in a row of tabs during an
-// afternoon of applications — none of which works if they all read "Compass".
-//
-// The suffix is " — Compass" rather than a prefix so the distinguishing word
-// survives a narrow tab, where a browser truncates from the right.
+// Per-route document titles. " — Compass" is a suffix so the distinguishing
+// word survives a narrow tab.
 
 const SUFFIX = " — Compass";
 
 const TITLES: Record<string, string> = {
-  // The homepage keeps the full name: it is the one page where the tab is
-  // doing introductions rather than telling you which of five tabs is which.
   "/": "Compass — College Admissions Advisor",
   "/profile": `Your profile${SUFFIX}`,
   "/matches": `Your matches${SUFFIX}`,
@@ -28,10 +19,6 @@ const TITLES: Record<string, string> = {
   "/account": `Your account${SUFFIX}`,
   "/signin": `Sign in${SUFFIX}`,
   "/signup": `Create an account${SUFFIX}`,
-  // The legal and trust pages. These are the titles most likely to be read in
-  // a history list rather than a tab bar — someone hunting for "that page that
-  // said what they do with my data" weeks later — so each names the document
-  // rather than the section it belongs to.
   "/terms": `Terms of Service${SUFFIX}`,
   "/privacy": `Privacy Policy${SUFFIX}`,
   "/cookies": `Cookie Policy${SUFFIX}`,
@@ -39,15 +26,8 @@ const TITLES: Record<string, string> = {
 };
 
 /**
- * "computer-science" → "Computer Science".
- *
- * Deliberately not routed through the catalog, even though `majorFromSlug`
- * could give the exact name: that would make the title wait on a fetch, so the
- * tab would read "Majors" for a beat and then change under someone who is
- * already scanning their tab bar. This is lossy where a name carries
- * punctuation — "Business / Economics" comes back as "Business Economics" —
- * which is the right trade for a tab label, and would not be for anything the
- * app displayed on the page.
+ * Lossy on punctuation, but needs no catalog fetch, so the title doesn't
+ * change a beat after the page loads. Fine for a tab, not for page content.
  */
 function unslug(slug: string): string {
   return slug
@@ -58,14 +38,8 @@ function unslug(slug: string): string {
 }
 
 /**
- * The document title for a location. Unknown paths get the 404's title.
- *
- * `search` matters for exactly one route so far. Phase 6.3 put the chatbot's
- * two assistants on `/chat` and `/chat?mode=essay` — two separately
- * bookmarkable pages, which is the same situation this module exists to fix,
- * only inside one path instead of across fourteen. `/compare?ids=` is
- * deliberately not treated this way: the query there is a set of schools, not
- * a different page.
+ * Unknown paths get the 404 title. `search` only matters for /chat?mode=essay,
+ * which is a different page; /compare?ids= is the same page with other schools.
  */
 export function titleFor(pathname: string, search = ""): string {
   if (pathname === "/chat" && new URLSearchParams(search).get("mode") === "essay") {

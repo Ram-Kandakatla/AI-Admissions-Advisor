@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "data:import": "node scripts/import-scorecard.mjs",
     "db:migrate:local": "wrangler d1 migrations apply compass-db --local",
     "cf-typegen": "wrangler types"
   },

@@ -1,11 +1,16 @@
 # Response headers for the static side of the app.
 #
-# This covers documents and assets only. Pages does NOT apply this file to
-# responses produced by functions/api/[[route]].ts — a Function's headers come
-# from its own code, which for /api/* is hono/secure-headers in backend/src/
-# app.ts. So the two halves of the origin are hardened in two places by
-# necessity, not by choice; if you change a policy here, check whether app.ts
-# needs the same change.
+# This covers documents and assets only. The platform does NOT apply this file
+# to responses produced by the Worker — those headers come from its own code,
+# which for /api/* is hono/secure-headers in backend/src/app.ts. So the two
+# halves of the origin are hardened in two places by necessity, not by choice;
+# if you change a policy here, check whether app.ts needs the same change.
+#
+# That split survived the 2026-09-18 move from Pages to Workers unchanged:
+# Workers static assets reads _headers with the same matching rules and the
+# same carve-out for Worker-generated responses. Its sibling _redirects is NOT
+# supported and was deleted in that move — the SPA fallback it described is now
+# `not_found_handling` in the root wrangler.toml.
 
 /*
   # The HTML document was the one thing with no frame protection. app.ts sends
@@ -53,3 +58,12 @@
   # policy. Moving this block above the /* rule would silently invert it and
   # leave the share token's page on the weaker policy.
   Referrer-Policy: no-referrer
+
+# Deployed Workers serve .txt as bare text/plain (cloudflare/workers-sdk#9599),
+# so non-ASCII characters render garbled. RFC 9116 also requires utf-8 here.
+/.well-known/security.txt
+  Content-Type: text/plain; charset=utf-8
+
+# Its copyright line contains ©.
+/fonts/OFL.txt
+  Content-Type: text/plain; charset=utf-8

@@ -3,34 +3,9 @@ import LegalPage, { LegalTable, type LegalSection } from "./LegalPage";
 import { REPO_URL } from "../../legal";
 
 /**
- * The cookie policy.
- *
- * WHY THIS PAGE IS MOSTLY A TABLE
- *
- * Because the honest version of this document is very short, and padding it
- * would obscure the one fact worth having: there is exactly one cookie. Most
- * cookie policies are long because most sites have thirty trackers to
- * enumerate and an interest in the reader losing count. This app has a session
- * cookie and two localStorage keys, all three of which can be listed by name
- * with what they hold, and the completeness is the point — a reader can check
- * this list against their own browser in about fifteen seconds and find nothing
- * missing.
- *
- * WHY THERE IS NO ACCEPT / REJECT
- *
- * Explained in §3 for the reader, and worth stating here for whoever edits
- * this next: under the ePrivacy Directive and the GDPR, storage that is
- * strictly necessary to deliver a service the user asked for does not require
- * consent. __Host-compass_session is that; without it there is no sign-in. Offering a
- * Reject button for a cookie the app cannot function without would be a choice
- * that is not a choice, and the consent record it produced would be worthless.
- * The banner (components/CookieNotice.tsx) is therefore a notice, not a gate.
- *
- * IF ANALYTICS ARE EVER ADDED, this changes completely: analytics storage is
- * not strictly necessary, it requires prior opt-in consent in the EU/UK, and
- * the banner would have to become a real gate that blocks the script until
- * someone says yes. That is a deliberate architectural fork and should not be
- * taken accidentally.
+ * Lists every cookie and storage key by name; keep it complete. No
+ * Accept/Reject because the only cookie is strictly necessary. Adding
+ * analytics would require a real opt-in gate (see CookieNotice.tsx).
  */
 export default function CookiePolicy() {
   const sections: LegalSection[] = [

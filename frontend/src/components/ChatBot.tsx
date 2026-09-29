@@ -3,24 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { ChatMessage, ChatMode, LlmProvider, StudentRecord } from "../types";
 
-// Which service answered. Renamed from `mode` in Phase 6.3, when `mode` came
-// to mean the assistant you are talking to — the two are independent, and one
-// name for both was going to cause exactly one confusing bug.
+// Which LLM provider answered; unrelated to the chat `mode`.
 const PROVIDER_LABEL: Record<LlmProvider, string> = {
   claude: "Claude",
   openai: "OpenAI",
   fallback: "Offline guide",
 };
 
-/**
- * The two assistants.
- *
- * Everything that differs between them lives in this one table: the switch
- * label, what the panel calls itself, the greeting, the placeholder, and the
- * starter questions. Adding a third mode is an entry here plus an entry in the
- * backend's chatMode.ts — which is the point of building it this way rather
- * than branching on `mode` in eight places down the file.
- */
+/** Everything that differs per mode. A new mode also needs backend chatMode.ts. */
 const MODES: Record<
   ChatMode,
   {
@@ -108,25 +98,13 @@ export default function ChatBot({
 
   const studentId = student?.id ?? null;
 
-  // Whose conversation this is has changed — signing in, signing out, or
-  // signing in as someone else. Both threads go.
-  //
-  // Deliberately keyed on the id alone and NOT on `mode`: a guest's threads
-  // live only in this state, so clearing on every switch would delete the
-  // conversation they just flipped away from. That was the first version of
-  // this effect, and it made the switch destructive for exactly the visitors
-  // who have nowhere else to keep their work.
+  // Clear both threads when the student changes. Not keyed on `mode`: a
+  // guest's threads live only here, so a mode switch must not wipe them.
   useEffect(() => {
     setThreads(emptyThreads);
   }, [studentId]);
 
-  // Restore this mode's saved thread.
-  //
-  // The endpoint has existed since Phase 1 and nothing called it, which left a
-  // real oddity: the server feeds prior turns to the model as context, so
-  // after a refresh the assistant remembered a conversation the student could
-  // no longer see. Harmless while there was one hidden thread; actively
-  // confusing once a visible switch implies two.
+  // Restore this mode's saved thread; the model sees it as context anyway.
   useEffect(() => {
     if (!studentId) return;
     let live = true;
