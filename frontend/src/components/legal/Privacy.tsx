@@ -19,7 +19,6 @@ import { CONTACT_EMAIL, OPERATOR_NAME, REPO_URL } from "../../legal";
  *   - middleware/auth.ts        the session cookie and its attributes
  *   - log.ts, middleware/requestLog.ts   what a log line may and may not hold
  *   - services/llmService.ts    what leaves for a model provider
- *   - services/emailService.ts  what leaves for the mail provider
  *   - middleware/rateLimit.ts   the one place an IP address is used, and how
  *   - models/studentProfile.ts  the profile fields, exhaustively
  *   - migrations/*.sql          everything that is stored at all
@@ -75,9 +74,8 @@ export default function Privacy() {
             per-account salt, which cannot be reversed back into your password.
           </p>
           <p>
-            Creating one starts with an email to that address. Until you open the link in
-            it, the address and the password hash wait as an unconfirmed sign-up, which is
-            deleted when you confirm — or after 24 hours, if you never do.
+            Creating one is instant — there is no confirmation email, and no verification
+            that you own the address you typed.
           </p>
           <p>
             You do not need an account to use Compass. Without one you get an anonymous
@@ -98,14 +96,12 @@ export default function Privacy() {
           </p>
           <p>
             Your IP address is visible to Cloudflare, which serves the app. Compass&apos;s
-            own code uses it for one thing: rate limiting. Signing in or up, password
-            resets, two-factor codes, deleting an account, starting a profile, and chat for
-            anyone not signed in are each counted per address, so one machine cannot guess
-            passwords or run up costs without limit. The counter stores a SHA-256 hash of
-            the address, never the address itself, and the row is cleared once its
-            fifteen-minute window has passed. Sign-up emails are capped the same way per
-            email address: a hash of the address being signed up is counted for an hour, so
-            nobody can use Compass to flood someone&apos;s inbox.
+            own code uses it for one thing: rate limiting. Signing in or up, two-factor
+            codes, deleting an account, starting a profile, and chat for anyone not signed
+            in are each counted per address, so one machine cannot guess passwords or run up
+            costs without limit. The counter stores a SHA-256 hash of the address, never the
+            address itself, and the row is cleared once its fifteen-minute window has
+            passed.
           </p>
         </>
       ),
@@ -227,7 +223,7 @@ export default function Privacy() {
       title: "Who else can see your data",
       body: (
         <>
-          <p>Four parties, and nobody else.</p>
+          <p>Three parties, and nobody else.</p>
           <ul className="legal-list">
             <li>
               <strong>Cloudflare</strong> — hosts the app, the API, and the D1 database
@@ -237,13 +233,6 @@ export default function Privacy() {
             <li>
               <strong>Anthropic or OpenAI</strong> — receives your chat messages and
               profile summary, as described above, and only when you use the chat.
-            </li>
-            <li>
-              <strong>Resend</strong> — delivers Compass&apos;s emails: password-reset links,
-              sign-up confirmation links, and the note sent when someone tries to sign up
-              with an address that already has an account. It receives the address and that
-              one message, only when one of those is requested for the address, and nothing
-              else about your account or your plan.
             </li>
             <li>
               <strong>Anyone you hand a share link to.</strong> See below.
@@ -325,16 +314,12 @@ export default function Privacy() {
               browser politely forgetting a token that would still work.
             </li>
             <li>
-              <strong>Rate-limit counters</strong> — swept once their window has passed:
-              fifteen minutes, or an hour for the sign-up email cap.
+              <strong>Rate-limit counters</strong> — swept once their fifteen-minute window
+              has passed.
             </li>
             <li>
               <strong>Counts of wrong two-factor codes</strong> — kept until a right code is
               entered, two-factor is switched off or set up again, or the account is deleted.
-            </li>
-            <li>
-              <strong>Unconfirmed sign-ups</strong> — deleted when the emailed link is opened,
-              or after 24 hours if it never is.
             </li>
             <li>
               <strong>Request logs</strong> — retained by Cloudflare under its own

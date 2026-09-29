@@ -14,10 +14,10 @@
 
 /**
  * The first factor that got a caller to the code prompt, which picks the count
- * an attempt is charged to: `password` for signing in and the two-factor
- * settings, `reset` for an emailed reset link.
+ * an attempt is charged to. Only `password` remains since password reset was
+ * removed; the column in mfa_attempts still keys on it.
  */
-export type FirstFactor = "password" | "reset";
+export type FirstFactor = "password";
 
 /** Wrong codes allowed before any wait: enough for typos. */
 export const FREE_FAILURES = 5;

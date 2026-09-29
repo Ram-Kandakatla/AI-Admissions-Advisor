@@ -1,16 +1,12 @@
 // Account routes.
 //
-//   POST /api/auth/signup   { email, password }  → "check your inbox", for every
-//                                                  address alike
-//   POST /api/auth/verify   { token, password? } → confirms it: claims the
-//                                                  caller's guest row, signs in
+//   POST /api/auth/signup   { email, password }  → creates the account on the
+//                                                  spot, signs the caller in
 //   POST /api/auth/login    { email, password }  → new session for that account
 //   POST /api/auth/logout                        → revokes the session
 //   GET  /api/auth/me                            → who the caller is, if anyone
 //   DELETE /api/auth/account { password?, confirm } → erases the account and
 //                                                     everything it owns
-//   POST /api/auth/forgot   { email }               → mails a reset link
-//   POST /api/auth/reset    { token, password, code? } → sets a new password
 //   POST /api/auth/2fa/setup   { password, code? }  → stages a TOTP secret —
 //                                                     a code too, if 2FA is on
 //   POST /api/auth/2fa/enable  { code }             → confirms it, issues codes
@@ -18,12 +14,11 @@
 //   POST /api/auth/2fa/recovery-codes { password, code } → a fresh batch
 //   POST /api/auth/2fa/verify  { challenge, code }  → finishes a login
 //
-// Signup is a *claim*, not a create — it just completes at /verify now, once
-// the emailed link is opened. The caller almost always already has an anonymous
-// user row holding the profile they just built, and confirming fills in that
-// row's email and password rather than making a second one. That is what lets
-// the product keep its no-account front door without leaving unowned profiles
-// behind.
+// Signup is a *claim*, not a create in the row sense: the caller almost always
+// already has an anonymous user row holding the profile they just built, and
+// signing up fills in that row's email and password rather than making a
+// second one. That is what lets the product keep its no-account front door
+// without leaving unowned profiles behind.
 
 import { Hono } from "hono";
 import {
@@ -33,7 +28,6 @@ import {
   generateResetToken,
   hashResetToken,
 } from "../auth/password.js";
-import { createEmailService } from "../services/emailService.js";
 import {
   generateRecoveryCodes,
   generateTotpSecret,
@@ -53,11 +47,10 @@ import {
   ownedStudent,
   rotateSession,
 } from "../middleware/auth.js";
-import { countHit, hashedKey, rateLimit } from "../middleware/rateLimit.js";
+import { rateLimit } from "../middleware/rateLimit.js";
 import { readJson } from "../http.js";
-import { createLogger, errorFields } from "../log.js";
 import type { Context } from "hono";
-import type { AppEnv, Env } from "../types.js";
+import type { AppEnv } from "../types.js";
 
 const auth = new Hono<AppEnv>();
 
@@ -82,55 +75,11 @@ auth.use(
     message: "Too many attempts. Please wait a few minutes and try again.",
   })
 );
-// Opening a signup link can ask for the password chosen at signup, which makes
-// it one more place a password can be guessed. Only by someone already holding
-// the inbox, so unlikely — but pooling it with the others costs nothing.
-auth.use(
-  "/verify",
-  rateLimit({
-    bucket: "auth",
-    limit: 15,
-    windowMs: 15 * 60 * 1000,
-    message: "Too many attempts. Please wait a few minutes and try again.",
-  })
-);
 // Deletion re-checks the password, which makes it a third place a password can
 // be guessed against — and the only one where a correct guess destroys data
 // instead of merely reading it. Same budget as the other two.
 auth.use(
   "/account",
-  rateLimit({
-    bucket: "auth",
-    limit: 15,
-    windowMs: 15 * 60 * 1000,
-    message: "Too many attempts. Please wait a few minutes and try again.",
-  })
-);
-
-// Requesting a reset sends mail to an address the caller names, so an
-// unlimited version of it is a spam cannon pointed at other people's inboxes
-// and a fast way to burn a provider quota. Tighter than login: nobody needs
-// five reset emails in a quarter of an hour.
-//
-// Its own bucket, unlike every other route in this file. Sharing "auth" meant
-// this limit of 5 was drawn down by sign-in attempts too, so the fifth wrong
-// password locked the caller out of the reset request — refusing the way out
-// at exactly the moment someone needs it. Nothing here checks a password, so
-// nothing is gained by pooling it with the routes that do.
-auth.use(
-  "/forgot",
-  rateLimit({
-    bucket: "forgot",
-    limit: 5,
-    windowMs: 15 * 60 * 1000,
-    message: "Too many reset requests. Please wait a few minutes and try again.",
-  })
-);
-// Submitting a token is a guess at a 256-bit secret, which is hopeless, but
-// the limit costs nothing and keeps this off the list of endpoints anyone can
-// hammer for free.
-auth.use(
-  "/reset",
   rateLimit({
     bucket: "auth",
     limit: 15,
@@ -198,64 +147,13 @@ function validateCredentials(body: Record<string, unknown>): {
 }
 
 /**
- * How long a signup link lives: a day. Longer than a reset link's hour
- * because nothing is at stake while it waits — no account exists yet to take
- * over — and a link that dies before a student checks their school inbox after
- * last period is a signup that quietly never happened.
- */
-const SIGNUP_TTL_HOURS = 24;
-
-/**
- * At most this many signup emails to one address an hour, however many
- * networks the requests come from. /signup mails whatever address it is given,
- * so the per-network limit alone would let a pool of IPs fill a stranger's
- * inbox through Compass.
- */
-const SIGNUP_MAIL_PER_ADDRESS = 3;
-const SIGNUP_MAIL_WINDOW_MS = 60 * 60 * 1000;
-
-/**
- * An absolute link into the app, for an email.
+ * Create an account on the spot.
  *
- * Built from configuration, never from a request header. Building it out of
- * the Host or Origin the caller sent is host-header poisoning: an attacker
- * requests a reset — or a signup — for someone else's address and points the
- * link that lands in that person's inbox at a server they control.
- */
-function linkTo(env: Env, path: string): string {
-  return `${(env.APP_ORIGIN ?? "").replace(/\/+$/, "")}${path}`;
-}
-
-/**
- * Local development only: write emailed links to the log, so the flows can be
- * finished with no email provider. Gated on an explicit opt-in rather than on
- * "no provider configured" — a deployment that lost its API key must not start
- * writing live credentials to a log it did not before. See the binding's note
- * in types.ts.
- */
-function devLogsEmailLinks(env: Env): boolean {
-  return env.DEV_LOG_EMAIL_LINKS === "true";
-}
-
-/**
- * Start creating an account. Nothing is created here.
- *
- * WHY EVERY ADDRESS GETS THE SAME ANSWER
- *
- * This route used to create the account on the spot, so an address with an
- * account answered 409 and a new one answered 201 — the membership oracle
- * /forgot refuses to be, one route over. The only answer that can be the same
- * for both is "check your inbox", so that is the answer, and the difference
- * moves into the inbox, where only its owner sees it:
- *
- *   - a new address gets a link, and the account is created when it is opened
- *     (POST /verify);
- *   - an address that already has an account gets a note saying someone tried,
- *     with the way to sign in or reset. No link, so nothing can be created.
- *
- * Everything that differs between those two happens after the response, in
- * waitUntil, for the stopwatch reason /forgot gives: a password hash and a row
- * write that only one branch performs would otherwise show up as latency.
+ * The caller almost always already has a guest row from building a profile
+ * anonymously; signup fills in that row's email and password rather than
+ * minting a second one, so the profile it holds carries straight over. If the
+ * email is already taken, that row is left alone and untouched — 409 says so
+ * plainly, since there is no inbox-based flow left for silence to protect.
  */
 auth.post("/signup", async (c) => {
   const store = c.get("store");
@@ -275,156 +173,22 @@ auth.post("/signup", async (c) => {
     }
   }
 
-  // The guest row the confirmed account will claim, minted now for a visitor
-  // who has none. It keeps a guest's profile, and it is how /verify recognises
-  // the browser that asked. Done for every address alike and before the
-  // response, which is why it says nothing about any of them.
+  // The guest row this signup claims, minted now for a visitor who has none.
   const session = await ensureSession(c);
   const { email, password } = credentials;
-  const log = createLogger(c.env);
-  const mail = createEmailService(c.env);
-
-  c.executionCtx.waitUntil(
-    (async () => {
-      try {
-        // A cap per recipient, on top of the per-network limit on the route.
-        // Past it the send is skipped silently: the response was identical
-        // either way, so there is nobody to tell.
-        const { count } = await countHit(
-          c,
-          "signup-mail",
-          await hashedKey("email", email),
-          SIGNUP_MAIL_WINDOW_MS
-        );
-        if (count > SIGNUP_MAIL_PER_ADDRESS) {
-          log.warn("signup email skipped — that address has had its share this hour");
-          return;
-        }
-
-        if (await store.emailTaken(email)) {
-          if (devLogsEmailLinks(c.env)) {
-            log.warn("DEV_LOG_EMAIL_LINKS is on — address already has an account, notice sent");
-          }
-          const sent = await mail.sendSignupNotice(
-            email,
-            linkTo(c.env, "/signin"),
-            linkTo(c.env, "/forgot")
-          );
-          if (!sent.delivered) {
-            log.error("signup notice requested but not delivered", { provider: sent.provider });
-          }
-          return;
-        }
-
-        const token = generateResetToken();
-        await store.createPendingSignup(
-          await hashResetToken(token),
-          email,
-          await hashPassword(password),
-          session.userId,
-          SIGNUP_TTL_HOURS * 60
-        );
-        const confirmUrl = linkTo(c.env, `/verify?token=${token}`);
-
-        if (devLogsEmailLinks(c.env)) {
-          log.warn("DEV_LOG_EMAIL_LINKS is on — signup link written to the log", { confirmUrl });
-        }
-
-        const sent = await mail.sendSignupConfirmation(email, confirmUrl, SIGNUP_TTL_HOURS);
-        if (!sent.delivered) {
-          // The person has already been told to check their inbox, so this
-          // line is the only place the failure surfaces. No address in it.
-          log.error("signup confirmation requested but not delivered", {
-            provider: sent.provider,
-          });
-        }
-      } catch (err) {
-        log.error("signup request failed", errorFields(err));
-      }
-    })()
-  );
-
-  // One in a hundred requests also tidies expired signups, as /forgot does
-  // for resets.
-  if (Math.random() < 0.01) {
-    c.executionCtx.waitUntil(
-      store.sweepPendingSignups().catch(() => {
-        /* housekeeping — never worth failing a request over */
-      })
-    );
-  }
-
-  return c.json(
-    {
-      message:
-        "Check your inbox to finish creating your account. If that address already has an account, a note saying so is on its way instead.",
-    },
-    202
-  );
-});
-
-/**
- * Confirm a signup and create the account.
- *
- * WHEN THE LINK IS ENOUGH, AND WHEN IT IS NOT
- *
- * Holding the link proves someone controls the inbox. It does not prove they
- * filled in the form, and that gap is an attack with a name — account
- * pre-hijacking. Request a signup for someone else's address with a password
- * you chose; if they open the link and are signed straight in, they are now
- * building a college list inside an account you can sign in to.
- *
- * So the link finishes by itself only for the session that asked — the one
- * whose guest row the pending signup names, where the person clicking is the
- * person who chose the password. Anywhere else (a phone's mail app, another
- * computer, a stranger's browser) it asks for that password, which the owner of
- * an inbox someone else typed in does not have. The page cannot know in advance
- * which case it is in, so its first call carries no password and
- * `passwordRequired` is the answer that asks for one. That answer is only ever
- * given for a live token, so it reveals nothing about anyone else.
- *
- * A wrong password does not spend the link. The only people able to guess
- * against it already hold the inbox, and the auth limiter caps them regardless.
- */
-auth.post("/verify", async (c) => {
-  const body = await readJson<Record<string, unknown>>(c);
-  const token = typeof body.token === "string" ? body.token.trim() : "";
-
-  // One message for expired, already-used, and never-existed, for the reason
-  // /reset gives: telling them apart confirms that a link was once real.
-  const invalid = () =>
-    c.json(
-      { error: "This link has expired or has already been used. Sign up again to get a new one." },
-      400
-    );
-  if (!token) return invalid();
-
-  const store = c.get("store");
-  const pending = await store.findPendingSignup(await hashResetToken(token));
-  if (!pending) return invalid();
-
-  if (c.get("session")?.userId !== pending.guestUserId) {
-    const password = typeof body.password === "string" ? body.password : "";
-    if (!password) return c.json({ passwordRequired: true });
-    if (!(await verifyPassword(password, pending.passwordHash))) {
-      return c.json(
-        { error: "That isn't the password this account was set up with.", passwordRequired: true },
-        401
-      );
-    }
-  }
 
   // Read before the session changes hands, for the reason login reads it: a
   // different unsaved list in this browser is about to be left behind.
   const guestDraft = await ownedStudent(c);
 
-  const result = await store.completeSignup(pending);
+  const result = await store.claimGuestAccount(
+    email,
+    await hashPassword(password),
+    session.userId
+  );
   if (result.status === "email-taken") {
-    // Safe to say here, and nowhere before this point: the caller has just
-    // redeemed a link that only that inbox was sent.
     return c.json({ error: "This email already has a Compass account. Sign in instead." }, 409);
   }
-  if (result.status === "stale") return invalid();
 
   await rotateSession(c, result.user.id);
   const student = await store.getStudentByUserId(result.user.id);
@@ -443,7 +207,7 @@ auth.post("/verify", async (c) => {
  * kinds. Splitting them would mean each caller decides which to accept, and
  * the first one to forget recovery codes turns a lost phone into a lost
  * account — which is the failure this whole feature has to avoid, given that
- * password reset here does not bypass 2FA.
+ * there is no password reset or support desk to fall back on.
  *
  * A TOTP code is tried first and, if it verifies, its time-step is consumed.
  * That consumption is the replay guard: a code is valid across a ±1 step
@@ -491,11 +255,8 @@ async function checkCode(
  * (auth/secondFactorLimit.ts; the full reasoning is in
  * migrations/0011_mfa_attempts.sql).
  *
- * The charge goes to one of two counts, named for the first factor that got
- * the caller to the code prompt. `factor` is required rather than defaulted so
- * that a new call site has to choose: with one shared count, someone holding
- * only the password could keep the owner locked out of the reset that takes
- * it back.
+ * The charge goes to a count named for the first factor that got the caller to
+ * the code prompt — only `password` since password reset was removed.
  *
  * `retryAfterMs` means the account was locked and nothing was checked. An
  * empty code, or an account with no second factor, is not an attempt: nothing
@@ -535,19 +296,14 @@ async function verifySecondFactor(
 function tooManyCodes(
   c: Context<AppEnv>,
   retryAfterMs: number,
-  factor: FirstFactor,
   extra: Record<string, unknown> = {}
 ) {
   c.header("Retry-After", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
   // Only ever shown to someone past the password, so it tells an attacker
   // nothing they do not already know.
-  const hint =
-    factor === "password"
-      ? " If these weren't your attempts, someone may know your password — reset it from the sign-in page."
-      : "";
   return c.json(
     {
-      error: `Too many incorrect codes. For this account's protection, try again in ${describeWait(retryAfterMs)}.${hint}`,
+      error: `Too many incorrect codes. For this account's protection, try again in ${describeWait(retryAfterMs)}. If these weren't your attempts, someone may know your password.`,
       ...extra,
     },
     429
@@ -564,13 +320,9 @@ function tooManyCodes(
  * is optional. A separate short-lived row keeps `sessions` meaning exactly one
  * thing: fully authenticated.
  */
-async function issueMfaChallenge(
-  c: Context<AppEnv>,
-  userId: number,
-  purpose: "login" | "reset"
-): Promise<string> {
+async function issueMfaChallenge(c: Context<AppEnv>, userId: number): Promise<string> {
   const token = generateResetToken();
-  await c.get("store").createMfaChallenge(userId, await hashResetToken(token), purpose);
+  await c.get("store").createMfaChallenge(userId, await hashResetToken(token), "login");
   return token;
 }
 
@@ -592,14 +344,8 @@ auth.post("/login", async (c) => {
     : await fakeVerify(credentials.password);
 
   if (!ok || !row) {
-    // The second sentence is for someone who signed up minutes ago and has
-    // not opened the link yet — the one person certain to land here with the
-    // right password. Everyone gets it, so it says nothing about anyone.
     return c.json(
-      {
-        error:
-          "That email and password don't match an account. If you've just signed up, open the link we emailed you first.",
-      },
+      { error: "That email and password don't match an account." },
       401
     );
   }
@@ -614,7 +360,7 @@ auth.post("/login", async (c) => {
   // work by getting halfway through a login.
   const totp = await store.getTotpState(row.id);
   if (totp?.enabled) {
-    return c.json({ mfaRequired: true, challenge: await issueMfaChallenge(c, row.id, "login") });
+    return c.json({ mfaRequired: true, challenge: await issueMfaChallenge(c, row.id) });
   }
 
   // Whether the guest draft this session was carrying is about to be left
@@ -663,7 +409,7 @@ auth.post("/2fa/verify", async (c) => {
   const result = await verifySecondFactor(c, found.userId, code, "password");
   // The challenge above is already spent, as it is for a wrong code, so the
   // person signs in again once the wait is over.
-  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
+  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs);
   if (!result.ok) {
     return c.json(
       { error: "That code isn't right. Please sign in again to get a new attempt." },
@@ -722,222 +468,6 @@ auth.get("/me", async (c) => {
  * also gives the UI a natural type-to-confirm to bind to.
  */
 const CONFIRM_PHRASE = "DELETE";
-
-/**
- * How long a reset link lives.
- *
- * An hour is the usual number and the reasoning is worth stating: the window
- * is how long a link sitting in an inbox — or in a mail server's logs, or on a
- * shared computer someone walked away from — remains a working key to the
- * account. Short enough that a stale link is rarely useful to anyone, long
- * enough that "check your email" survives a distracted teenager.
- */
-const RESET_TTL_MINUTES = 60;
-
-auth.post("/forgot", async (c) => {
-  const body = await readJson<Record<string, unknown>>(c);
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-
-  const store = c.get("store");
-  const log = createLogger(c.env);
-  const email_service = createEmailService(c.env);
-
-  // Everything below happens behind one unconditional 202. The response says
-  // "if that address has an account, a link is on the way" and says exactly
-  // that for an address with no account, a guest row, a send failure, and an
-  // unconfigured deployment alike.
-  //
-  // WHY THE RESPONSE CANNOT DEPEND ON WHETHER THE ACCOUNT EXISTS
-  //
-  // Anything that varies — the status, the wording, the shape of the body —
-  // turns this endpoint into a membership oracle: paste in a list of ten
-  // thousand addresses and learn which of them belong to teenagers with a
-  // college-planning account. That inference is worth more to the wrong person
-  // than the account itself, and it is why every "did you mean to sign up?"
-  // refinement of this message has to be refused.
-  const respond = () =>
-    c.json(
-      {
-        message:
-          "If an account exists for that address, a reset link is on its way. Check your spam folder if it doesn't arrive in a few minutes.",
-      },
-      202
-    );
-
-  // A shallow shape check only. Reporting "that isn't a valid email" is a
-  // usability win and not an enumeration risk — it says nothing about who has
-  // an account — but anything past this point must be silent.
-  //
-  // The length test comes first, and the order is the fix, not a tidiness
-  // choice. This pattern backtracks quadratically on a long run of dots, and
-  // the body cap still lets through ~100k characters of them: measured in V8,
-  // 40k took 0.7s, so a full-size body is seconds of CPU per request.
-  // validateCredentials already checks length before shape; this route did not.
-  if (!email || email.length > MAX_EMAIL || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return c.json({ error: "Enter a valid email address." }, 400);
-  }
-
-  const row = await store.findUserForLogin(email);
-
-  // WHY THE WORK HAPPENS AFTER THE RESPONSE
-  //
-  // The timing is the other half of the oracle. Hashing a token, writing a
-  // row and making an HTTPS call to Resend is a few hundred milliseconds that
-  // a non-existent address would not spend, and a stopwatch reads that
-  // difference as reliably as a different error message would. waitUntil hands
-  // the work to the runtime and returns immediately, so both paths answer at
-  // the same speed — and the person waiting gets a faster page either way.
-  if (row) {
-    c.executionCtx.waitUntil(
-      (async () => {
-        try {
-          const token = generateResetToken();
-          await store.createPasswordReset(
-            row.id,
-            await hashResetToken(token),
-            RESET_TTL_MINUTES
-          );
-
-          // Configuration, never a request header — see linkTo.
-          const resetUrl = linkTo(c.env, `/reset?token=${token}`);
-
-          if (devLogsEmailLinks(c.env)) {
-            log.warn("DEV_LOG_EMAIL_LINKS is on — reset link written to the log", { resetUrl });
-          }
-
-          const sent = await email_service.sendPasswordReset(
-            email,
-            resetUrl,
-            RESET_TTL_MINUTES
-          );
-          if (!sent.delivered) {
-            // The user has already been told to check their inbox, so this
-            // log line is the only place the failure surfaces. No address in
-            // it — see log.ts on what a log line may hold.
-            log.error("password reset requested but not delivered", {
-              provider: sent.provider,
-            });
-          }
-        } catch (err) {
-          log.error("password reset request failed", errorFields(err));
-        }
-      })()
-    );
-  }
-
-  // One in a hundred requests also tidies expired tokens, matching the session
-  // sweep. Housekeeping does not belong on the hot path of every request.
-  if (Math.random() < 0.01) {
-    c.executionCtx.waitUntil(
-      store.sweepPasswordResets().catch(() => {
-        /* housekeeping — never worth failing a request over */
-      })
-    );
-  }
-
-  return respond();
-});
-
-/**
- * Spend a reset token and set a new password.
- *
- * On success the caller is signed in immediately. That is safe and it is the
- * humane option: they have just proved control of the mailbox *and* chosen a
- * password, which is strictly more than a login asks for, and bouncing them to
- * a sign-in form to retype what they typed ten seconds ago is friction with no
- * security to show for it.
- *
- * Every other session is destroyed first (see store.resetPassword). If this
- * reset was prompted by a compromise, the attacker is holding a session cookie,
- * and a password change that leaves them signed in has not recovered anything.
- */
-auth.post("/reset", async (c) => {
-  const body = await readJson<Record<string, unknown>>(c);
-  const token = typeof body.token === "string" ? body.token.trim() : "";
-  const password = typeof body.password === "string" ? body.password : "";
-
-  const errors: string[] = [];
-  if (!token) errors.push("This reset link is missing its token.");
-  if (!password) errors.push("Password is required.");
-  else if (password.length < MIN_PASSWORD) {
-    errors.push(`Password must be at least ${MIN_PASSWORD} characters.`);
-  } else if (password.length > MAX_PASSWORD) {
-    errors.push(`Password must be under ${MAX_PASSWORD} characters.`);
-  }
-  // Validated before the token is looked up, so a caller who typed a short
-  // password is told so without spending their one-use link on the attempt.
-  if (errors.length) return c.json({ errors }, 400);
-
-  const store = c.get("store");
-  const reset = await store.findPasswordReset(await hashResetToken(token));
-
-  // One message for expired, already-used, and never-existed. Distinguishing
-  // them would confirm that a token was real, and the useful next step is the
-  // same in all three cases anyway.
-  const invalid = () =>
-    c.json(
-      { error: "This reset link has expired or has already been used. Request a new one." },
-      400
-    );
-
-  if (!reset) return invalid();
-
-  // WHY A RESET DOES NOT BYPASS THE SECOND FACTOR
-  //
-  // The user's call, and the secure one. The alternative — email alone is
-  // enough to set a new password — makes 2FA protect against a stolen password
-  // and nothing else, while leaving the inbox as a complete account-takeover
-  // path. Since email is *already* the recovery channel, that would reduce the
-  // second factor to decoration for the threat it most needs to cover.
-  //
-  // The cost is real and is why recovery codes are issued at enrollment and
-  // shown once: someone who loses their phone and their codes cannot get back
-  // in, and there is no support desk here to override it. Both the enrollment
-  // screen and the Security page say so in as many words.
-  //
-  // Checked *before* the password is hashed and the token spent, so a missing
-  // code costs neither the link nor 60ms of PBKDF2.
-  const totp = await store.getTotpState(reset.userId);
-  if (totp?.enabled) {
-    const code = typeof body.code === "string" ? body.code : "";
-    if (!code) {
-      // Not an error: the client cannot know a second factor is needed until
-      // it presents a valid token, so this is the flow telling it to ask.
-      // Deliberately reached only for a token that verified — an invalid one
-      // is refused above, so this reveals nothing about anybody else.
-      return c.json({ mfaRequired: true }, 200);
-    }
-    const result = await verifySecondFactor(c, reset.userId, code, "reset");
-    if (result.retryAfterMs !== undefined) {
-      // mfaRequired keeps the page on the code step for when the wait is over.
-      return tooManyCodes(c, result.retryAfterMs, "reset", { mfaRequired: true });
-    }
-    if (!result.ok) {
-      // The link survives a wrong code, deliberately. The per-account count is
-      // what bounds guessing; burning the link would add a trip to the inbox to
-      // every typo without bounding anything, since whoever holds the inbox can
-      // simply ask for another.
-      return c.json({ error: "That code isn't right.", mfaRequired: true }, 401);
-    }
-  }
-
-  const passwordHash = await hashPassword(password);
-  const spent = await store.resetPassword(
-    await hashResetToken(token),
-    reset.userId,
-    passwordHash
-  );
-  // Lost a race with a simultaneous submission of the same link. The other
-  // one set the password; this one must not report success.
-  if (!spent) return invalid();
-
-  // A brand-new session, minted after every old one was destroyed.
-  await rotateSession(c, reset.userId);
-  const user = await store.getUser(reset.userId);
-  const student = await store.getStudentByUserId(reset.userId);
-
-  return c.json({ user, studentId: student?.id ?? null });
-});
 
 /**
  * Erase the caller's account and everything attached to it.
@@ -1110,7 +640,7 @@ auth.post("/2fa/setup", async (c) => {
     // and the answer says what is missing instead.
     if (!code.trim()) return alreadyOn();
     const result = await verifySecondFactor(c, auth_.userId, code, "password");
-    if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
+    if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs);
     if (!result.ok) return c.json({ error: "That code isn't right." }, 403);
     await store.replaceTotpSecret(auth_.userId, secret);
   } else if (!(await store.stageTotpSecret(auth_.userId, secret))) {
@@ -1135,9 +665,9 @@ auth.post("/2fa/setup", async (c) => {
  * The recovery codes are returned once and never again — they are stored
  * hashed, so this response is the only time they exist in readable form. That
  * is deliberate and it is also why they are issued *here*, in the same
- * transaction that switches 2FA on: password reset does not bypass the second
- * factor in this app, so an account that had 2FA enabled without codes would
- * be one lost phone away from being unrecoverable.
+ * transaction that switches 2FA on: there is no password reset or support desk
+ * in this app, so an account that had 2FA enabled without codes would be one
+ * lost phone away from being unrecoverable.
  */
 auth.post("/2fa/enable", async (c) => {
   const session = c.get("session");
@@ -1193,7 +723,7 @@ auth.post("/2fa/disable", async (c) => {
 
   const code = typeof body.code === "string" ? body.code : "";
   const result = await verifySecondFactor(c, auth_.userId, code, "password");
-  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
+  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs);
   if (!result.ok) return c.json({ error: "That code isn't right." }, 403);
 
   await store.disableTotp(auth_.userId);
@@ -1218,7 +748,7 @@ auth.post("/2fa/recovery-codes", async (c) => {
 
   const code = typeof body.code === "string" ? body.code : "";
   const result = await verifySecondFactor(c, auth_.userId, code, "password");
-  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs, "password");
+  if (result.retryAfterMs !== undefined) return tooManyCodes(c, result.retryAfterMs);
   if (!result.ok) return c.json({ error: "That code isn't right." }, 403);
 
   const codes = generateRecoveryCodes();

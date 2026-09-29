@@ -44,9 +44,6 @@ const MajorDeepDive = lazy(() => import("./components/MajorDeepDive"));
 const Account = lazy(() => import("./components/Account"));
 const ShareSettings = lazy(() => import("./components/ShareSettings"));
 const AccountSettings = lazy(() => import("./components/AccountSettings"));
-const ForgotPassword = lazy(() => import("./components/ForgotPassword"));
-const ResetPassword = lazy(() => import("./components/ResetPassword"));
-const VerifySignup = lazy(() => import("./components/VerifySignup"));
 const SharedPlanView = lazy(() => import("./components/SharedPlanView"));
 
 // The legal and trust pages. Lazy like everything else behind a click, and
@@ -320,37 +317,10 @@ export default function App() {
           }
         />
 
-        {/* Ungated and outside every profile check, deliberately. A visitor
-            deciding whether to trust Compass with a GPA reads these *before*
-            there is anything to gate on, and a privacy policy you have to sign
-            up to read is not a privacy policy. They are also the destinations
-            a footer link has to reach from anywhere, including from the 404. */}
         {/* Ungated: a guest has an anonymous account holding real work, and
             wiping it from a shared or library computer is the case this page
             matters most for. Gating it behind a profile would lock out the
             person with the most reason to be here. */}
-        {/* Reachable with no session at all — being locked out is the entire
-            reason to be here. */}
-        <Route path="/forgot" element={<ForgotPassword />} />
-        <Route
-          path="/reset"
-          element={
-            <ResetPassword
-              // A reset ends signed in, so this lands in the same handler a
-              // login does — minus the guest-draft question, which cannot
-              // arise: you cannot be holding an unsaved profile and be locked
-              // out of the account you would lose it to at the same time.
-              onSignedIn={(account, studentId) => onSignedIn(account, studentId, false)}
-            />
-          }
-        />
-        {/* Where a signup's emailed link lands. It ends signed in, so it uses
-            the login handler — guest-draft notice included, which really can
-            arise here: the link may be opened in a browser holding a different
-            unsaved list. Ungated, like the two routes above: the person arriving
-            may have no session in this browser at all. */}
-        <Route path="/verify" element={<VerifySignup onSignedIn={onSignedIn} />} />
-
         <Route
           path="/account"
           element={
@@ -372,6 +342,11 @@ export default function App() {
           }
         />
 
+        {/* Ungated and outside every profile check, deliberately. A visitor
+            deciding whether to trust Compass with a GPA reads these *before*
+            there is anything to gate on, and a privacy policy you have to sign
+            up to read is not a privacy policy. They are also the destinations
+            a footer link has to reach from anywhere, including from the 404. */}
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/cookies" element={<CookiePolicy />} />

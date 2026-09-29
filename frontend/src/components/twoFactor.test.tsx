@@ -170,7 +170,7 @@ describe("enrolling", () => {
     renderPanel();
     expect(await screen.findByText(/^Off\.$/)).toBeInTheDocument();
     // The tradeoff stated before enrolling, not after.
-    expect(screen.getByText(/won't get you back in/i)).toBeInTheDocument();
+    expect(screen.getByText(/password alone won't be enough/i)).toBeInTheDocument();
   });
 
   it("asks for the password before showing a secret", async () => {

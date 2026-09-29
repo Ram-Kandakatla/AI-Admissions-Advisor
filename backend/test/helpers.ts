@@ -7,7 +7,6 @@
 
 import { SELF, env } from "cloudflare:test";
 import { expect } from "vitest";
-import { hashResetToken } from "../src/auth/password.js";
 
 const BASE = "https://compass.test";
 
@@ -122,71 +121,12 @@ export async function newStudent(
   return record.id;
 }
 
-/**
- * Wait for work a route finished after it had already answered.
- *
- * Signup does its real work in waitUntil — deliberately, so an address with an
- * account and one without answer at the same speed — which means the row a test
- * wants may not exist the instant the response arrives. This polls for a
- * positive condition. A test asserting that something did *not* happen has to
- * wait for a positive signal from the same background task first, or it proves
- * only that the task had not got there yet.
- */
-export async function eventually<T>(
-  check: () => Promise<T | null | undefined | false>,
-  what: string,
-  timeoutMs = 5000
-): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const value = await check();
-    if (value) return value as T;
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-}
-
-/**
- * Re-key the newest pending signup for `email` to a token this test knows, and
- * return that token.
- *
- * The real token exists only in the email, which tests never send, and the
- * table stores just its hash. So the row the route wrote is kept — its address,
- * password hash and guest are all the route's own — and only the key is swapped
- * for the hash of a value the test can then redeem exactly as the link would.
- */
-export async function confirmationTokenFor(email: string): Promise<string> {
-  const row = await eventually(
-    () =>
-      env.DB.prepare(
-        "SELECT token_hash FROM pending_signups WHERE email = ? ORDER BY created_at DESC LIMIT 1"
-      )
-        .bind(email)
-        .first<{ token_hash: string }>(),
-    `a pending signup for ${email}`
-  );
-  const token = crypto.randomUUID() + crypto.randomUUID();
-  await env.DB.prepare("UPDATE pending_signups SET token_hash = ? WHERE token_hash = ?")
-    .bind(await hashResetToken(token), row.token_hash)
-    .run();
-  return token;
-}
-
-/**
- * A brand-new, confirmed account, returning the session cookie it ends with.
- *
- * Signup no longer creates an account by itself: it mails a link, and the
- * account exists once that is opened. This does both halves the way a person
- * would in one browser — ask, then open the link in the same session — so
- * everything downstream gets an ordinary signed-in account.
- */
+/** A brand-new account, returning the session cookie it ends with. */
 export async function signUp(
   email: string,
   password = "correct horse battery"
 ): Promise<{ userId: number; studentId: string | null; cookie: string | null }> {
-  expect((await post("/api/auth/signup", { email, password })).status).toBe(202);
-  const token = await confirmationTokenFor(email);
-  const res = await post("/api/auth/verify", { token });
+  const res = await post("/api/auth/signup", { email, password });
   const b = await body<{ user: { id: number }; studentId: string | null }>(res, 200);
   return { userId: b.user.id, studentId: b.studentId, cookie: currentCookie() };
 }

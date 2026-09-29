@@ -3,7 +3,6 @@ import type {
   ApplicationMeta,
   ApplicationsResponse,
   AuthState,
-  AuthUser,
   ChatMessage,
   ChatMode,
   LlmProvider,
@@ -17,19 +16,18 @@ import type {
   SchoolNote,
   SharedPlan,
   ShareLink,
+  SignupResult,
   StudentRecord,
   TwoFactorStatus,
   University,
-  VerifySignupResult,
 } from "./types";
 
 /**
  * A failed API call: the server's message, and the status it came with.
  *
  * Still an Error, so every caller that only shows the message is unchanged.
- * The status is for the few that act on the kind of failure — ResetPassword
- * stops offering a new link after a 429, because a limit is not something a
- * new link lifts.
+ * The status is for the few that act on the kind of failure — TwoFactorPanel
+ * treats a 409 from starting enrollment differently from every other error.
  */
 export class ApiError extends Error {
   readonly status: number;
@@ -81,30 +79,17 @@ export const api = {
   me: () => request<AuthState>("/auth/me"),
 
   /**
-   * Start creating an account.
+   * Create an account and sign in, on the spot.
    *
-   * Resolves the same way for every well-formed address and signs nobody in:
-   * the account is created later, from the emailed link. Whether the address
-   * already had an account is exactly what the server refuses to say, and a
-   * caller must not try to infer it — the same rule as forgotPassword below.
+   * Fills in the caller's guest row rather than minting a new one, so a
+   * profile built anonymously carries straight over — see
+   * `discardedGuestProfile` on the result for the one case where it doesn't.
+   * A 409 (thrown as an ApiError) means the address already has an account.
    */
   signup: (email: string, password: string) =>
-    request<{ message: string }>("/auth/signup", {
+    request<SignupResult>("/auth/signup", {
       method: "POST",
       body: JSON.stringify({ email, password }),
-    }),
-
-  /**
-   * Redeem a signup link.
-   *
-   * Called first with no password. In the browser that signed up, that
-   * finishes it; anywhere else the answer is `passwordRequired`, and the page
-   * asks for the password chosen at signup and calls again.
-   */
-  verifySignup: (token: string, password?: string) =>
-    request<VerifySignupResult>("/auth/verify", {
-      method: "POST",
-      body: JSON.stringify({ token, ...(password ? { password } : {}) }),
     }),
 
   login: (email: string, password: string) =>
@@ -158,39 +143,6 @@ export const api = {
     request<Extract<LoginResult, { mfaRequired?: false }>>("/auth/2fa/verify", {
       method: "POST",
       body: JSON.stringify({ challenge, code }),
-    }),
-
-  /**
-   * Ask for a reset link.
-   *
-   * Always resolves for any well-formed address, because the server always
-   * answers 202 — telling the caller whether an account exists would turn this
-   * into a way to test a list of addresses for membership. The client must not
-   * reintroduce that distinction by, say, showing a different message when the
-   * response is slow.
-   */
-  forgotPassword: (email: string) =>
-    request<{ message: string }>("/auth/forgot", {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    }),
-
-  /**
-   * Spend a reset token. On success the caller is signed in.
-   *
-   * `mfaRequired` comes back instead of a user when the account has a second
-   * factor: a reset deliberately does not bypass it here, so the link alone is
-   * not enough. The client cannot know in advance — the server will not say
-   * whether an account has 2FA until a valid token is presented, since that
-   * would be a fact about someone else's account.
-   */
-  resetPassword: (token: string, password: string, code?: string) =>
-    request<
-      | { mfaRequired: true }
-      | { mfaRequired?: false; user: AuthUser; studentId: string | null }
-    >("/auth/reset", {
-      method: "POST",
-      body: JSON.stringify({ token, password, ...(code ? { code } : {}) }),
     }),
 
   /**

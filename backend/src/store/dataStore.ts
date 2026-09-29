@@ -60,16 +60,6 @@ function isUniqueViolation(err: unknown): boolean {
   return err instanceof Error && /UNIQUE constraint failed/i.test(err.message);
 }
 
-/**
- * A signup waiting on its link. It carries the password hash, so it belongs to
- * the store and the verify route only — never to a response body.
- */
-export interface PendingSignup {
-  email: string;
-  passwordHash: string;
-  guestUserId: number;
-}
-
 // ---- Row shapes as D1 hands them back ----
 
 interface StudentRow {
@@ -695,20 +685,6 @@ export function createStore(db: D1Database) {
     RETURNING *
   `);
 
-  // ---- Pending signups ----
-  const insertPendingSignup = db.prepare(
-    "INSERT INTO pending_signups (token_hash, email, password_hash, guest_user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
-  );
-  // Expiry in the WHERE clause, as for sessions and resets: a stale link is
-  // indistinguishable from a missing one to everything that reads it.
-  const selectLivePendingSignup = db.prepare(
-    "SELECT email, password_hash, guest_user_id FROM pending_signups WHERE token_hash = ? AND expires_at > ?"
-  );
-  const clearPendingSignupsFor = db.prepare(
-    "DELETE FROM pending_signups WHERE email = ? OR guest_user_id = ?"
-  );
-  const sweepPendingSignupRows = db.prepare("DELETE FROM pending_signups WHERE expires_at <= ?");
-
   const insertSession = db.prepare(
     "INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)"
   );
@@ -725,33 +701,6 @@ export function createStore(db: D1Database) {
   // than one because they must run in this order — see deleteAccount below,
   // where the ordering is the entire subtlety.
   const deleteStudentsOfUser = db.prepare("DELETE FROM students WHERE user_id = ?");
-
-  // ---- Password resets ----
-  const insertReset = db.prepare(
-    "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)"
-  );
-  // Expiry and single-use are both enforced in the WHERE clause rather than by
-  // the caller, so there is no path where a stale or spent token is read and
-  // then forgotten about — the same reason getSession filters on expires_at.
-  const selectLiveReset = db.prepare(
-    "SELECT * FROM password_resets WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?"
-  );
-  const spendReset = db.prepare(
-    "UPDATE password_resets SET used_at = ? WHERE token_hash = ? AND used_at IS NULL"
-  );
-  const clearResetsForUser = db.prepare("DELETE FROM password_resets WHERE user_id = ?");
-  // Only the *unspent* ones. Used on a successful reset, where the row just
-  // marked used has to survive — it is what lets a replay of a spent link be
-  // told apart from a token that never existed, which is the whole reason
-  // used_at is a column rather than a DELETE. The sweep clears it at expiry.
-  const clearUnusedResetsForUser = db.prepare(
-    "DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL"
-  );
-  const sweepResetRows = db.prepare("DELETE FROM password_resets WHERE expires_at <= ?");
-  const updatePasswordRow = db.prepare(
-    "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND email IS NOT NULL"
-  );
-  const deleteSessionsForUser = db.prepare("DELETE FROM sessions WHERE user_id = ?");
 
   // ---- Two-factor ----
   // Only while 2FA is off — see stageTotpSecret for why the guard is in the UPDATE.
@@ -847,76 +796,38 @@ export function createStore(db: D1Database) {
     return (await selectUserByEmail.bind(email).first<UserRow>()) != null;
   }
 
-  /** Hold a signup until its emailed link is opened. */
-  async function createPendingSignup(
-    tokenHash: string,
-    email: string,
-    passwordHash: string,
-    guestUserId: number,
-    ttlMinutes: number
-  ): Promise<void> {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString();
-    await insertPendingSignup
-      .bind(tokenHash, email, passwordHash, guestUserId, now.toISOString(), expiresAt)
-      .run();
-  }
-
-  /** The live signup this token names — or null for every other case. */
-  async function findPendingSignup(tokenHash: string): Promise<PendingSignup | null> {
-    const row = await selectLivePendingSignup
-      .bind(tokenHash, new Date().toISOString())
-      .first<{ email: string; password_hash: string; guest_user_id: number }>();
-    return row
-      ? { email: row.email, passwordHash: row.password_hash, guestUserId: row.guest_user_id }
-      : null;
-  }
-
   /**
-   * Turn a confirmed signup into an account by filling in the guest row that
-   * asked.
+   * Create an account by filling in the caller's guest row.
    *
    * Still a claim rather than a create: the row keeps its id, so the profile it
-   * owns needs no reparenting. Three outcomes, and only one is success —
+   * owns needs no reparenting. `email IS NULL` in claimUserRow is the guard
+   * that makes this safe — it can only ever fill in a guest row, never
+   * overwrite the email or password of an account that already exists.
    *
-   *   - "created": the guest row now holds the email and password.
-   *   - "email-taken": the address got an account after this link went out,
-   *     because another pending signup for it was confirmed first. users.email
-   *     is UNIQUE, so two confirmations racing each other end here too, rather
-   *     than in two accounts.
-   *   - "stale": the guest row is no longer a guest. One guest can start several
-   *     signups but only one can win, and this is a loser arriving at the same
-   *     instant as the winner.
-   *
-   * On success every pending signup for the address, and every other one the
-   * same guest started, is cleared: one inbox gets one account, and one guest
-   * profile becomes one account rather than two.
+   * "email-taken" also covers the race where the caller's own guest row lost
+   * a concurrent double-submit of the same form: claimUserRow's guard then
+   * finds the row no longer eligible, and nothing was created either way, so
+   * reporting it the same as an already-registered address is safe.
    */
-  async function completeSignup(
-    pending: PendingSignup
-  ): Promise<
-    { status: "created"; user: UserRecord } | { status: "email-taken" } | { status: "stale" }
-  > {
-    if (await emailTaken(pending.email)) return { status: "email-taken" };
+  async function claimGuestAccount(
+    email: string,
+    passwordHash: string,
+    guestUserId: number
+  ): Promise<{ status: "created"; user: UserRecord } | { status: "email-taken" }> {
+    if (await emailTaken(email)) return { status: "email-taken" };
 
     let row: UserRow | null;
     try {
       row = await claimUserRow
-        .bind(pending.email, pending.passwordHash, new Date().toISOString(), pending.guestUserId)
+        .bind(email, passwordHash, new Date().toISOString(), guestUserId)
         .first<UserRow>();
     } catch (err) {
       if (isUniqueViolation(err)) return { status: "email-taken" };
       throw err;
     }
-    if (!row) return { status: "stale" };
+    if (!row) return { status: "email-taken" };
 
-    await clearPendingSignupsFor.bind(pending.email, pending.guestUserId).run();
     return { status: "created", user: userFromRow(row)! };
-  }
-
-  /** Housekeeping — expired signups are already unusable, this reclaims space. */
-  async function sweepPendingSignups(): Promise<void> {
-    await sweepPendingSignupRows.bind(new Date().toISOString()).run();
   }
 
   async function createSession(userId: number): Promise<SessionRecord> {
@@ -982,8 +893,7 @@ export function createStore(db: D1Database) {
    *            -> share_links     (so a shared URL dies with the account)
    *
    * then users -> sessions, which signs the person out of every device at
-   * once rather than only the one they clicked in, and users -> pending_signups,
-   * so an address typed into a signup form and never confirmed goes as well.
+   * once rather than only the one they clicked in.
    *
    * WHAT IS DELIBERATELY LEFT BEHIND
    *
@@ -996,77 +906,6 @@ export function createStore(db: D1Database) {
    * for nothing security-relevant, only to say something true afterwards, and
    * an account that never finished a profile is a real and unremarkable case.
    */
-  /**
-   * Issue a reset, invalidating any the user already had.
-   *
-   * The delete is not housekeeping. Two live tokens mean two chances for one to
-   * be intercepted, and a link mailed an hour ago that still works after a
-   * newer one was requested is exactly the stale credential a user pressing
-   * "resend" is trying to get away from. Newest-wins is the only rule that
-   * matches what people expect from the button.
-   */
-  async function createPasswordReset(
-    userId: number,
-    tokenHash: string,
-    ttlMinutes: number
-  ): Promise<{ expiresAt: string }> {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString();
-    await db.batch([
-      clearResetsForUser.bind(userId),
-      insertReset.bind(tokenHash, userId, now.toISOString(), expiresAt),
-    ]);
-    return { expiresAt };
-  }
-
-  /** The live, unspent reset this token names — or null for every other case. */
-  async function findPasswordReset(tokenHash: string): Promise<{ userId: number } | null> {
-    const row = await selectLiveReset
-      .bind(tokenHash, new Date().toISOString())
-      .first<{ user_id: number }>();
-    return row ? { userId: row.user_id } : null;
-  }
-
-  /**
-   * Spend a token and set the new password, in one transaction.
-   *
-   * Four statements that have to succeed or fail together. The order matters
-   * less than the atomicity, but the shape is worth stating:
-   *
-   *   1. Mark the token used — `AND used_at IS NULL` makes this the atomic
-   *      compare-and-set that stops two simultaneous submissions of the same
-   *      link both counting as valid.
-   *   2. Write the new hash. Guarded on `email IS NOT NULL` so this can never
-   *      give a password to an anonymous row, which by design has none and
-   *      must stay unreachable by every auth route.
-   *   3. Drop the user's remaining *unspent* tokens, so a second link mailed
-   *      earlier cannot be used to change the password again. Deliberately not
-   *      all of them: the row from step 1 stays, carrying its used_at, which is
-   *      what makes a replay of a spent link distinguishable from a token that
-   *      never existed. The expiry sweep collects it later.
-   *   4. Revoke every session. Whoever prompted this reset may be sitting on a
-   *      stolen one, and a password change that leaves the attacker signed in
-   *      has not actually recovered the account. This is why sessions are
-   *      rows: a JWT build could not do it at all.
-   *
-   * Returns false when the token was already spent between the caller's check
-   * and this write — the losing half of that race must not be told it worked.
-   */
-  async function resetPassword(
-    tokenHash: string,
-    userId: number,
-    passwordHash: string
-  ): Promise<boolean> {
-    const now = new Date().toISOString();
-    const results = await db.batch([
-      spendReset.bind(now, tokenHash),
-      updatePasswordRow.bind(passwordHash, now, userId),
-      clearUnusedResetsForUser.bind(userId),
-      deleteSessionsForUser.bind(userId),
-    ]);
-    return (results[0]?.meta?.changes ?? 0) > 0;
-  }
-
   /**
    * The enrolled secret, for verification. The one place it leaves the table.
    *
@@ -1127,7 +966,7 @@ export function createStore(db: D1Database) {
    * Confirm enrollment and issue recovery codes, atomically.
    *
    * The codes are the only thing standing between a lost phone and a lost
-   * account — password reset does not bypass 2FA here — so they must not be
+   * account — there is no password reset to fall back on — so they must not be
    * able to fail to exist after 2FA is switched on. One batch, all or nothing.
    *
    * `step` is recorded as spent in the same write: the code just used to prove
@@ -1285,11 +1124,6 @@ export function createStore(db: D1Database) {
     await clearAttemptRows.bind(userId).run();
   }
 
-  /** Housekeeping — expired tokens are already unusable, this reclaims space. */
-  async function sweepPasswordResets(): Promise<void> {
-    await sweepResetRows.bind(new Date().toISOString()).run();
-  }
-
   async function deleteAccount(userId: number): Promise<{ hadProfile: boolean }> {
     // A batch, so this is one transaction: a failure between the two statements
     // would otherwise leave an account with no profile and no way to notice.
@@ -1313,19 +1147,12 @@ export function createStore(db: D1Database) {
     getUser,
     findUserForLogin,
     emailTaken,
-    createPendingSignup,
-    findPendingSignup,
-    completeSignup,
-    sweepPendingSignups,
+    claimGuestAccount,
     createSession,
     getSession,
     deleteSession,
     sweepSessions,
     deleteAccount,
-    createPasswordReset,
-    findPasswordReset,
-    resetPassword,
-    sweepPasswordResets,
     getTotpState,
     stageTotpSecret,
     replaceTotpSecret,

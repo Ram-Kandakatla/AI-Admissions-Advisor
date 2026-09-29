@@ -26,9 +26,6 @@ const TITLES: Record<string, string> = {
   "/chat": "Ask Compass",
   "/share": `Share your plan${SUFFIX}`,
   "/account": `Your account${SUFFIX}`,
-  "/forgot": `Reset your password${SUFFIX}`,
-  "/reset": `Choose a new password${SUFFIX}`,
-  "/verify": `Confirm your email${SUFFIX}`,
   "/signin": `Sign in${SUFFIX}`,
   "/signup": `Create an account${SUFFIX}`,
   // The legal and trust pages. These are the titles most likely to be read in

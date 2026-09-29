@@ -854,13 +854,18 @@ own phase; this is the cross-cutting view, for answering "what is actually
 left?" without reading eight of them.
 
 This started life as a gate to clear *before* Phase 7. It is not that any
-more. Phase 7's code half shipped, and five rounds landed after it — a
+more. Phase 7's code half shipped, and several rounds landed after it — a
 dead-import audit, legal and trust pages with self-hosted fonts, self-serve
-account deletion, password reset, and TOTP two-factor auth. Two items this
-list used to carry are done as a result (the `_headers` `Referrer-Policy`,
-and password reset), and the email-provider question that was blocking both
-password reset and §6.1 has been answered: Resend, over HTTP, because a
-Worker has no raw sockets and SMTP libraries therefore do not run at all.
+account deletion, password reset (over Resend, then removed again — see
+below), and TOTP two-factor auth. One item this list used to carry is done as
+a result: the `_headers` `Referrer-Policy`.
+
+Signup confirmation and self-service password reset — and the Resend
+dependency both were built on — were removed outright in a later round.
+Signup is synchronous now, and there is no in-app way to reset a forgotten
+password: an account whose password is lost cannot be recovered. (TOTP
+recovery codes replace a lost phone, not a lost password.) Anything below
+that still assumes Resend or an emailed link is stale.
 
 ### Deploy day — waiting on the Cloudflare account or a live domain
 
@@ -869,13 +874,10 @@ paid plan that does not exist yet; [PHASE-7.md](PHASE-7.md) is the runbook.
 
 - [ ] **Wrangler login, both D1 databases created, the Pages project connected
       to GitHub**, and migrations applied to each. *(Phase 7.2–7.3)*
-- [ ] **Four secrets on Production, not one.** `ANTHROPIC_API_KEY`, plus
-      `RESEND_API_KEY`, `EMAIL_FROM` and `APP_ORIGIN` for password reset —
-      without the last three, reset degrades to "cannot send" rather than
-      falling back, because there is no worse-but-useful way to deliver mail.
-      `APP_ORIGIN` is deliberately configuration and never a request header:
-      building the reset link from `Host` is host-header poisoning. Preview
-      gets none of them on purpose. *(Phase 7.4 + password reset)*
+- [ ] **One secret on Production.** `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`).
+      There is no email provider any more — signup is synchronous and
+      self-service password reset was removed outright, so nothing here needs
+      `RESEND_API_KEY`, `EMAIL_FROM`, or `APP_ORIGIN`. *(Phase 7.4)*
 - [ ] **Five placeholder `compass.example.com` URLs.** Three in
       [`frontend/index.html`](frontend/index.html) — the canonical, `og:url`
       and `og:image` — and two in
@@ -922,13 +924,13 @@ paid plan that does not exist yet; [PHASE-7.md](PHASE-7.md) is the runbook.
       rulesets and classic branch protection are both gated behind Pro. Needs
       Pro or a public repo. *(Phase 3.4 —
       [PHASE-3.md](PHASE-3.md#left-for-later))*
-- [ ] **Deadline reminder emails (6.1) — partly unblocked.** The provider
-      question is settled; Resend is already wired up. What is left is a
-      **verified sending domain** (so §7.5 is still upstream of it) and
-      **email verification at signup**, since signup takes an address on trust
-      today. Worth re-examining the priority too: §6.2's calendar export
-      already delivers the reminder, from the student's own device, needing
-      neither. *(Phase 6.1 —
+- [ ] **Deadline reminder emails (6.1) — blocked again.** Resend, and the
+      whole mail-sending path it supported, was removed along with signup
+      confirmation and password reset — see the commit that dropped
+      `emailService.ts`. Reminder emails would need a provider wired up from
+      scratch, plus a verified sending domain (§7.5). Worth re-examining the
+      priority first: §6.2's calendar export already delivers the reminder,
+      from the student's own device, needing neither. *(Phase 6.1 —
       [PHASE-6.md](PHASE-6.md#61--deadline-reminder-emails))*
 - [ ] **Net price estimator (6.4).** Blocked on data, not code:
       `universities.json` carries sticker tuition and nothing else financial.
@@ -942,8 +944,6 @@ paid plan that does not exist yet; [PHASE-7.md](PHASE-7.md) is the runbook.
 
 ### Real open work, not blocked on anything
 
-- [ ] **Email verification at signup.** Password reset shipped without it, and
-      it is the remaining half of 6.1 above. The provider is already there.
 - [ ] **A real CSP for the document.** `frontend/public/_headers` sends
       `X-Frame-Options: DENY` instead, and now defers the CSP on one
       complication rather than two: the legal round self-hosted both font
@@ -980,6 +980,12 @@ paid plan that does not exist yet; [PHASE-7.md](PHASE-7.md) is the runbook.
   Cloudflare account as the database, so it would defend only a leaked backup
   while adding a key-loss mode that locks out every enrolled user at once.
   Said plainly on the Security page rather than left implied.
+- **Email verification at signup, and self-service password reset.** Both
+  were built, then removed on purpose along with the Resend dependency:
+  signup is now instant, and there is no in-app way to reset a forgotten
+  password, so an account whose password is lost cannot be recovered.
+  Two-factor recovery codes do not help there: they replace a lost phone,
+  not a lost password.
 
 ---
 

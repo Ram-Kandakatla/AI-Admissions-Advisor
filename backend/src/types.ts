@@ -30,32 +30,6 @@ export interface Env {
   OPENAI_API_KEY?: string;
   ANTHROPIC_MODEL?: string;
   OPENAI_MODEL?: string;
-  /**
-   * Resend credentials, both set as secrets. Absent = password reset reports
-   * itself unavailable rather than silently failing to deliver.
-   */
-  RESEND_API_KEY?: string;
-  /** The From address, e.g. "Compass <noreply@yourdomain>". Must be a sender
-   *  Resend has verified for your domain, or every send is rejected. */
-  EMAIL_FROM?: string;
-  /**
-   * Origin every emailed link points at — password reset, signup
-   * confirmation — e.g. "https://compass.example.com". The API has no reliable
-   * way to know the origin the *frontend* is served from: the Origin header is
-   * absent on some requests and attacker-controlled on others, and building an
-   * emailed URL out of either is how host-header poisoning turns a reset into
-   * an account takeover. So it is configuration.
-   */
-  APP_ORIGIN?: string;
-  /**
-   * Development escape hatch: writes emailed links — password reset and signup
-   * confirmation — to the log, so both flows can be exercised with no email
-   * provider. Since signup needs its link to finish, local signup depends on
-   * this unless RESEND_API_KEY is set. NEVER set it in production: either link
-   * in a log is a live credential sitting in Cloudflare's log retention. Off
-   * unless it is exactly the string "true".
-   */
-  DEV_LOG_EMAIL_LINKS?: string;
 }
 
 /**

@@ -3892,42 +3892,16 @@ table.cmp-table {
   word-break: break-all;
 }
 
-/* Password reset — /forgot and /reset.
-   Both reuse the account panel, so there is almost nothing here: the same
-   card, the same field styles, the same submit button. What is new is the
-   handful of secondary lines those two pages need and the sign-in form does
-   not. */
 .acct-sub {
   font-size: 13px;
   line-height: 1.6;
   color: var(--txm);
   margin: 0 0 18px;
 }
-.acct-forgot {
-  margin: -6px 0 16px;
-  font-size: 12px;
-}
 .acct-alt {
   margin: 16px 0 0;
   font-size: 12px;
   color: var(--txm);
-}
-.acct-guest-note {
-  padding-top: 12px;
-  border-top: 0.5px solid var(--border);
-  line-height: 1.6;
-}
-.acct-sent p {
-  font-size: 13.5px;
-  line-height: 1.65;
-  color: var(--txm);
-  margin: 0 0 12px;
-}
-.acct-sent-note {
-  font-size: 12.5px !important;
-}
-.acct-sent .btn {
-  margin-top: 6px;
 }
 
 /* A button that has to read as a link — it re-opens the form rather than

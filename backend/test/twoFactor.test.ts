@@ -3,9 +3,8 @@
 // totp.test.ts proves the algorithm matches RFC 6238. This proves the *flow*:
 // that enrollment cannot switch 2FA on without a working code, that a login
 // stops halfway, that a code cannot be replayed, that recovery codes are the
-// way back from a lost phone, that nothing short of a current code switches it
-// off or sets it up again, and that a password reset does not quietly walk
-// around the whole thing.
+// way back from a lost phone, and that nothing short of a current code
+// switches it off or sets it up again.
 //
 // The tests generate their own TOTP codes from the enrolled secret, the same
 // way a phone would (see twoFactorHelpers.ts). The limit on wrong codes around
@@ -25,13 +24,7 @@ import {
   signUp,
   useSession,
 } from "./helpers.js";
-import {
-  PASSWORD,
-  codeFor,
-  enrolled,
-  resetTokenFor,
-  secretFor,
-} from "./twoFactorHelpers.js";
+import { PASSWORD, codeFor, enrolled, secretFor } from "./twoFactorHelpers.js";
 import { hashResetToken } from "../src/auth/password.js";
 import { createStore } from "../src/store/dataStore.js";
 
@@ -532,71 +525,6 @@ describe("setting it up again", () => {
     expect(await createStore(env.DB).stageTotpSecret(userId, "A".repeat(32))).toBe(false);
     expect(await secretFor(userId)).toBe(secret);
     expect((await body<{ enabled: boolean }>(await get("/api/auth/2fa"), 200)).enabled).toBe(true);
-  });
-});
-
-describe("password reset does not walk around 2FA", () => {
-  test("a valid link alone is not enough — it asks for the second factor", async () => {
-    // The whole point of the decision: email is already the recovery channel,
-    // so a reset that skipped 2FA would leave the inbox as a complete takeover
-    // path and reduce the second factor to decoration.
-    const { userId } = await enrolled("reset-gated@example.com");
-    const token = await resetTokenFor(userId);
-    resetSession();
-
-    const res = await post("/api/auth/reset", { token, password: "a brand new passphrase" });
-    expect(await body<{ mfaRequired: boolean }>(res, 200)).toEqual({ mfaRequired: true });
-
-    // Nothing changed: the old password still works (modulo the 2FA step).
-    resetSession();
-    const login = await post("/api/auth/login", {
-      email: "reset-gated@example.com",
-      password: PASSWORD,
-    });
-    expect((await body<{ mfaRequired: boolean }>(login, 200)).mfaRequired).toBe(true);
-  });
-
-  test("a wrong code does not spend the link", async () => {
-    const { userId } = await enrolled("reset-wrong-code@example.com");
-    const token = await resetTokenFor(userId);
-    resetSession();
-
-    expect(
-      (await post("/api/auth/reset", { token, password: "a brand new passphrase", code: "000000" }))
-        .status
-    ).toBe(401);
-    // Still usable with the right code.
-    expect(
-      (await post("/api/auth/reset", {
-        token,
-        password: "a brand new passphrase",
-        code: await codeFor(userId, 1),
-      })).status
-    ).toBe(200);
-  });
-
-  test("a recovery code is accepted, which is the lost-phone path", async () => {
-    const { userId, recoveryCodes } = await enrolled("reset-recovery@example.com");
-    const token = await resetTokenFor(userId);
-    resetSession();
-
-    const res = await post("/api/auth/reset", {
-      token,
-      password: "a brand new passphrase",
-      code: recoveryCodes[0]!,
-    });
-    expect((await body<{ user: { email: string } }>(res, 200)).user.email).toBe(
-      "reset-recovery@example.com"
-    );
-  });
-
-  test("an account without 2FA resets exactly as before", async () => {
-    await newStudent();
-    const { userId } = await signUp("reset-plain@example.com", PASSWORD);
-    const token = await resetTokenFor(userId);
-    resetSession();
-    expect((await post("/api/auth/reset", { token, password: "a brand new passphrase" })).status)
-      .toBe(200);
   });
 });
 
